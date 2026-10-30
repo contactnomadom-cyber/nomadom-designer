@@ -215,7 +215,7 @@ function makeEtages(dome){
     }
     return out.sort((a, b) => a.length - b.length);
   }
-  function splitBandSymmetric(band, usableW, overlapTol, cap){
+  function splitBandSymmetric(band, usableW, overlapTol, cap, fixedStart){
     cap = cap || Infinity;
     const n = band.order.length;
     if (!band.closed || n % 5 !== 0) return null;
@@ -225,6 +225,7 @@ function makeEtages(dome){
     const comps = compositions(k);
     let best = null;
     for (let s = 0; s < k; s++) {
+      if (fixedStart !== undefined && s !== fixedStart % k) continue;
       for (const parts of comps) {
         if (best && parts.length > best.parts.length) break;
         if (parts.some(l => l > cap)) continue;
@@ -243,8 +244,32 @@ function makeEtages(dome){
     return { pieces, ok: true, perSector: best.parts.length };
   }
 
+  // Départ « axe des arêtes d'origine » d'un étage : la frontière (arête
+  // montante entre deux triangles) la plus proche de l'azimut θ0 des sommets
+  // de l'icosaèdre voisins du sommet du dôme. Mêmes règles que la pelure
+  // « 5 fentes — axe des arêtes d'origine » (peel.js), pour que les jonctions
+  // entre gabarits tombent exactement sur ses fentes.
+  function axisStart(band){
+    const rings = vertexRings(), P = id => dome.pointById.get(id);
+    const ppt = dome.points.filter(p => p.pptPoint && rings.get(p._id) === dome.params.detail);
+    if (!ppt.length || !band.closed) return undefined;
+    const t0 = Math.atan2(ppt[0].z, ppt[0].x), n = band.order.length;
+    let best, bd = Infinity;
+    band.order.forEach((cur, i) => {
+      const prev = band.order[(i - 1 + n) % n];
+      const sh = dome.faces[cur].pointIds.filter(id => dome.faces[prev].pointIds.includes(id));
+      const ids = sh.length === 2 ? sh : dome.faces[cur].pointIds;
+      let x = 0, z = 0; ids.forEach(id => { x += P(id).x; z += P(id).z; });
+      const a = Math.atan2(z, x), dd = Math.abs(Math.atan2(Math.sin(a - t0), Math.cos(a - t0)));
+      if (dd < bd - 1e-9) { bd = dd; best = i; }
+    });
+    return best;
+  }
+
   // 6) plan complet : sommet = triangles indépendants, puis étages découpés
   //    opts.strategy : 'pieces' (moins de morceaux) | 'gabarits' (moins de gabarits)
+  //                    | 'axes' (moins de gabarits, jonctions sur les 5 axes des arêtes d'origine ;
+  //                      tous les étages en 5 secteurs, y compris la rangée du bas)
   //    opts.base     : 'ring' (anneau entier si possible) | 'sectors' (5 morceaux identiques)
   function plan(usableW, overlapTol, opts){
     opts = opts || {};
@@ -269,7 +294,13 @@ function makeEtages(dome){
         else if (spec.mode === 's') sp = splitBandSymmetric(b, w, overlapTol, spec.cap);
         if (!sp) { const g = splitBand(b, w, overlapTol, spec.cap); sp = { pieces: g.pieces.map(p => Object.assign({}, p)), ok: g.ok }; }
       }
-      if (!sp && isBase && baseMode === 'sectors' && strategy !== 'custom') sp = splitBandSymmetric(b, usableW, overlapTol);
+      if (!sp && strategy === 'axes') {
+        const s0 = axisStart(b);
+        // si aucun découpage aligné ne tient dans la laize, triangles séparés
+        // (toujours alignés) plutôt qu'un découpage libre qui casserait les axes
+        if (s0 !== undefined) sp = splitBandSymmetric(b, usableW, overlapTol, Infinity, s0) || { pieces: b.order.map(idx => Object.assign({}, pieceInfo([idx]))), ok: true };
+      }
+      if (!sp && isBase && baseMode === 'sectors' && strategy !== 'custom' && strategy !== 'axes') sp = splitBandSymmetric(b, usableW, overlapTol);
       else if (!sp && strategy === 'gabarits') {
         const ring = b.closed ? chainInfo(b, 0, b.order.length) : null;
         if (isBase && ring && ring.width <= usableW + 1e-9 && ring.overlap <= overlapTol + 1e-9) sp = { pieces: [Object.assign({}, ring)], ok: true };

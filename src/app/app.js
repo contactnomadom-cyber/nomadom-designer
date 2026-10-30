@@ -1153,7 +1153,7 @@
 
     const el = document.getElementById('panelsReadout');
     el.style.display = '';
-    let html = '<div class="sheet-head"><b>Découpe par étages — ' + allPieces().length + ' morceaux, ' + gabGroups.length + ' gabarits</b><button id="btnPrintAll">Tout exporter — une fiche par gabarit (imprimer / PDF)</button></div>Cliquez un morceau pour ouvrir sa fiche. Dimensions de <b>coupe</b> (marges et ourlet compris). Toutes les pièces sont contrôlées <i>développables sans vague</i>.' +
+    let html = '<div class="sheet-head"><b>Découpe par étages — ' + allPieces().length + ' morceaux, ' + gabGroups.length + ' gabarits</b>' + (tracingBlocked() ? AXES_BLOCK_HTML : '<button id="btnPrintAll">Tout exporter — une fiche par gabarit (imprimer / PDF)</button>') + '</div>Cliquez un morceau pour ouvrir sa fiche. Dimensions de <b>coupe</b> (marges et ourlet compris). Toutes les pièces sont contrôlées <i>développables sans vague</i>.' +
       (nBad ? '<div class="bad" style="margin-top:4px">⚠ ' + nBad + ' morceau(x) ne tiennent pas dans la laize utile, même seuls : il faut une laize plus large, des marges plus petites, ou une couture à travers ces triangles.</div>' : '') +
       '<table class="clickable"><tr><th>Gabarit</th><th>À couper</th><th>Morceaux (cliquer pour la fiche)</th><th>Triangles</th><th>Coupe (mm)</th><th>m² / morceau</th><th>m² total</th><th>Sans vague</th></tr>';
     gabGroups.forEach(g => {
@@ -1168,7 +1168,7 @@
     const totArea = sheets.reduce((s, sh) => s + sh.cutArea, 0), netArea = sheets.reduce((s, sh) => s + sh.area, 0);
     html += '<tr><td colspan="6" class="muted">Total</td><td><b>' + totArea.toFixed(2) + '</b> <span class="muted">(dont ' + netArea.toFixed(2) + ' couvrants)</span></td><td></td></tr>';
     el.innerHTML = html + '</table>';
-    document.getElementById('btnPrintAll').addEventListener('click', () => printTracing(sheets, true, 'Traçage toile de dôme'));
+    if (document.getElementById('btnPrintAll')) document.getElementById('btnPrintAll').addEventListener('click', () => printTracing(sheets, true, 'Traçage toile de dôme'));
   }
 
   // ---------------------------------------------------------
@@ -1255,7 +1255,7 @@
 
     const el = document.getElementById('panelsReadout');
     el.style.display = '';
-    let h = '<div class="sheet-head"><b>Plan de coupe sur le rouleau</b><button id="btnPrintAll2">Tout exporter — plan + fiches de traçage (imprimer / PDF)</button></div>';
+    let h = '<div class="sheet-head"><b>Plan de coupe sur le rouleau</b>' + (tracingBlocked() ? AXES_BLOCK_HTML : '<button id="btnPrintAll2">Tout exporter — plan + fiches de traçage (imprimer / PDF)</button>') + '</div>';
     h += '<div class="sheet-kpis"><span>Métrage <b>' + nr.length.toFixed(2) + ' m</b></span><span>Sans placement <b>' + nr.naive.toFixed(1) + ' m</b> (−' + Math.round(gain*100) + ' %)</span>' +
       '<span>Utilisation de la toile <b>' + Math.round(nr.utilisation*100) + ' %</b></span><span>Contrôle chevauchements <b>' + (nr.check.overlaps + nr.check.outside === 0 ? '✓ aucun' : '✗ ' + nr.check.overlaps) + '</b></span></div>';
     if (nr.tooWide.length) h += '<div class="bad">⚠ Hors laize, non placés : ' + nr.tooWide.join(', ') + '</div>';
@@ -1266,7 +1266,7 @@
         '</td><td>' + (pl.rot ? '180° ↻' : '0°') + '</td><td>' + mm(pl.L) + ' × ' + mm(pl.W) + '</td></tr>';
     });
     el.innerHTML = h + '</table>';
-    document.getElementById('btnPrintAll2').addEventListener('click', () => printTracing(allPieces().map(pc => sheetOf(pc.name)), true, 'Traçage toile de dôme'));
+    if (document.getElementById('btnPrintAll2')) document.getElementById('btnPrintAll2').addEventListener('click', () => printTracing(allPieces().map(pc => sheetOf(pc.name)), true, 'Traçage toile de dôme'));
   }
 
   function pointInPoly(pt, poly){
@@ -1293,7 +1293,13 @@
       date: new Date().toLocaleDateString('fr-BE')
     };
   }
+  // ADR-0002 (étanchéité avant tout) : la découpe « axes » aligne les coutures
+  // montantes du sommet au sol ; elle reste consultable, mais aucune fiche de
+  // traçage ni CSV de fabrication n'est fourni pour elle.
+  function tracingBlocked(){ return document.getElementById('paramCutStrategy').value === 'axes'; }
+  const AXES_BLOCK_HTML = '<span class="axes-block">⛔ Fiches de traçage non fournies : découpe déconseillée (coutures montantes alignées → étanchéité)</span>';
   function printTracing(sheets, withSummary, title){
+    if (tracingBlocked()) return;
     if (laizeFailures().length || fabricationStatus().level === 'red') { render2D(); return; }   // étapes 3 et 5 : export refusé
     const meta = tracingMeta(title);
     const nr = ensureNest();
@@ -1424,7 +1430,7 @@
     el.style.display = '';
     const gk = !!dome.offset;
     let h = '<div class="sheet-head"><b>Fiche patron — morceau ' + sh.name + '</b>' + (sh.closedRing ? ' (anneau complet : les deux extrémités se recousent)' : '') +
-      ' <button id="btnSheetPrint">Fiche de traçage (imprimer / PDF)</button> <button id="btnSheetCsv" class="ghost">CSV</button></div>';
+      (tracingBlocked() ? ' ' + AXES_BLOCK_HTML : ' <button id="btnSheetPrint">Fiche de traçage (imprimer / PDF)</button> <button id="btnSheetCsv" class="ghost">CSV</button>') + '</div>';
     h += '<div class="sheet-kpis">' +
       '<span>Coupe <b' + (fitsLaize(sh) ? '' : ' class="bad"') + '>' + mm(sh.cutLength) + ' × ' + mm(sh.cutWidth) + ' mm</b> (long. × larg.)</span>' +
       '<span>Net (couture) <b>' + mm(sh.length) + ' × ' + mm(sh.width) + ' mm</b></span>' +
@@ -1476,11 +1482,12 @@
     });
     h += '</table>';
     el.innerHTML = h;
-    document.getElementById('btnSheetCsv').addEventListener('click', () => downloadSheetCsv(sh));
-    document.getElementById('btnSheetPrint').addEventListener('click', () => printTracing([sh], false, 'Traçage ' + sh.name));
+    if (!tracingBlocked()) document.getElementById('btnSheetCsv').addEventListener('click', () => downloadSheetCsv(sh));
+    if (!tracingBlocked()) document.getElementById('btnSheetPrint').addEventListener('click', () => printTracing([sh], false, 'Traçage ' + sh.name));
   }
 
   function downloadSheetCsv(sh){
+    if (tracingBlocked()) return;
     if (laizeFailures().length || fabricationStatus().level === 'red') { render2D(); return; }   // étapes 3 et 5 : export refusé
     const r = [];
     const q = v => '"' + String(v).replace(/"/g, '""') + '"';
@@ -1735,17 +1742,20 @@
   // rotation + translation (jamais retourné) sur sa position dans la pelure.
   // ---------------------------------------------------------
   let peelLayout = null;
-  function peelStrategy(){ const s = document.getElementById('paramCutStrategy').value; return s === 'gabarits' || s === 'triangles'; }
+  function peelStrategy(){ const s = document.getElementById('paramCutStrategy').value; return s === 'gabarits' || s === 'triangles' || s === 'axes'; }
   function rigid(a0, a1, b0, b1){
     const ang = Math.atan2(b1.y - b0.y, b1.x - b0.x) - Math.atan2(a1.y - a0.y, a1.x - a0.x), c = Math.cos(ang), s = Math.sin(ang);
     return p => ({ x: b0.x + c * (p.x - a0.x) - s * (p.y - a0.y), y: b0.y + s * (p.x - a0.x) + c * (p.y - a0.y) });
   }
   function peelType(){ return document.getElementById('paramPeelType').value || 'one'; }
   // menu « Type d'ouverture » : seuls les types possibles pour ce dôme et cette découpe
+  // « Gabarits alignés sur les axes » : la pelure s'ouvre d'office sur les
+  // 5 axes des arêtes d'origine, là où tombent les jonctions entre gabarits
+  let peelPref = null;
   function syncPeelMenu(){
     const sel = document.getElementById('paramPeelType');
     const av = Peel.availableTypes(dome, etagesTool, etagesCache);
-    const cur = sel.value || 'one';
+    const cur = peelPref || sel.value || 'one'; peelPref = null;
     sel.innerHTML = av.map(t => '<option value="' + t.id + '"' + (t.ok ? '' : ' disabled') + ' title="' + (t.reason || '').replace(/"/g, '&quot;') + '">' +
       t.label + (t.ok ? '' : ' — impossible ici') + '</option>').join('');
     sel.value = av.some(t => t.id === cur && t.ok) ? cur : 'one';
@@ -2219,8 +2229,10 @@
     const st = document.getElementById('paramCutStrategy').value;
     document.getElementById('lblSeamWeight').style.display = st === 'toile' ? '' : 'none';
     document.getElementById('lblBaseRow').style.display = (st === 'pieces' || st === 'gabarits') ? '' : 'none';
+    document.getElementById('cutWarnAxes').style.display = st === 'axes' ? '' : 'none';
   }
   document.getElementById('paramCutStrategy').addEventListener('change', syncCutControls);
+  document.getElementById('paramCutStrategy').addEventListener('change', function(){ if (this.value === 'axes') { peelPref = 'edges5'; peelLayout = null; } });
   syncCutControls();
   ['paramSeamA','paramSeamB'].forEach(id => document.getElementById(id).addEventListener('change', function(){
     const p = Toile.SEAM_PRESETS[document.getElementById('paramSeamType').value];
@@ -2253,6 +2265,7 @@
   const STRATS = [
     { id: 'pieces', label: 'Moins de morceaux', note: 'le moins de coutures' },
     { id: 'gabarits', label: 'Moins de gabarits', note: 'morceaux identiques répétés' },
+    { id: 'axes', label: '⛔ Gabarits alignés sur les axes', note: 'DÉCONSEILLÉ : coutures montantes alignées (étanchéité) · pas de fiches de traçage' },
     { id: 'toile', label: 'Moins de toile', note: 'compromis toile / coutures' },
     { id: 'triangles', label: 'Triangle par triangle', note: 'chaque triangle séparé' }
   ];
@@ -2491,7 +2504,7 @@
           bCut = best(m => m.cutArea, -1), bRoll = best(m => m.roll, -1), bUtil = best(m => m.util, 1);
     const cell = (v, b, txt, worse) => '<td class="' + (b !== null && Math.abs(v - b) < 1e-9 ? 'best' : '') + '">' + txt + '</td>';
     const q = id => '<a class="help-q" data-help="' + id + '" title="Que représente cette colonne ?">?</a>';
-    let h = '<table class="compare"><tr><th>Découpe des étages <a class="help-q" data-help="aide-decoupe" title="Les 4 stratégies">?</a></th><th>Morceaux' + q('aide-col-morceaux') + '</th><th>Gabarits' + q('aide-col-gabarits') +
+    let h = '<table class="compare"><tr><th>Découpe des étages <a class="help-q" data-help="aide-decoupe" title="Les 5 stratégies">?</a></th><th>Morceaux' + q('aide-col-morceaux') + '</th><th>Gabarits' + q('aide-col-gabarits') +
       '</th><th>Arêtes cousues' + q('aide-col-aretes') + '</th><th>Toile coupée (m²)' + q('aide-col-coupee') + '</th><th>Rouleau (m)' + q('aide-col-rouleau') +
       '</th><th>Rouleau (m²)' + q('aide-col-rouleau-m2') + '</th><th>Utilisation' + q('aide-col-utilisation') + '</th><th>Plus long morceau' + q('aide-col-long') +
       '</th><th>Contrôles' + q('aide-col-controles') + '</th><th></th></tr>';

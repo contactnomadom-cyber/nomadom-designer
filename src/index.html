@@ -102,6 +102,8 @@
   .selection-readout th, .selection-readout td{ padding: 3px 10px 3px 0; text-align: left; font-weight: normal; }
   .selection-readout th{ color: var(--ink-dim); border-bottom: 1px solid var(--line); }
   .selection-readout td.bad{ color: #b23a2f; font-weight: 600; }
+  .axes-warn{ flex-basis: 100%; margin-top: 6px; padding: 10px 12px; border: 2px solid #b23a2f; border-radius: 6px; background: #fbe9e7; color: #7a1f16; font-size: 14px; line-height: 1.4; }
+  .axes-block{ display: inline-block; margin-left: 8px; padding: 3px 8px; border: 1px solid #b23a2f; border-radius: 4px; background: #fbe9e7; color: #7a1f16; font-weight: 600; }
 
   .toolbar + .toolbar{ margin-top: -6px; }
   .group-title{ font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 600; min-width: 70px; }
@@ -288,6 +290,7 @@
       <select id="paramCutStrategy" style="width:330px;padding:4px 6px">
         <option value="pieces">Moins de morceaux (le moins de coutures)</option>
         <option value="gabarits">Moins de gabarits (morceaux identiques répétés)</option>
+        <option value="axes">⛔ Gabarits alignés sur les axes — DÉCONSEILLÉ (étanchéité)</option>
         <option value="toile">Moins de toile (compromis toile / coutures)</option>
         <option value="triangles">Triangle par triangle</option>
       </select>
@@ -301,6 +304,7 @@
         <option value="sectors">5 morceaux identiques</option>
       </select>
     </label>
+    <div id="cutWarnAxes" class="axes-warn" style="display:none">⛔ <b>DÉCONSEILLÉ — ÉTANCHÉITÉ.</b> Dans cette découpe, les coutures montantes sont alignées du sommet au sol : 5 chemins d'eau continus et 15 croisements de 4 morceaux, épais et difficiles à étancher. Elle sert seulement à visualiser la pelure en 5 quartiers droits. <b>Aucune fiche de traçage ni CSV n'est fourni.</b> Pour fabriquer : « Moins de gabarits » (coutures décalées, effet tuile).</div>
     <span class="seam-note">Gabarit = forme tracée une fois et réutilisée pour tous les morceaux identiques. ⇋ = même gabarit retourné.</span>
   </div>
 
