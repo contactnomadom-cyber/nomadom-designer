@@ -2,6 +2,9 @@
 
 Nomad'Om Designer : conception et fabrication de dômes géodésiques (géométrie, toile **Cover+**, aménagement Design, pavillon Quadrisphère). Livré en **un seul HTML hors ligne** : `dist/nomadom-designer.html`, généré depuis `src/`. Propriétaire : Nathan, artisan, pas développeur. **Justesse avant fonctionnalités** ; **étanchéité avant tout** (toile et futures couvertures solides) : ordre de priorité de tout choix **faisabilité technique → performance → écoulement des eaux → étanchéité**, puis seulement présentation, esthétique, économie ; une option déconseillée reste visible avec avertissement mais sans document de fabrication (ADR-0002) ; statuts 🟢 vérifié · 🟡 calculé · 🟠 non vérifié en atelier · 🔴 refusé. Réponses en français, simples, une analogie par notion nouvelle.
 
+## Carnet d'idées
+- `docs/IDEES-A-TRAITER.md` : base de travail des prochaines versions. **Chaque nouvelle idée de Nathan y est ajoutée** (date, décidé, questions ouvertes) ; une idée réalisée passe dans « Fait » avec sa version. À consulter avant de proposer la suite.
+
 ## Économie de tokens (obligatoire)
 - **Ne jamais lire en entier** : `vendor/` (Three.js, 733 ko), `dist/`, `build/check/`, `docs/audits/` (rapports longs, à consulter par recherche).
 - Trouver avant de lire : `node scripts/code-map.mjs` (carte), `node scripts/code-map.mjs app` (fonctions d'un module), `node scripts/code-map.mjs -f nomFonction`, `git grep -n "motif"`. Puis lire **seulement** les lignes utiles (offset/limit).
