@@ -26,7 +26,8 @@ const N = f => path.join(root, 'tests/node', f), W = f => path.join(root, 'tests
 const suites = [
   { key: 'engine', name: 'Moteur (2 références, 867 combinaisons)', cmd: ['node', [N('engine.test.js'), MODS]] },
   { key: 'arcs', name: 'Arcs contre Antiprism', cmd: ['node', [N('arcs.test.js'), MODS]] },
-  { key: 'textile', name: 'Toile ' + (quick ? '2V–3V' : '1V–3V'), cmd: ['node', [N('textile.test.js'), MODS, '--v=' + (quick ? '2,3' : '1,2,3')]] }
+  { key: 'textile', name: 'Toile ' + (quick ? '2V–3V' : '1V–3V'), cmd: ['node', [N('textile.test.js'), MODS, '--v=' + (quick ? '2,3' : '1,2,3')]] },
+  { key: 'peel', name: 'Pelure d\'orange (fentes suivant les gabarits)', cmd: ['node', [N('peel.test.js'), MODS]] }
 ];
 const browser = quick ? ['t_beta.py', 't_status.py', 't_names.py']
   : ['t_beta.py', 't_status.py', 't_names.py', 't_cleanup.py', 't_laize.py', 't_bottom.py', 't_kruschke_align.py', 't_stale_optim.py', 't_smoke_quadri.py'];

@@ -29,7 +29,8 @@
     { id: 'edges5', label: '5 fentes — axe des arêtes d\'origine', n: 5 },
     { id: 'offset5', label: '5 fentes — décalées d\'un demi-secteur', n: 5 },
     { id: 'ten', label: '10 fentes — les deux combinées', n: 10 },
-    { id: 'spiral5', label: '5 fentes en spirale', n: 5 }
+    { id: 'spiral5', label: '5 fentes en spirale', n: 5 },
+    { id: 'gabarit5', label: '5 fentes — suivant les gabarits (zigzag)', n: 5 }
   ];
   const TAU = 2 * Math.PI, DEG = Math.PI / 180;
   const angDist = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
@@ -82,10 +83,11 @@
   function slitsFor(type, ctx) {
     const nLevels = ctx.bands.length - 1;
     const res = [];
-    let ok = true, reason = '';
+    let ok = true, reason = '', prevAz = ctx.theta0;
     ctx.bands.forEach((B, k) => {
       if (!B.closed) { res.push([0]); return; }
       if (type === 'one') { res.push([nearest(B, ctx.oneAz, true)]); return; }   // toujours entre deux morceaux
+      if (type === 'gabarit5') { const g = gabaritSlits(ctx, B, k, prevAz); if (g.err) { ok = false; reason = g.err; } res.push(g.slits); prevAz = g.az; return; }
       const fam = families(type, ctx, Math.max(1, k), nLevels);
       if (k === 0) { res.push([nearest(B, fam[0], false)]); return; }
       if (B.n % 5) { ok = false; reason = 'étage ' + B.level + ' : ' + B.n + ' triangles, pas divisible par 5'; res.push([nearest(B, fam[0], false)]); return; }
@@ -116,12 +118,53 @@
     return { slits: res, ok, reason };
   }
 
+  // « suivant les gabarits » : les fentes tombent sur les jonctions entre
+  // morceaux de la découpe (jamais dans un morceau). Si l'étage est fait de
+  // 5 secteurs identiques, on prend la même jonction dans chaque secteur
+  // (symétrie d'ordre 5) ; parmi les jonctions possibles, celle qui suit au
+  // plus près la fente de l'étage du dessus (zigzag continu). Un anneau
+  // d'un seul tenant garde une seule fente, à sa couture de fermeture.
+  function gabaritSlits(ctx, B, k, prevAz) {
+    const starts = [...B.pieceStarts];
+    if (k === 0) { const i = nearest(B, prevAz, true); return { slits: [i], az: B.bounds[i].az }; }
+    if (starts.length === 1) return { slits: starts, az: prevAz };
+    const step = B.n / 5;
+    const periodic = B.n % 5 === 0 && starts.length % 5 === 0 && starts.every(s => B.pieceStarts.has((s + step) % B.n));
+    if (!periodic) return { slits: [nearest(B, prevAz, true)], az: prevAz, err: 'étage ' + B.level + ' : les morceaux ne forment pas 5 secteurs identiques (choisir la découpe « Moins de gabarits »)' };
+    const cands = starts.slice().sort((a, b) => angDist(B.bounds[a].az, prevAz) - angDist(B.bounds[b].az, prevAz));
+    let err = '';
+    for (const b0 of cands) {
+      const uniq = [0, 1, 2, 3, 4].map(q => (b0 + q * step) % B.n).sort((a, b) => a - b);
+      let hangAll = true;
+      for (let q = 0; q < 5 && hangAll; q++) {
+        const st = uniq[q], end = q + 1 < 5 ? uniq[q + 1] : uniq[0] + B.n;
+        let hang = false;
+        for (let t = st; t < end && !hang; t++) hang = dome_topEdge(ctx, B, B.order[t % B.n]);
+        hangAll = hang;
+      }
+      if (hangAll) return { slits: uniq, az: B.bounds[b0].az };
+      err = 'étage ' + B.level + ' : un arc ne touche l\'étage du dessus que par une pointe';
+    }
+    return { slits: [cands[0]], az: prevAz, err };
+  }
+
   function dome_topEdge(ctx, B, faceIdx) {
     return ctx.faces[faceIdx].pointIds.filter(id => ctx.ring.get(id) === B.level).length === 2;
   }
   function availableTypes(dome, et, plan) {
     const ctx = context(dome, et, plan);
     return TYPES.map(t => { const r = slitsFor(t.id, ctx); return { id: t.id, label: t.label, ok: r.ok, reason: r.reason }; });
+  }
+
+  // deux triangles posés au même endroit d'un nœud commun sont voisins (pas de test)
+  const same = (A, B) => A.pointIds.some((id, i) => { const j = B.pointIds.indexOf(id); return j >= 0 && Math.hypot(A.pts[i].x - B.pts[j].x, A.pts[i].y - B.pts[j].y) < 1e-6; });
+  const axesOf = pts => [[0, 1], [1, 2], [2, 0]].map(([i, j]) => { const dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y, L = Math.hypot(dx, dy) || 1; return { x: -dy / L, y: dx / L }; });
+  const proj = (pts, ax) => { let mn = Infinity, mx = -Infinity; pts.forEach(p => { const v = p.x * ax.x + p.y * ax.y; if (v < mn) mn = v; if (v > mx) mx = v; }); return [mn, mx]; };
+  // profondeur de recouvrement de deux triangles (séparation des axes), 0 si disjoints
+  function triOverlap(A, B) {
+    let depth = Infinity;
+    for (const ax of axesOf(A.pts).concat(axesOf(B.pts))) { const [a0, a1] = proj(A.pts, ax), [b0, b1] = proj(B.pts, ax); const d = Math.min(a1, b1) - Math.max(a0, b0); if (d <= 1e-6) return 0; depth = Math.min(depth, d); }
+    return depth;
   }
 
   function rigid(a0, a1, b0, b1) {
@@ -149,15 +192,34 @@
     });
     const apply = (arc, f) => arc.pl.forEach(p => { p.pts = p.pts.map(f); });
 
-    // 2) charnières : chaque arc pend sous l'étage du dessus par l'arête d'étage
-    //    la plus proche de son milieu
+    // 2) charnières : chaque arc pend sous l'étage du dessus par une arête
+    //    d'étage. Par défaut, celle la plus proche de son milieu (rang 0).
+    //    Si un arc de l'étage chevauche alors un arc déjà posé, on essaie le
+    //    rang suivant (arête suivante en s'éloignant du milieu) POUR TOUS les
+    //    arcs de l'étage à la fois : des arcs identiques gardent ainsi la même
+    //    charnière et la pelure reste symétrique. On garde le premier rang
+    //    sans chevauchement (à défaut, le moins chevauchant).
     const hinges = [];
     const placedTri = new Map(); // idx -> placement déjà posé
-    arcs.filter(a => a.k === 0).forEach(a => a.pl.forEach(p => placedTri.set(p.idx, p)));
+    const placedList = [];
+    arcs.filter(a => a.k === 0).forEach(a => a.pl.forEach(p => { placedTri.set(p.idx, p); placedList.push(p); }));
+    const third = (tri, a, b) => tri.pts[tri.pointIds.findIndex(id => id !== a && id !== b)];
+    const hingeMove = c => {
+      const { t, tp, u, v } = c;
+      const a0 = { ...t.pts[t.pointIds.indexOf(u)] }, a1 = { ...t.pts[t.pointIds.indexOf(v)] };
+      const b0 = tp.pts[tp.pointIds.indexOf(u)], b1 = tp.pts[tp.pointIds.indexOf(v)];
+      let f = rigid(a0, a1, b0, b1);
+      const side = q => (b1.x - b0.x) * (q.y - b0.y) - (b1.y - b0.y) * (q.x - b0.x);
+      if (side(f(third(t, u, v))) * side(third(tp, u, v)) > 0) {
+        const dx = b1.x - b0.x, dy = b1.y - b0.y, L2 = dx * dx + dy * dy, g = f;
+        f = q => { const r = g(q), tt = ((r.x - b0.x) * dx + (r.y - b0.y) * dy) / L2, fx = b0.x + tt * dx, fy = b0.y + tt * dy; return { x: 2 * fx - r.x, y: 2 * fy - r.y }; };
+      }
+      return { f, b0, b1 };
+    };
     for (let k = 1; k < ctx.bands.length; k++) {
       const lv = ctx.bands[k].level;
-      arcs.filter(a => a.k === k).forEach(arc => {
-        let best = null;
+      const level = arcs.filter(a => a.k === k).map(arc => {
+        const cands = [];
         const mid = (arc.pl.length - 1) / 2;
         arc.pl.forEach((t, i) => {
           const top = t.pointIds.filter(id => ring.get(id) === lv);
@@ -165,21 +227,25 @@
           let tp = null;
           placedTri.forEach(q => { if (!tp && top.every(id => q.pointIds.includes(id)) && q.idx !== t.idx) tp = q; });
           if (!tp) return;
-          const d = Math.abs(i - mid);
-          if (!best || d < best.d - 1e-9) best = { d, t, tp, u: top[0], v: top[1] };
+          cands.push({ d: Math.abs(i - mid), i, t, tp, u: top[0], v: top[1] });
         });
-        if (!best) return;
-        const { t, tp, u, v } = best;
-        const a0 = { ...t.pts[t.pointIds.indexOf(u)] }, a1 = { ...t.pts[t.pointIds.indexOf(v)] };
-        const b0 = tp.pts[tp.pointIds.indexOf(u)], b1 = tp.pts[tp.pointIds.indexOf(v)];
-        apply(arc, rigid(a0, a1, b0, b1));
-        const third = (tri, a, b) => tri.pts[tri.pointIds.findIndex(id => id !== a && id !== b)];
-        const side = q => (b1.x - b0.x) * (q.y - b0.y) - (b1.y - b0.y) * (q.x - b0.x);
-        if (side(third(t, u, v)) * side(third(tp, u, v)) > 0) {
-          const dx = b1.x - b0.x, dy = b1.y - b0.y, L2 = dx * dx + dy * dy;
-          apply(arc, q => { const tt = ((q.x - b0.x) * dx + (q.y - b0.y) * dy) / L2, fx = b0.x + tt * dx, fy = b0.y + tt * dy; return { x: 2 * fx - q.x, y: 2 * fy - q.y }; });
-        }
-        hinges.push({ level: lv, arc, u, v, A: { ...b0 }, B: { ...b1 } });
+        cands.sort((a, b) => a.d - b.d || a.i - b.i);
+        return { arc, cands };
+      }).filter(x => x.cands.length);
+      const ranks = Math.max(0, ...level.map(x => x.cands.length));
+      let best = null;
+      for (let r = 0; r < ranks; r++) {
+        const moves = level.map(x => { const c = x.cands[Math.min(r, x.cands.length - 1)], m = hingeMove(c); return { x, c, m, pl: x.arc.pl.map(p => ({ idx: p.idx, pointIds: p.pointIds, pts: p.pts.map(m.f) })) }; });
+        let ov = 0;
+        const others = placedList.slice();
+        moves.forEach(mv => { for (const A of mv.pl) for (const B of others) { if (same(A, B)) continue; ov = Math.max(ov, triOverlap(A, B)); } mv.pl.forEach(p => others.push(p)); });
+        if (!best || ov < best.ov - 1e-9) best = { ov, moves };
+        if (ov <= 1e-9) break;
+      }
+      if (best) best.moves.forEach(mv => {
+        apply(mv.x.arc, mv.m.f);
+        mv.x.arc.pl.forEach(p => placedList.push(p));
+        hinges.push({ level: lv, arc: mv.x.arc, u: mv.c.u, v: mv.c.v, A: { ...mv.m.b0 }, B: { ...mv.m.b1 } });
       });
       arcs.filter(a => a.k === k).forEach(a => a.pl.forEach(p => placedTri.set(p.idx, p)));
     }
@@ -245,9 +311,6 @@
     // 5) contrôle : deux triangles posés ne se recouvrent pas (sauf voisins qui
     //    se touchent au même endroit)
     const tris = arcs.flatMap(a => a.pl);
-    const same = (A, B) => A.pointIds.some((id, i) => { const j = B.pointIds.indexOf(id); return j >= 0 && Math.hypot(A.pts[i].x - B.pts[j].x, A.pts[i].y - B.pts[j].y) < 1e-6; });
-    const axesOf = pts => [[0, 1], [1, 2], [2, 0]].map(([i, j]) => { const dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y, L = Math.hypot(dx, dy) || 1; return { x: -dy / L, y: dx / L }; });
-    const proj = (pts, ax) => { let mn = Infinity, mx = -Infinity; pts.forEach(p => { const v = p.x * ax.x + p.y * ax.y; if (v < mn) mn = v; if (v > mx) mx = v; }); return [mn, mx]; };
     let overlap = 0;
     for (let i = 0; i < tris.length; i++) for (let j = i + 1; j < tris.length; j++) {
       const A = tris[i], B = tris[j];
