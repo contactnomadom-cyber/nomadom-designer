@@ -29,7 +29,7 @@ Nomad'Om Designer : conception et fabrication de dômes géodésiques (géométr
 |---|---|
 | `src/core/dome-engine.js` | `engine,arcs,textile,t_beta,t_status,t_kruschke_align` |
 | `src/geometry/ouvertures.js` | `engine,t_beta,t_smoke_quadri` |
-| `src/textile/*`, `src/fabrication/*` | `textile,peel,t_beta,t_laize,t_bottom,t_stale_optim,t_axes_block` |
+| `src/textile/*`, `src/fabrication/*` | `textile,peel,trace,t_beta,t_laize,t_bottom,t_stale_optim,t_axes_block` |
 | `src/app/app.js` | `t_beta` + le test de la zone touchée (`t_status`, `t_names`, `t_cleanup`, `t_laize`…) |
 | `src/products/habitat/*`, `src/rendering/*` | `t_beta,t_smoke_quadri` |
 | `src/products/quadrisphere/*` | `t_smoke_quadri` |

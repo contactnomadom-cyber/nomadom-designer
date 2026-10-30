@@ -134,6 +134,16 @@
   const CHORD_R = 0.3; // contrôle d'angle : marques à 300 mm du sommet sur chaque bord
   function couponLength(sheet) { return Math.ceil(sheet.cutLength * 100 + 1e-9) / 100; } // arrondi au cm supérieur
 
+  // marques sur le mètre : points triés par X croissant (mm), regroupés au même
+  // millimètre ; « close » si la marque précédente est à moins de 5 mm
+  function metreMarks(pts) {
+    const r = pts.map(p => ({ label: p.label, x: mm(p.x), y: mm(p.y) })).sort((a, b) => a.x - b.x || a.y - b.y);
+    const marks = [];
+    r.forEach(p => { const last = marks[marks.length - 1]; if (last && last.x === p.x) last.pts.push(p); else marks.push({ x: p.x, pts: [p] }); });
+    marks.forEach((m, i) => { if (i) { m.gap = m.x - marks[i - 1].x; m.close = m.gap < 5; } });
+    return marks;
+  }
+
   function piecePage(sheet, meta, group) {
     const steps = triangulationSteps(sheet);
     const ctrl = controlMeasures(sheet);
@@ -162,33 +172,27 @@
     h += `<div class="fig">${pieceSvg(sheet, 720, 185)}</div>`;
     h += `<div class="legend">Trait plein = coupe · trait mixte = ligne de couture (points P) · pointillé = pli au droit d'un montant · ↔ = morceau voisin à coudre · A/B = côté recouvrant/recouvert. Schéma non à l'échelle.</div>`;
 
-    // ---- 2. ligne de couture : deux méthodes croisées ----
+    // ---- 2. ligne de couture : au mètre puis à l'équerre ----
+    // Méthode de Nathan (30/10/2026) : le mètre est déroulé UNE fois le long de la
+    // lisière depuis K1 ; on marque tous les X dans l'ordre croissant, puis on
+    // remonte chaque Y à l'équerre. Points au même millimètre de X = une seule
+    // marque ; deux marques à moins de 5 mm sont signalées « ⚠ proche ».
     const XY = p => { const q = onCoupon(p); return `X <b>${mm(q.x)}</b> · Y <b>${mm(q.y)}</b>`; };
-    h += `<h2>2. Tracer la ligne de couture — deux méthodes croisées</h2>`;
-    h += `<div class="tip"><b>Corde</b> : corde fixée sur un point, tendue à la longueur indiquée → arc ; même chose depuis le second point ; le point est au croisement des deux arcs, du côté indiqué. ` +
-      `<b>Équerre</b> : mesurer <b>X</b> le long de la lisière depuis K1, puis <b>Y</b> perpendiculairement à la lisière. ` +
-      `Faire les deux : les deux marques doivent tomber au même endroit (écart ≤ 5 mm). Sinon, voir « En cas d'écart ».</div>`;
-    h += `<table class="steps-x${steps.length > 16 ? ' long' : ''}"><tr><th>Point</th><th>Méthode corde (2 arcs)</th><th>Méthode équerre (depuis K1)</th></tr>`;
-    h += `<tr><td>K1, K2</td><td colspan="2">Les deux coins du coupon le long de la lisière du bas : K1 à gauche, K2 à droite, à ${mm(L)} mm. K1 est l'origine (X = 0, Y = 0).</td></tr>`;
-    steps.forEach(st => {
-      if (st.kind === 'base') {
-        const A = onCoupon(st.a), B = onCoupon(st.b);
-        h += `<tr><td><b>${st.a.label}</b></td><td><b>${mm(d2(K1, A))}</b> de K1 · <b>${mm(d2(K2, A))}</b> de K2 <span class="muted">(dans la toile)</span></td><td>${XY(st.a)}</td></tr>`;
-        h += `<tr><td><b>${st.b.label}</b></td><td><b>${mm(d2(K1, B))}</b> de K1 · <b>${mm(d2(K2, B))}</b> de K2 <span class="muted">· contrôle ${st.a.label}–${st.b.label} = ${mm(st.len)}</span></td><td>${XY(st.b)}</td></tr>`;
-      } else if (st.kind === 'point') {
-        const side = st.opp ? 'opposé à ' + st.opp.label : (st.sideText || '').replace('du côté ', '');
-        h += `<tr><td><b>${st.p.label}</b></td><td><b>${mm(st.from[0][1])}</b> de ${st.from[0][0].label} · <b>${mm(st.from[1][1])}</b> de ${st.from[1][0].label} <span class="muted">→ ${side}</span></td><td>${XY(st.p)}</td></tr>`;
-      } else h += `<tr class="muted"><td>△#${st.tri}</td><td colspan="2">déjà tracé — contrôle ${st.a.label}–${st.b.label} = ${mm(d2(st.a, st.b))}</td></tr>`;
+    const marks = metreMarks(P.map(p => ({ label: p.label, ...onCoupon(p) })));
+    h += `<h2>2. Tracer la ligne de couture — au mètre, puis à l'équerre</h2>`;
+    h += `<div class="tip"><b>1)</b> Poser le mètre sur la lisière, zéro sur <b>K1</b> (coin gauche du coupon ; K2 à ${mm(L)} mm). ` +
+      `<b>2)</b> Marquer sur la lisière toutes les valeurs <b>X</b>, dans l'ordre du tableau, sans reculer. ` +
+      `<b>3)</b> Revenir à chaque marque avec l'équerre et reporter <b>Y</b> perpendiculairement à la lisière. ` +
+      `<b>4)</b> Relier les points dans l'ordre <b>${P.map(p => p.label).join(' → ')} → ${P[0].label}</b> (au cordeau) : c'est la ligne de couture. ` +
+      `Perpendiculaire sans équerre : règle <b>3-4-5</b> (60 cm sur la lisière, 80 cm vers le haut, diagonale 100 cm). Contrôle à la corde : annexe en fin de fiche.</div>`;
+    h += `<table class="steps-x${marks.length > 16 ? ' long' : ''}"><tr><th>Marque</th><th>X sur la lisière (depuis K1)</th><th>Point(s) → Y à l'équerre</th></tr>`;
+    marks.forEach((m, i) => {
+      h += `<tr${m.close ? ' class="close"' : ''}><td>${i + 1}</td><td><b>${m.x} mm</b>${m.close ? ` <span class="warn">⚠ proche (${m.gap} mm de la marque ${i})</span>` : ''}</td>` +
+        `<td>${m.pts.map(q => `<b>${q.label}</b> : Y <b>${q.y} mm</b>`).join(' · ')}</td></tr>`;
     });
     h += `</table>`;
 
     h += `<div class="cols"><div>`;
-    h += `<h3>En cas d'écart entre les deux marques</h3><div class="tip">` +
-      `• La <b>corde</b> garde les bonnes longueurs entre points voisins, mais une erreur se reporte sur tous les points suivants. ` +
-      `• L'<b>équerre</b> place chaque point indépendamment depuis la lisière, sans accumuler d'erreur, mais une équerre mal tenue fausse surtout les grands Y. ` +
-      `→ Si l'écart dépasse 5 mm : refaire les deux mesures. S'il persiste, garder le point <b>équerre</b> et vérifier au ruban la longueur des bords qui y arrivent (colonne corde). ` +
-      `Perpendiculaire sans équerre : règle <b>3-4-5</b> (60 cm sur la lisière, 80 cm vers le haut, la diagonale doit faire 100 cm).</div>`;
-    h += `<div class="tip">Relier les points voisins au cordeau (corde tendue) : c'est la ligne de couture.</div>`;
     h += `<h3>Contrôles des longueurs</h3><table>` + ctrl.map(c => `<tr><td>${c.a.label} – ${c.b.label}</td><td><b>${mm(c.len)} mm</b></td><td class="muted">${c.why}</td></tr>`).join('') + `</table>`;
     const angRows = P.filter(p => Math.abs(p.angle - 180) > 10);
     h += `<h3>Contrôle des angles (à la corde)</h3><div class="tip">Depuis le point, marquer ${mm(CHORD_R)} mm sur chacun des deux bords. L'écart entre les deux marques doit faire la valeur indiquée. Les points non listés sont presque alignés (170° à 190°) : contrôle à la règle.</div>`;
@@ -208,8 +212,30 @@
       const e = g.e;
       h += `<tr><td>${g.from}→${g.to}${g.n > 1 ? ' <span class="muted">(' + g.n + ' bords)</span>' : ''}</td><td>${mm(g.len)}</td><td><b>${mm(e.allowance)}</b> ${SIDE_TXT[e.side]}</td><td>${e.other ? '<b>' + esc(e.other) + '</b>' : (e.kind === 'ourlet' ? 'bas du dôme' : 'lui-même (anneau)')}</td></tr>`;
     });
-    h += `</table><div class="tip">Le plus simple : tracer chaque marge en parallèle à la ligne de couture (deux marques à la règle, reliées au cordeau), puis prolonger jusqu'aux croisements. Les points C ci-dessous servent à vérifier les coins.</div>`;
-    h += `<h3>Trait de coupe (points C) — deux méthodes</h3>`;
+    h += `</table><div class="tip">Le plus simple : tracer chaque marge en parallèle à la ligne de couture (à l'équerre ou à la règle, reliées au cordeau), puis prolonger jusqu'aux croisements. Points de coupe C pour vérifier les coins : annexe.</div>`;
+    h += `</div></div>`;
+    h += `<footer>${esc(meta.seams)} · Nomad'Om Designer Beta · ${esc(meta.date)}</footer></section>`;
+
+    // ---- annexe : contrôle à la corde + points de coupe C ----
+    h += `<section class="page"><header><div><h1>Annexe — ${title}</h1><div class="sub">Contrôle à la corde et points de coupe · ${esc(meta.dome)}</div></div></header>`;
+    h += `<h2>A. Contrôle de la ligne de couture à la corde</h2>`;
+    h += `<div class="tip"><b>Corde</b> : corde fixée sur un point, tendue à la longueur indiquée → arc ; même chose depuis le second point ; le point est au croisement des deux arcs, du côté indiqué. ` +
+      `La corde garde les bonnes longueurs entre points voisins, mais une erreur se reporte sur les points suivants ; l'équerre place chaque point sans cumul d'erreur. ` +
+      `→ Écart de plus de 5 mm avec le point tracé au mètre : refaire les deux mesures ; s'il persiste, garder le point au mètre/équerre et vérifier au ruban les bords qui y arrivent.</div>`;
+    h += `<table class="steps-x${steps.length > 16 ? ' long' : ''}"><tr><th>Point</th><th>Corde (2 arcs)</th><th>Rappel X / Y</th></tr>`;
+    h += `<tr><td>K1, K2</td><td colspan="2">Coins du coupon le long de la lisière du bas, K1 à gauche, K2 à droite, à ${mm(L)} mm.</td></tr>`;
+    steps.forEach(st => {
+      if (st.kind === 'base') {
+        const A = onCoupon(st.a), B = onCoupon(st.b);
+        h += `<tr><td><b>${st.a.label}</b></td><td><b>${mm(d2(K1, A))}</b> de K1 · <b>${mm(d2(K2, A))}</b> de K2 <span class="muted">(dans la toile)</span></td><td>${XY(st.a)}</td></tr>`;
+        h += `<tr><td><b>${st.b.label}</b></td><td><b>${mm(d2(K1, B))}</b> de K1 · <b>${mm(d2(K2, B))}</b> de K2 <span class="muted">· contrôle ${st.a.label}–${st.b.label} = ${mm(st.len)}</span></td><td>${XY(st.b)}</td></tr>`;
+      } else if (st.kind === 'point') {
+        const side = st.opp ? 'opposé à ' + st.opp.label : (st.sideText || '').replace('du côté ', '');
+        h += `<tr><td><b>${st.p.label}</b></td><td><b>${mm(st.from[0][1])}</b> de ${st.from[0][0].label} · <b>${mm(st.from[1][1])}</b> de ${st.from[1][0].label} <span class="muted">→ ${side}</span></td><td>${XY(st.p)}</td></tr>`;
+      } else h += `<tr class="muted"><td>△#${st.tri}</td><td colspan="2">déjà tracé — contrôle ${st.a.label}–${st.b.label} = ${mm(d2(st.a, st.b))}</td></tr>`;
+    });
+    h += `</table>`;
+    h += `<h2>B. Trait de coupe (points C) — vérification des coins</h2>`;
     h += `<table class="small"><tr><th>Point</th><th>Corde (dehors du bord)</th><th>Équerre</th></tr>`;
     sheet.cut.forEach((c, i) => {
       const near = P.map(p => ({ p, d: d2(p, c) })).sort((u, v) => u.d - v.d);
@@ -218,8 +244,7 @@
       h += `<tr><td>C${i + 1}</td><td><b>${mm(d2(a, c))}</b> de ${a.label} · <b>${mm(d2(nb, c))}</b> de ${nb.label}</td><td>${XY(c)}</td></tr>`;
     });
     h += `</table>`;
-    h += `</div></div>`;
-    h += `<footer>${esc(meta.seams)} · Nomad'Om Designer Beta · ${esc(meta.date)}</footer></section>`;
+    h += `<footer>${esc(meta.seams)} · Nomad'Om Designer Beta · ${esc(meta.date)} · annexe</footer></section>`;
     return h;
   }
 
@@ -293,6 +318,7 @@
     .cols{ display:grid; grid-template-columns: 1fr 1.15fr; gap: 0 14px; }
     table{ border-collapse: collapse; width: 100%; } th, td{ text-align:left; padding: 1.5px 4px; border-bottom: 0.5px solid #ddd; font-weight: normal; }
     th{ color:#555; border-bottom: 1px solid #888; } table.small td, table.small th{ padding: 1px 4px; font-size: 8.5pt; }
+    tr.close td{ background:#fff4e0; } .warn{ color:#b25b00; font-weight:600; font-size:8pt; }
     table.steps-x td, table.steps-x th{ padding: 1px 6px 1px 0; font-size: 8.6pt; } table.steps-x.long td{ font-size: 8pt; padding: 1px 6px 1px 0; }
     ol.steps{ margin: 0; padding-left: 24px; font-size: 9pt; } ol.steps li{ margin: 0.5px 0; } ol.steps.long{ font-size: 8pt; }
     .muted{ color:#777; }
@@ -314,7 +340,7 @@
     return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc(meta.title)}</title><style>${CSS}</style></head><body>${body}</body></html>`;
   }
 
-  const Export = { couponLength, tracingDocument, triangulationSteps, controlMeasures, pieceSvg };
+  const Export = { couponLength, tracingDocument, triangulationSteps, controlMeasures, pieceSvg, metreMarks };
   if (typeof module !== 'undefined' && module.exports) module.exports = Export;
   else global.CoverExport = Export;
 })(typeof window !== 'undefined' ? window : globalThis);

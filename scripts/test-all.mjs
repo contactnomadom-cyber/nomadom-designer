@@ -27,6 +27,7 @@ const suites = [
   { key: 'engine', name: 'Moteur (2 références, 867 combinaisons)', cmd: ['node', [N('engine.test.js'), MODS]] },
   { key: 'arcs', name: 'Arcs contre Antiprism', cmd: ['node', [N('arcs.test.js'), MODS]] },
   { key: 'textile', name: 'Toile ' + (quick ? '2V–3V' : '1V–3V'), cmd: ['node', [N('textile.test.js'), MODS, '--v=' + (quick ? '2,3' : '1,2,3')]] },
+  { key: 'trace', name: 'Fiche de traçage (au mètre puis à l\'équerre)', cmd: ['node', [N('trace.test.js'), MODS]] },
   { key: 'peel', name: 'Pelure d\'orange (fentes suivant les gabarits)', cmd: ['node', [N('peel.test.js'), MODS]] }
 ];
 const browser = quick ? ['t_beta.py', 't_status.py', 't_names.py']

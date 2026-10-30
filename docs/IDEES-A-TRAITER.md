@@ -43,5 +43,17 @@ Statuts : 💡 idée · ❓ questions ouvertes · ⏸ en suspens · 🛠 en cour
 
 ---
 
+## 3. Marge de coupe = largeur de l'équerre (30 mm) — 💡 (30/10/2026)
+
+**Constat** : en atelier, Nathan trace la marge avec son équerre de **3 cm** de large, parallèle à la ligne de couture ; il utilise peu les points de coupe C. L'appli calcule par défaut avec 20 mm (couture simple) : contrôle de laize et placement sur le rouleau faits avec une marge plus petite que la réalité.
+
+**Décidé** : à voir plus tard ; idée retenue = une marge **réglée automatiquement comme point de repère** (largeur de l'équerre), **modifiable** selon la laize disponible et la largeur des rouleaux.
+
+**Questions ouvertes ❓**
+1. 30 mm partout (A et B), ou seulement côté B / seulement là où il trace à l'équerre ?
+2. Si un morceau ne tient plus dans la laize à 30 mm : réduire la marge sur ce morceau (comme déjà fait pour la rangée du bas) ou changer la découpe ?
+
+---
+
 ## Fait
 - ✅ 0.9.12 — Pelure « 5 fentes — suivant les gabarits (zigzag) » ; découpe « axes » gardée avec avertissement et sans document de fabrication ; ADR-0002 étanchéité avant tout.
