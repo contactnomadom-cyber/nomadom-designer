@@ -32,7 +32,10 @@ const suites = [
   { key: 'unfold', name: 'Développement 2D (triangles de base, dépliage)', cmd: ['node', [N('unfold.test.js'), MODS]] },
   { key: 'status', name: 'Statuts 🟢🟡🟠🔴', cmd: ['node', [N('status.test.js'), MODS]] },
   { key: 'plan', name: 'Règles du plan de coupe (laize, rangée du bas, comparatif, CSV)', cmd: ['node', [N('plan-rules.test.js'), MODS]] },
-  { key: 'design', name: 'Aménagement Design : contrôle des imports (M1)', cmd: ['node', [N('design-import.test.js'), MODS]] }
+  { key: 'design', name: 'Aménagement Design : contrôle des imports (M1)', cmd: ['node', [N('design-import.test.js'), MODS]] },
+  // Kumiko n'est pas encore dans le HTML assemblé : testé depuis les sources (NOMAD-2026-002).
+  // Le jour où « kumiko-src » entre dans build/manifest.json, remplacer le dossier par MODS.
+  { key: 'kumiko', name: 'Panneaux Kumiko (sources, hors HTML)', cmd: ['node', [N('kumiko.test.js'), path.join(root, 'src/products/habitat')]] }
 ];
 const browser = quick ? ['t_beta.py', 't_status.py', 't_names.py']
   : ['t_beta.py', 't_status.py', 't_names.py', 't_cleanup.py', 't_laize.py', 't_bottom.py', 't_kruschke_align.py', 't_stale_optim.py', 't_smoke_quadri.py', 't_axes_block.py', 't_openings.py', 't_diameter.py', 't_design_import.py'];
