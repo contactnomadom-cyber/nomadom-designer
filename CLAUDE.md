@@ -13,7 +13,7 @@ Nomad'Om Designer : conception et fabrication de dômes géodésiques (géométr
 ## Économie de tokens (obligatoire)
 - **Ne jamais lire en entier** : `vendor/` (Three.js, 733 ko), `dist/`, `build/check/`, `docs/audits/` (rapports longs, à consulter par recherche).
 - Trouver avant de lire : `node scripts/code-map.mjs` (carte), `node scripts/code-map.mjs app` (fonctions d'un module), `node scripts/code-map.mjs -f nomFonction`, `git grep -n "motif"`. Puis lire **seulement** les lignes utiles (offset/limit).
-- `src/app/app.js` (≈ 2 600 lignes) : jamais en entier.
+- `src/app/app.js` (≈ 2 300 lignes) : jamais en entier. Il n'affiche que : l'état du projet vit dans l'objet dôme `ds` (`src/core/dome-state.js`), les calculs dans les modules.
 - Ne pas relire ce qui est déjà dans la conversation ; ne pas relancer un test sans changement pertinent.
 - Les copies de modules et de tests dans le projet Claude « Acidome Cover+ » sont **historiques** : ne pas les lire pour coder.
 - Périmètre strict : ne modifier que ce que la tâche demande ; aucune refactorisation ni renommage hors périmètre.
@@ -32,9 +32,12 @@ Nomad'Om Designer : conception et fabrication de dômes géodésiques (géométr
 ## Quels tests selon les fichiers modifiés
 | Fichiers modifiés | `--only` |
 |---|---|
-| `src/core/dome-engine.js` | `engine,arcs,textile,t_beta,t_status,t_kruschke_align` |
-| `src/geometry/ouvertures.js` | `engine,t_beta,t_smoke_quadri` |
-| `src/textile/*`, `src/fabrication/*` | `textile,peel,t_beta,t_laize,t_bottom,t_stale_optim,t_axes_block` |
+| `src/core/dome-engine.js` | `engine,arcs,textile,unfold,status,plan,t_beta,t_status,t_kruschke_align` |
+| `src/core/dome-state.js` | `state,t_beta,t_stale_optim,t_openings` |
+| `src/core/status.js` | `status,t_status,t_axes_block,t_beta` |
+| `src/geometry/unfold.js` | `unfold,t_cleanup,t_beta` |
+| `src/geometry/ouvertures.js` | `engine,t_beta,t_smoke_quadri,t_openings` |
+| `src/textile/*`, `src/fabrication/*` | `textile,peel,plan,t_beta,t_laize,t_bottom,t_stale_optim,t_axes_block` |
 | `src/app/app.js` | `t_beta` + le test de la zone touchée (`t_status`, `t_names`, `t_cleanup`, `t_laize`…) |
 | `src/products/habitat/*`, `src/rendering/*` | `t_beta,t_smoke_quadri` |
 | `src/products/quadrisphere/*` | `t_smoke_quadri` |
