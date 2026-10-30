@@ -32,7 +32,7 @@ Contraintes :
 | Contrôle rapide | `node scripts/test-all.mjs --quick` (environ 3 min), ne vaut pas feu vert | — |
 | Feu vert de publication | `node scripts/release.mjs` refuse si le HTML de `dist/` n'est pas exactement celui qui a passé le contrôle complet (fichier `build/check/PASS`) | lire le script |
 | Essais déjà faits | 12 suites sur 12 OK ; une erreur volontaire de 1 mm sur le dôme de référence fait échouer le contrôle ; un contrôle partiel bloque la publication | `docs/validation/` |
-| Règles des sessions | Dans `README.md` (branche par chantier, une seule session intégratrice, `dist/` jamais modifié à la main, aucun test affaibli) | `README.md` |
+| Règles des sessions | Dans `CLAUDE.md` (branche par chantier, une seule session intégratrice, `dist/` jamais modifié à la main, aucun test affaibli) ; le `README.md` y renvoie *(corrigé le 30/10/2026, mission NOMAD-2026-001 : la source de référence n'est plus `README.md`)* | `CLAUDE.md` |
 | Décisions | `docs/architecture/ADR-0001-depot-et-assemblage.md` : code en anglais, interface en français, Cover+ gardé, unités internes en mètres | ADR |
 | Glossaire | `docs/glossary.md` | — |
 | Versions | Les étiquettes Git **ne peuvent pas** être poussées depuis les sessions (refus HTTP 403 du proxy) ; une version = un commit « Version X.Y.Z » + `CHANGELOG.md` | `README.md` |

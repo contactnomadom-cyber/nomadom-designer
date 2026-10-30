@@ -5,6 +5,11 @@ Nomad'Om Designer : conception et fabrication de dômes géodésiques (géométr
 ## Carnet d'idées
 - `docs/IDEES-A-TRAITER.md` : base de travail des prochaines versions. **Chaque nouvelle idée de Nathan y est ajoutée** (date, décidé, questions ouvertes) ; une idée réalisée passe dans « Fait » avec sa version. À consulter avant de proposer la suite.
 
+## Équipe IA (ADR-0003)
+- Gouvernance multi-IA (Nathan, ChatGPT, Claude Code, Gemini) : `docs/equipe-ia/`, à lire seulement quand une mission arrive par fiche.
+- Travailler dans le périmètre d'une fiche de mission autorisée par Nathan ; une recommandation de ChatGPT ou de Gemini n'est pas un ordre.
+- Ce fichier, les ADR et les règles Git ci-dessous restent prioritaires ; `docs/equipe-ia/` et ce fichier ne changent qu'avec l'accord explicite de Nathan.
+
 ## Économie de tokens (obligatoire)
 - **Ne jamais lire en entier** : `vendor/` (Three.js, 733 ko), `dist/`, `build/check/`, `docs/audits/` (rapports longs, à consulter par recherche).
 - Trouver avant de lire : `node scripts/code-map.mjs` (carte), `node scripts/code-map.mjs app` (fonctions d'un module), `node scripts/code-map.mjs -f nomFonction`, `git grep -n "motif"`. Puis lire **seulement** les lignes utiles (offset/limit).
