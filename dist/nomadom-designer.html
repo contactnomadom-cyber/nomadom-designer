@@ -5110,12 +5110,23 @@ three/build/three.module.js:
   function seamWeightFromInput(cm) { return Math.max(0, parseFloat(cm) || 0) / 100; }
 
   // Nouvel objet dôme, vide.
+  //  fabric.laize      : laize du rouleau.
+  //  fabric.selvage    : lisière inutilisable de chaque bord du rouleau.
+  //  fabric.usable     : largeur utile = laize − 2 × lisière. Le CONTOUR DE COUPE
+  //                      (marges comprises) d'un morceau doit y tenir.
+  //  fabric.seam       : marges A (côté recouvrant), B (côté recouvert), ourlet bas, rangée du bas.
+  //  fabric.overlapTol : tolérance de chevauchement lors du dépliage d'un groupe.
   function create() {
     return {
       gen: 0,                 // numéro de génération (augmente à chaque recalcul)
-      domes: { nominal: null, cloth: null, struct: null, active: null },
+      nominal: null,          // dôme de la structure (nœud à nœud)
+      cloth: null,            // dôme toile complet (avant ouverture)
+      struct: null,           // dôme structure avec ouvertures (onglets Base et Design)
+      dome: null,             // dôme toile avec ouvertures : celui que Cover+ découpe
       fabric: fabricFromInputs(DEFAULT_FABRIC_INPUTS),
       seamWeight: seamWeightFromInput(10),
+      // Le contour est mémorisé en étiquettes de nœuds (N1–N6…) : les identifiants
+      // internes changent à chaque calcul, les étiquettes non (même dôme, autre Ø).
       openings: { labels: [], forKey: null, result: null }
     };
   }
@@ -5124,8 +5135,7 @@ three/build/three.module.js:
   // Toute modification invalide « moins de toile » et le comparatif.
   // Identique caractère pour caractère à cutKey() de la 0.9.12.
   function key(state) {
-    const nominal = state.domes.nominal, active = state.domes.active;
-    const p = (nominal && nominal.params) || {};
+    const p = (state.nominal && state.nominal.params) || {}, active = state.dome;
     return ['g' + state.gen, p.base, p.subdivClass, p.detail, p.subdivMethod, p.symmetry, p.partial, p.alignTheBase ? 1 : 0,
       p.radius, active && active.offset ? active.offset.h : 0,
       JSON.stringify(state.fabric), state.seamWeight].join('|');
@@ -8409,7 +8419,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   // ---------------------------------------------------------
   // Génération du dôme via le moteur validé
   // ---------------------------------------------------------
-  let dome = null;
+  // Objet dôme unique (A10) : tout l'état du projet courant — géométrie, toile, ouvertures,
+  // dômes calculés. Source de vérité unique : src/core/dome-state.js.
+  const ds = DomeState.create();
   let rotY = 0.55, rotX = 0.35;
   let zoom = 1;
   let dragging = false, lastX = 0, lastY = 0, dragStartX = 0, dragStartY = 0, dragMoved = false;
@@ -8436,18 +8448,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     if (m !== 'etages' && m !== 'rouleau' && m !== 'flat' && panels.length) updatePanelsReadout();
   }
 
-  let domeGen = 0;             // numéro de génération du dôme (clé de découpe)
-  // --- Ouvertures (Lot 4, étape 1) ---
-  // Le contour est mémorisé en étiquettes de nœuds (N1–N6…) : les identifiants
-  // internes changent à chaque calcul, les étiquettes non (même dôme, autre Ø).
+  // --- Ouvertures (Lot 4, étape 1) : contour et résultat dans ds.openings ---
   let openTrace = false;       // mode « tracer le contour » actif
-  let openLabels = [];         // [['N1','N6'], …] montants du contour
-  let openFor = null;          // réglages du dôme auxquels le contour se rapporte
-  let openRes = null;          // résultat de Ouvertures.analyse
-  let domeCloth = null;        // dôme toile complet (avant ouverture)
-  let domeStruct = null;       // dôme structure avec ouvertures (onglets Base et Design)
   let hoverStrut = null;
-  let domeNominal = null;      // dôme de la structure (nœud à nœud)
   // ---------------------------------------------------------
   // Onglet Base : listes d'options comme ACIDOME (méthodes selon la
   // fréquence, découpages p / 4V, alignement de la base si possible)
@@ -8501,7 +8504,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     const radius = diameter / 2;
     const bp = baseParams(), V = bp.detail;
     try {
-      domeNominal = DomeEngine.generateDome(Object.assign({ base: 'Icosahedron', subdivClass: 'I', radius }, bp));
+      ds.nominal = DomeEngine.generateDome(Object.assign({ base: 'Icosahedron', subdivClass: 'I', radius }, bp));
       $id('baseWarn').innerHTML = '';
     } catch (err) {
       if (err.code === 'ALIGN_FLIP') {
@@ -8519,12 +8522,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     const gk = document.getElementById('paramStructure').value === 'goodkarma';
     document.getElementById('paramSupportH').disabled = !gk;
     const h = (parseFloat(document.getElementById('paramSupportH').value) || 0) / 1000;
-    domeCloth = (gk && h > 0) ? Toile.offsetDome(domeNominal, h) : domeNominal;
+    ds.cloth = (gk && h > 0) ? Toile.offsetDome(ds.nominal, h) : ds.nominal;
     const forKey = JSON.stringify([bp.detail, bp.subdivMethod, bp.symmetry, bp.partial, bp.alignTheBase]);
-    if (openFor !== forKey) { openLabels = []; openFor = forKey; }  // autre géométrie : le contour n'a plus de sens
+    if (ds.openings.forKey !== forKey) { ds.openings.labels = []; ds.openings.forKey = forKey; }  // autre géométrie : le contour n'a plus de sens
     computeOpenings();
     updateOpeningsReadout();
-    domeGen++;
+    ds.gen++;
 
     const keep = mode2D;
     selection.clear();
@@ -8545,20 +8548,20 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   }
 
   function openKeys(){
-    const byLab = new Map([...Ouvertures.nodeLabels(domeNominal)].map(([id, l]) => [l, id]));
-    const S = Ouvertures.strutIndex(domeNominal);
-    return openLabels.map(([a, b]) => Ouvertures.edgeKey(byLab.get(a), byLab.get(b))).filter(k => S.has(k));
+    const byLab = new Map([...Ouvertures.nodeLabels(ds.nominal)].map(([id, l]) => [l, id]));
+    const S = Ouvertures.strutIndex(ds.nominal);
+    return ds.openings.labels.map(([a, b]) => Ouvertures.edgeKey(byLab.get(a), byLab.get(b))).filter(k => S.has(k));
   }
   function computeOpenings(){
     const keys = openKeys();
-    openRes = keys.length ? Ouvertures.analyse(domeNominal, keys) : null;
-    dome = Ouvertures.applyToDome(domeCloth, openRes);
-    domeStruct = Ouvertures.structureDome(domeNominal, openRes);
+    ds.openings.result = keys.length ? Ouvertures.analyse(ds.nominal, keys) : null;
+    ds.dome = Ouvertures.applyToDome(ds.cloth, ds.openings.result);
+    ds.struct = Ouvertures.structureDome(ds.nominal, ds.openings.result);
   }
   // contour modifié : on recalcule le dôme toile et on vide les découpes en cache
   function openingsChanged(){
     computeOpenings();
-    domeGen++;
+    ds.gen++;
     selection.clear();
     etagesCache = null; nestCache = null; peelLayout = null; hlType = null;
     if (selectedPiece) selectPiece(null);
@@ -8569,9 +8572,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     else if (infoVisible()) renderInfo(); else { render(); render2D(); }
   }
   function toggleStrut(key){
-    const L = Ouvertures.nodeLabels(domeNominal), pair = key.split('-').map(id => L.get(+id)).sort();
-    const i = openLabels.findIndex(p => p[0] === pair[0] && p[1] === pair[1]);
-    if (i >= 0) openLabels.splice(i, 1); else openLabels.push(pair);
+    const L = Ouvertures.nodeLabels(ds.nominal), pair = key.split('-').map(id => L.get(+id)).sort();
+    const i = ds.openings.labels.findIndex(p => p[0] === pair[0] && p[1] === pair[1]);
+    if (i >= 0) ds.openings.labels.splice(i, 1); else ds.openings.labels.push(pair);
     openingsChanged();
   }
   function setOpenTrace(on){
@@ -8588,28 +8591,28 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   // ----- vue de tracé (onglet Base) : maillage en fil de fer, on pointe les montants -----
   let btCam = { yaw: 0.6, pitch: 0.35, zoom: 1 }, btProj = null, btHover = null, btDrag = null, btMoved = false;
   function btProject(p, W, H){
-    const R = domeNominal.params.radius, sc = Math.min(W, H) / (2.6 * R) * btCam.zoom;
+    const R = ds.nominal.params.radius, sc = Math.min(W, H) / (2.6 * R) * btCam.zoom;
     const cy = Math.cos(btCam.yaw), sy = Math.sin(btCam.yaw), cp = Math.cos(btCam.pitch), sp = Math.sin(btCam.pitch);
     const x1 = p.x * cy + p.z * sy, z1 = p.z * cy - p.x * sy, y = p.y - R * 0.3;
     return { sx: W / 2 + x1 * sc, sy: H * 0.55 - (y * cp - z1 * sp) * sc, sz: z1 * cp + y * sp };
   }
   function renderBaseTrace(){
-    const cv = $id('baseTrace'); if (!openTrace || !domeNominal || cv.style.display === 'none') return;
+    const cv = $id('baseTrace'); if (!openTrace || !ds.nominal || cv.style.display === 'none') return;
     const r = cv.getBoundingClientRect(), dpr = devicePixelRatio;
     cv.width = r.width * dpr; cv.height = r.height * dpr;
     const W = cv.width, H = cv.height, g = cv.getContext('2d');
     g.clearRect(0, 0, W, H);
-    const P = new Map(domeNominal.points.map(p => [p._id, btProject(p, W, H)])); btProj = P;
-    const D = domeStruct || domeNominal;
+    const P = new Map(ds.nominal.points.map(p => [p._id, btProject(p, W, H)])); btProj = P;
+    const D = ds.struct || ds.nominal;
     D.faces.map(f => ({ f, z: f.pointIds.reduce((a, id) => a + P.get(id).sz, 0) / 3 })).sort((a, b) => a.z - b.z).forEach(({ f, z }) => {
       const q = f.pointIds.map(id => P.get(id));
       g.beginPath(); g.moveTo(q[0].sx, q[0].sy); g.lineTo(q[1].sx, q[1].sy); g.lineTo(q[2].sx, q[2].sy); g.closePath();
       g.fillStyle = z < 0 ? 'rgba(150,180,205,0.18)' : 'rgba(150,180,205,0.55)'; g.fill();
     });
     const traced = new Set(openKeys());
-    const frame = new Set(openRes && openRes.ok ? openRes.frame.map(x => x.key) : []);
-    const gone = new Set(openRes && openRes.ok ? [...openRes.removed, ...openRes.seuil].map(x => x.key) : []);
-    domeNominal.lines.map(l => { const k = Ouvertures.edgeKey(l.pointIds[0], l.pointIds[1]), a = P.get(l.pointIds[0]), b = P.get(l.pointIds[1]);
+    const frame = new Set(ds.openings.result && ds.openings.result.ok ? ds.openings.result.frame.map(x => x.key) : []);
+    const gone = new Set(ds.openings.result && ds.openings.result.ok ? [...ds.openings.result.removed, ...ds.openings.result.seuil].map(x => x.key) : []);
+    ds.nominal.lines.map(l => { const k = Ouvertures.edgeKey(l.pointIds[0], l.pointIds[1]), a = P.get(l.pointIds[0]), b = P.get(l.pointIds[1]);
       return { k, a, b, z: (a.sz + b.sz) / 2, sel: l.selvage }; }).sort((u, v) => u.z - v.z).forEach(({ k, a, b, z, sel }) => {
       let col = z < 0 ? 'rgba(28,31,34,0.16)' : 'rgba(28,31,34,0.55)', w = sel ? 2.2 : 1.3, dash = [];
       if (gone.has(k)) { col = '#b23a2f'; w = 2.2; dash = [6, 4]; }
@@ -8626,7 +8629,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     const cv = $id('baseTrace'), r = cv.getBoundingClientRect(), dpr = devicePixelRatio;
     const mx = (ev.clientX - r.left) * dpr, my = (ev.clientY - r.top) * dpr;
     let best = null, bs = Infinity;
-    domeNominal.lines.forEach(l => {
+    ds.nominal.lines.forEach(l => {
       const a = btProj.get(l.pointIds[0]), b = btProj.get(l.pointIds[1]);
       const dx = b.sx - a.sx, dy = b.sy - a.sy, t = Math.max(0, Math.min(1, ((mx - a.sx) * dx + (my - a.sy) * dy) / (dx * dx + dy * dy || 1)));
       const d = Math.hypot(mx - (a.sx + t * dx), my - (a.sy + t * dy));
@@ -8649,7 +8652,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       const k = pickBaseStrut(e);
       if (k !== btHover) {
         btHover = k;
-        const st = k && Ouvertures.strutIndex(domeNominal).get(k), L = Ouvertures.nodeLabels(domeNominal);
+        const st = k && Ouvertures.strutIndex(ds.nominal).get(k), L = Ouvertures.nodeLabels(ds.nominal);
         $id('baseInfo3d').textContent = st ? k.split('-').map(id => L.get(+id)).join('–') + ' · ' + st.cls + ' · ' + (st.length * 1000).toFixed(1) + ' mm' + (st.selvage ? ' · bord bas' : '') : domeLabel();
         renderBaseTrace();
       }
@@ -8659,20 +8662,20 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     window.addEventListener('resize', renderBaseTrace);
   }
   function updateOpeningsReadout(){
-    const L = Ouvertures.nodeLabels(domeNominal);
+    const L = Ouvertures.nodeLabels(ds.nominal);
     const lab = k => k.split('-').map(id => L.get(+id)).join('–');
     const mm = v => (v * 1000).toFixed(1) + ' mm', m2 = v => v.toFixed(2) + ' m²';
     const cls = o => Object.keys(o).sort().map(k => o[k] + '×' + k).join(' · ') || '—';
-    const ok = openRes && openRes.ok;
+    const ok = ds.openings.result && ds.openings.result.ok;
     const body = editable => {
       let h = '';
-      if (!openLabels.length) h += '<div class="op-status">' + (editable ? 'Cliquez sur « Tracer les ouvertures », puis sur les montants qui entourent l\'ouverture. Le contour doit se refermer, ou finir sur le bord bas (porte : le sol ferme le contour).' : 'Aucune ouverture.') + '</div>';
-      else if (!ok) h += '<div class="op-status err">' + openRes.errors.join('<br>') + ' Tant que le contour n\'est pas fermé, la structure, la toile et le design l\'ignorent.</div>';
-      else h += '<div class="op-status ok">' + openRes.openings.length + ' ouverture' + (openRes.openings.length > 1 ? 's' : '') + ' · ' +
-        openRes.openFaces.length + ' triangle' + (openRes.openFaces.length > 1 ? 's' : '') + ' retiré' + (openRes.openFaces.length > 1 ? 's' : '') +
+      if (!ds.openings.labels.length) h += '<div class="op-status">' + (editable ? 'Cliquez sur « Tracer les ouvertures », puis sur les montants qui entourent l\'ouverture. Le contour doit se refermer, ou finir sur le bord bas (porte : le sol ferme le contour).' : 'Aucune ouverture.') + '</div>';
+      else if (!ok) h += '<div class="op-status err">' + ds.openings.result.errors.join('<br>') + ' Tant que le contour n\'est pas fermé, la structure, la toile et le design l\'ignorent.</div>';
+      else h += '<div class="op-status ok">' + ds.openings.result.openings.length + ' ouverture' + (ds.openings.result.openings.length > 1 ? 's' : '') + ' · ' +
+        ds.openings.result.openFaces.length + ' triangle' + (ds.openings.result.openFaces.length > 1 ? 's' : '') + ' retiré' + (ds.openings.result.openFaces.length > 1 ? 's' : '') +
         ' · structure, toile (Cover+) et design suivent</div>';
-      if (openRes && editable) openRes.warnings.forEach(w => h += '<div class="op-warn">' + w + '</div>');
-      if (ok) openRes.openings.forEach(o => {
+      if (ds.openings.result && editable) ds.openings.result.warnings.forEach(w => h += '<div class="op-warn">' + w + '</div>');
+      if (ok) ds.openings.result.openings.forEach(o => {
         h += '<div class="op-card"><h4>Ouverture ' + o.n + (o.closedByGround ? ' · fermée par le sol (porte)' : '') + '</h4><dl>' +
           '<dt>Triangles (n° du dôme plein)</dt><dd>' + o.faces.join(', ') + '</dd>' +
           '<dt>Surface de toile retirée</dt><dd>' + m2(o.area) + '</dd>' +
@@ -8684,7 +8687,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
           '</dl></div>';
       });
       if (editable) {
-        h += '<h4>Contour tracé (' + openLabels.length + ' montants)</h4><div class="small-ids">' + (openKeys().map(lab).join(' · ') || '—') + '</div>';
+        h += '<h4>Contour tracé (' + ds.openings.labels.length + ' montants)</h4><div class="small-ids">' + (openKeys().map(lab).join(' · ') || '—') + '</div>';
         h += '<div class="op-legend"><span><i style="background:#d8912b"></i>contour tracé</span><span><i style="background:#2b5a8a"></i>cadre de l\'ouverture</span><span><i style="background:#b23a2f"></i>montant retiré</span></div>';
       }
       return h;
@@ -8692,15 +8695,15 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     // Base : fiche complète, avec les commandes
     const eb = $id('baseOpenings');
     eb.innerHTML = '<div class="sheet-head"><b>Ouvertures</b>' +
-      (openLabels.length ? '<button id="opClear" class="ghost">Effacer toutes les ouvertures</button>' : '') +
+      (ds.openings.labels.length ? '<button id="opClear" class="ghost">Effacer toutes les ouvertures</button>' : '') +
       '<span class="muted">porte, fenêtre, coupole : on trace le contour sur les montants</span></div>' + body(true);
-    if ($id('opClear')) $id('opClear').onclick = () => { openLabels = []; openingsChanged(); };
+    if ($id('opClear')) $id('opClear').onclick = () => { ds.openings.labels = []; openingsChanged(); };
     // Cover+ : lecture seule
     const ec = $id('openingsReadout');
-    if (!openLabels.length) { ec.style.display = 'none'; return; }
+    if (!ds.openings.labels.length) { ec.style.display = 'none'; return; }
     ec.style.display = '';
     ec.innerHTML = '<div class="sheet-head"><b>Ouvertures</b><button id="opGoBase" class="ghost">Modifier dans l\'onglet Base</button>' +
-      '<span class="muted">les triangles ouverts sont retirés de toutes les découpes · numéros de triangles renumérotés (' + dome.faces.length + ' △)</span></div>' + body(false);
+      '<span class="muted">les triangles ouverts sont retirés de toutes les découpes · numéros de triangles renumérotés (' + ds.dome.faces.length + ' △)</span></div>' + body(false);
     $id('opGoBase').onclick = () => showView('base');
   }
   function pickStrut(evtX, evtY){
@@ -8708,7 +8711,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     const rect = canvas.getBoundingClientRect();
     const mx = (evtX - rect.left) * devicePixelRatio, my = (evtY - rect.top) * devicePixelRatio;
     let best = null, bs = Infinity;
-    domeNominal.lines.forEach(l => {
+    ds.nominal.lines.forEach(l => {
       const a = P.get(l.pointIds[0]), b = P.get(l.pointIds[1]); if (!a || !b) return;
       const dx = b.sx - a.sx, dy = b.sy - a.sy, t = Math.max(0, Math.min(1, ((mx - a.sx) * dx + (my - a.sy) * dy) / (dx * dx + dy * dy || 1)));
       const d = Math.hypot(mx - (a.sx + t * dx), my - (a.sy + t * dy));
@@ -8719,11 +8722,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     return best;
   }
   function drawOpenings(projected){
-    if (!(openRes && openRes.ok)) return;
+    if (!(ds.openings.result && ds.openings.result.ok)) return;
     const traced = new Set(openKeys());
-    const frame = new Set(openRes && openRes.ok ? openRes.frame.map(s => s.key) : []);
-    const gone = new Set(openRes && openRes.ok ? [...openRes.removed, ...openRes.seuil].map(s => s.key) : []);
-    domeNominal.lines.map(l => {
+    const frame = new Set(ds.openings.result && ds.openings.result.ok ? ds.openings.result.frame.map(s => s.key) : []);
+    const gone = new Set(ds.openings.result && ds.openings.result.ok ? [...ds.openings.result.removed, ...ds.openings.result.seuil].map(s => s.key) : []);
+    ds.nominal.lines.map(l => {
       const k = Ouvertures.edgeKey(l.pointIds[0], l.pointIds[1]), a = projected.get(l.pointIds[0]), b = projected.get(l.pointIds[1]);
       return { k, a, b, z: (a.sz + b.sz) / 2 };
     }).sort((u, v) => u.z - v.z).forEach(({ k, a, b, z }) => {
@@ -8739,17 +8742,17 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   }
 
   function updateStats(){
-    document.getElementById('statPoints').textContent = dome.stats.pointCount;
-    document.getElementById('statLines').textContent = (domeStruct || dome).stats.lineCount;
-    document.getElementById('statFaces').textContent = dome.stats.faceCount;
-    document.getElementById('statSelvage').textContent = (domeStruct || dome).stats.selvageCount;
+    document.getElementById('statPoints').textContent = ds.dome.stats.pointCount;
+    document.getElementById('statLines').textContent = (ds.struct || ds.dome).stats.lineCount;
+    document.getElementById('statFaces').textContent = ds.dome.stats.faceCount;
+    document.getElementById('statSelvage').textContent = (ds.struct || ds.dome).stats.selvageCount;
 
     const el = document.getElementById('edgeClasses');
     el.innerHTML = '';
-    domeNominal.edgeClasses.forEach(g => {
+    ds.nominal.edgeClasses.forEach(g => {
       const chip = document.createElement('div');
       chip.className = 'chip';
-      const t = dome.offset ? dome.edgeClasses.find(c => c.name === g.name) : null;
+      const t = ds.dome.offset ? ds.dome.edgeClasses.find(c => c.name === g.name) : null;
       chip.innerHTML = '<b>' + g.name + '</b> = ' + (g.length*1000).toFixed(2) + ' mm &nbsp;(×' + g.count + ')' +
         (t ? ' &nbsp;→ toile ' + (t.length*1000).toFixed(1) + ' mm' : '');
       el.appendChild(chip);
@@ -8781,22 +8784,22 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   const PIECE_COLORS = [[216,145,43],[95,150,200],[120,175,110],[200,110,120],[160,130,200],[90,170,170],[205,180,90],[150,150,150]];
 
   function render(){
-    if (!dome) return;
+    if (!ds.dome) return;
     resizeCanvas();
     const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
 
-    const radius = dome.params.radius;
+    const radius = ds.dome.params.radius;
     const scale = (Math.min(W, H) / (radius * 2.6)) * zoom;
     const cx = W / 2, cy = H / 2 + Math.min(W,H) * 0.06;
 
     const projected = new Map();
-    dome.points.forEach(p => {
+    ds.dome.points.forEach(p => {
       const rp = project(p);
       projected.set(p._id, { sx: cx + rp.x * scale, sy: cy - rp.y * scale, sz: rp.z });
     });
 
-    const faceDepth = dome.faces.map(f => {
+    const faceDepth = ds.dome.faces.map(f => {
       const pts = f.pointIds.map(id => projected.get(id));
       const avgZ = (pts[0].sz + pts[1].sz + pts[2].sz) / 3;
       return { f, avgZ, pts };
@@ -8820,7 +8823,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     }
 
     faceDepth.forEach(({ f, pts }) => {
-      const P = f.pointIds.map(id => dome.pointById.get(id));
+      const P = f.pointIds.map(id => ds.dome.pointById.get(id));
       const e1 = { x: P[1].x-P[0].x, y: P[1].y-P[0].y, z: P[1].z-P[0].z };
       const e2 = { x: P[2].x-P[0].x, y: P[2].y-P[0].y, z: P[2].z-P[0].z };
       let nx = e1.y*e2.z - e1.z*e2.y, ny = e1.z*e2.x - e1.x*e2.z, nz = e1.x*e2.y - e1.y*e2.x;
@@ -8875,7 +8878,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       const pieceOf = new Map();
       let pid = 0;
       etagesCache.forEach(b => b.pieces.forEach(pc => { pc.chain.forEach(i => pieceOf.set(i, pid)); pid++; }));
-      dome.faceAdjacency.forEach((adj, i) => adj.forEach(a => {
+      ds.dome.faceAdjacency.forEach((adj, i) => adj.forEach(a => {
         if (a.neighbor <= i || pieceOf.get(i) === pieceOf.get(a.neighbor)) return;
         const A = projected.get(a.edgePointIds[0]), B = projected.get(a.edgePointIds[1]);
         ctx.beginPath(); ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy);
@@ -8883,7 +8886,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       }));
     }
 
-    dome.lines.forEach(l => {
+    ds.dome.lines.forEach(l => {
       if (!l.selvage) return;
       const a = projected.get(l.pointIds[0]);
       const b = projected.get(l.pointIds[1]);
@@ -8911,7 +8914,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   // ---------------------------------------------------------
   function classifyLength(len){
     let best = null, bestDiff = Infinity;
-    dome.edgeClasses.forEach(g => {
+    ds.dome.edgeClasses.forEach(g => {
       const diff = Math.abs(g.length - len);
       if (diff < bestDiff) { bestDiff = diff; best = g; }
     });
@@ -8946,11 +8949,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   const TYPE_COLORS = [[216,145,43],[95,150,200],[120,175,110],[200,110,120],[160,130,200],[90,170,170],[205,180,90],[150,150,150],[230,120,70],[70,120,180]];
   let typeCache = null, hlType = null;
   function baseTriangleTypes(){
-    if (typeCache && typeCache.dome === dome) return typeCache.types;
+    if (typeCache && typeCache.dome === ds.dome) return typeCache.types;
     const d3 = (a,b) => Math.hypot(a.x-b.x, a.y-b.y, a.z-b.z);
     const types = [];
-    dome.faces.forEach(f => {
-      const P = f.pointIds.map(id => dome.pointById.get(id));
+    ds.dome.faces.forEach(f => {
+      const P = f.pointIds.map(id => ds.dome.pointById.get(id));
       const L = [d3(P[0],P[1]), d3(P[1],P[2]), d3(P[2],P[0])].sort((a,b) => a-b);
       let t = types.find(t => t.L.every((v,i) => Math.abs(v - L[i]) < 0.0005));
       if (!t) { t = { L, faces: [] }; types.push(t); }
@@ -8977,7 +8980,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       const eq = Math.abs(t.L[0]-t.L[2]) < 0.0005, iso = !eq && (Math.abs(t.L[0]-t.L[1]) < 0.0005 || Math.abs(t.L[1]-t.L[2]) < 0.0005);
       t.kind = eq ? 'équilatéral' : (iso ? 'isocèle' : 'quelconque');
     });
-    typeCache = { dome, types };
+    typeCache = { dome: ds.dome, types };
     return types;
   }
   function typeOfFace(){
@@ -9027,7 +9030,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
         ctx2d.fillText(t.angles[k].toFixed(2) + '°', p.x, p.y);
       });
     });
-    info.textContent = n + ' triangles de base · ' + dome.faces.length + ' faces';
+    info.textContent = n + ' triangles de base · ' + ds.dome.faces.length + ' faces';
     hint.textContent = 'Triangles de base de cette configuration (même couleur sur le dôme) — cliquez un type dans le tableau pour le repérer, ou une face du dôme pour la développer';
     hint.style.color = '';
     renderBaseTrianglesTable(types);
@@ -9048,9 +9051,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       ['Symétrie', document.getElementById('paramSymmetry').value], ['Base alignée', document.getElementById('paramAlign').checked ? 'oui' : 'non'],
       ['Découpage', document.getElementById('paramPartial').value],
       ['Diamètre', parseFloat(document.getElementById('paramDiameter').value).toFixed(2) + ' m'],
-      ['Structure', dome.offset ? 'sans connecteur GoodKarma — toile sur montants (' + mm(dome.offset.h) + ' mm)' : 'avec connecteur — nœud à nœud']
+      ['Structure', ds.dome.offset ? 'sans connecteur GoodKarma — toile sur montants (' + mm(ds.dome.offset.h) + ' mm)' : 'avec connecteur — nœud à nœud']
     ];
-    let h = '<div class="sheet-head"><b>Triangles de base — ' + types.length + ' formes pour ' + dome.faces.length + ' faces</b></div>';
+    let h = '<div class="sheet-head"><b>Triangles de base — ' + types.length + ' formes pour ' + ds.dome.faces.length + ' faces</b></div>';
     h += '<div class="sheet-kpis">' + params.map(p => '<span>' + p[0] + ' <b>' + p[1] + '</b></span>').join('') + '</div>';
     h += '<table class="clickable"><tr><th>Type</th><th>Nombre</th><th>Côtés</th><th>Longueurs (mm)</th><th>Angles</th><th>Hauteur (mm)</th><th>Surface (m²)</th><th>Forme</th><th>N° des faces</th></tr>';
     types.forEach(t => {
@@ -9059,8 +9062,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
         '</td><td>' + (t.height*1000).toFixed(0) + '</td><td>' + t.area.toFixed(3) + '</td><td>' + t.kind + '</td><td class="muted small-ids">' + t.faces.join(', ') + '</td></tr>';
     });
     const tot = types.reduce((a, t) => a + t.area * t.faces.length, 0);
-    h += '<tr><td class="muted">Total</td><td><b>' + dome.faces.length + '</b></td><td colspan="4"></td><td><b>' + tot.toFixed(2) + '</b></td><td colspan="2" class="muted">surface nette couverte</td></tr></table>';
-    h += '<div class="muted">Longueurs de ' + (dome.offset ? 'toile (surface GoodKarma)' : 'centre de nœud à centre de nœud') + ', sans marge. Les lettres A, B, C… sont les classes de montants. Les angles sont dans l\'ordre des côtés : côté 1 posé à plat en bas.</div>';
+    h += '<tr><td class="muted">Total</td><td><b>' + ds.dome.faces.length + '</b></td><td colspan="4"></td><td><b>' + tot.toFixed(2) + '</b></td><td colspan="2" class="muted">surface nette couverte</td></tr></table>';
+    h += '<div class="muted">Longueurs de ' + (ds.dome.offset ? 'toile (surface GoodKarma)' : 'centre de nœud à centre de nœud') + ', sans marge. Les lettres A, B, C… sont les classes de montants. Les angles sont dans l\'ordre des côtés : côté 1 posé à plat en bas.</div>';
     return h;
   }
 
@@ -9071,7 +9074,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     const idSet = new Set(faceIndices);
     const localAdj = new Map();
     faceIndices.forEach(idx => {
-      localAdj.set(idx, (dome.faceAdjacency[idx] || []).filter(a => idSet.has(a.neighbor)));
+      localAdj.set(idx, (ds.dome.faceAdjacency[idx] || []).filter(a => idSet.has(a.neighbor)));
     });
 
     const placedPts = new Map();
@@ -9079,8 +9082,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     const visited = new Set();
 
     function placeRoot(idx){
-      const f = dome.faces[idx];
-      const P = f.pointIds.map(id => dome.pointById.get(id));
+      const f = ds.dome.faces[idx];
+      const P = f.pointIds.map(id => ds.dome.pointById.get(id));
       const flat = flattenTriangle(P[0], P[1], P[2]);
       f.pointIds.forEach((id, i) => { if (!placedPts.has(id)) placedPts.set(id, flat.pts[i]); });
       placements.push({ idx, pointIds: f.pointIds.slice() });
@@ -9088,13 +9091,13 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     }
 
     function placeNeighbor(idx, sharedEdgePointIds){
-      const f = dome.faces[idx];
+      const f = ds.dome.faces[idx];
       const unknownId = f.pointIds.find(id => sharedEdgePointIds.indexOf(id) === -1);
       const [id1, id2] = sharedEdgePointIds;
       const P1 = placedPts.get(id1), P2 = placedPts.get(id2);
 
       const dist3d = (a,b) => Math.hypot(a.x-b.x, a.y-b.y, a.z-b.z);
-      const p3 = dome.pointById;
+      const p3 = ds.dome.pointById;
       const d1 = dist3d(p3.get(unknownId), p3.get(id1));
       const d2 = dist3d(p3.get(unknownId), p3.get(id2));
 
@@ -9203,12 +9206,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     }
 
     const result = unfoldGroup(ids);
-    const overlaps = detectOverlaps(result.placements, result.placedPts, OVERLAP_TOL_M);
+    const overlaps = detectOverlaps(result.placements, result.placedPts, ds.fabric.overlapTol);
 
     info.textContent = ids.length + ' triangles → panneau';
     let hintMsg = 'Groupe déplié (' + result.placements.length + '/' + ids.length + ' faces placées)';
     if (result.unreached.length) hintMsg += ' — ⚠ non connecté au groupe : #' + result.unreached.join(', #');
-    if (overlaps.length) hintMsg += ' — ⚠ chevauchement au-delà de la tolérance (' + (OVERLAP_TOL_M*1000).toFixed(0) + 'mm) : ' +
+    if (overlaps.length) hintMsg += ' — ⚠ chevauchement au-delà de la tolérance (' + (ds.fabric.overlapTol*1000).toFixed(0) + 'mm) : ' +
       overlaps.map(o=>'#'+o.a+'/#'+o.b+' ('+(o.depth*1000).toFixed(1)+'mm)').join(', ');
     hint.textContent = hintMsg;
     hint.style.color = (result.unreached.length || overlaps.length) ? '#b23a2f' : '';
@@ -9246,7 +9249,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       for (let i=0;i<3;i++){
         const idA = pl.pointIds[i], idB = pl.pointIds[(i+1)%3];
         const key = idA<idB ? idA+'-'+idB : idB+'-'+idA;
-        const adj = (dome.faceAdjacency[pl.idx]||[]).find(a =>
+        const adj = (ds.dome.faceAdjacency[pl.idx]||[]).find(a =>
           (a.edgePointIds[0]===idA && a.edgePointIds[1]===idB) || (a.edgePointIds[0]===idB && a.edgePointIds[1]===idA));
         const neighborInGroup = adj && selection.has(adj.neighbor);
         const a2 = S(result.placedPts.get(idA)), b2 = S(result.placedPts.get(idB));
@@ -9270,36 +9273,18 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   }
 
   // ---------------------------------------------------------
-  // Paramètres de toile et de couture
-  // FABRIC_W_M     : laize du rouleau.
-  // SELVAGE_M      : lisière inutilisable de chaque bord du rouleau.
-  // USABLE_WIDTH_M : largeur utile = laize − 2 × lisière. Le CONTOUR DE COUPE
-  //                  (marges comprises) d'un morceau doit y tenir.
-  // SEAM           : marges A (côté recouvrant), B (côté recouvert), ourlet bas.
-  // OVERLAP_TOL_M  : tolérance de chevauchement lors du dépliage d'un groupe.
+  // Paramètres de toile et de couture : ds.fabric (laize, lisière, largeur utile,
+  // tolérance, marges, rangée du bas), figé, recalculé uniquement ici.
   // ---------------------------------------------------------
-  let FABRIC_W_M = 1.5, SELVAGE_M = 0.01, OVERLAP_TOL_M = 0.05, USABLE_WIDTH_M = 1.48;
-  let SEAM = { A: 0.02, B: 0.02, hem: 0.05, type: 'simple' };
-  // Étape 11 : FabricSpec — un seul objet décrit la toile (laize, lisière, largeur utile, tolérance, marges,
-  // rangée du bas). Recalculé uniquement par readFabricParams() ; figé pour qu'aucun module ne le modifie.
-  let FABRIC = null;
-
   function readFabricParams(){
-    const num = (id, def) => { const v = parseFloat(document.getElementById(id).value); return isNaN(v) ? def : v; };
-    FABRIC_W_M = num('paramFabricW', 1500) / 1000;
-    SELVAGE_M = Math.max(0, num('paramSelvage', 0)) / 1000;
-    OVERLAP_TOL_M = Math.max(0, num('paramOverlapTol', 0)) / 1000;
-    USABLE_WIDTH_M = Math.max(0, FABRIC_W_M - 2*SELVAGE_M);
-    SEAM = { A: Math.max(0, num('paramSeamA', 0)) / 1000, B: Math.max(0, num('paramSeamB', 0)) / 1000,
-             hem: Math.max(0, num('paramHem', 0)) / 1000, type: document.getElementById('paramSeamType').value };
+    const v = id => document.getElementById(id).value;
     // rangée du bas : marges propres (morceaux qui portent l'ourlet)
     const botOn = document.getElementById('paramBottomOn').checked;
     ['paramBotA', 'paramBotB', 'paramBotHem'].forEach(id => { document.getElementById(id).disabled = !botOn; });
-    SEAM.bottom = botOn ? { A: Math.max(0, num('paramBotA', 0)) / 1000, B: Math.max(0, num('paramBotB', 0)) / 1000,
-      hem: Math.max(0, num('paramBotHem', 0)) / 1000 } : null;
-    FABRIC = Object.freeze({ laize: FABRIC_W_M, selvage: SELVAGE_M, usable: USABLE_WIDTH_M, overlapTol: OVERLAP_TOL_M,
-      seam: Object.freeze(Object.assign({}, SEAM, { bottom: SEAM.bottom ? Object.freeze(Object.assign({}, SEAM.bottom)) : null })) });
-    const preset = Toile.SEAM_PRESETS[SEAM.type];
+    ds.fabric = DomeState.fabricFromInputs({ laizeMm: v('paramFabricW'), selvageMm: v('paramSelvage'), overlapTolMm: v('paramOverlapTol'),
+      seamAMm: v('paramSeamA'), seamBMm: v('paramSeamB'), hemMm: v('paramHem'), seamType: v('paramSeamType'),
+      bottomOn: botOn, bottomAMm: v('paramBotA'), bottomBMm: v('paramBotB'), bottomHemMm: v('paramBotHem') });
+    const preset = Toile.SEAM_PRESETS[ds.fabric.seam.type];
     document.getElementById('seamNote').textContent = preset ? preset.note + ' · le morceau du dessus recouvre celui du dessous (ruissellement)' : '';
   }
 
@@ -9326,22 +9311,17 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   // Clé de découpe : identité complète du dôme (base, fréquence, méthode, symétrie, coupe, base alignée,
   // diamètre, structure) + numéro de génération (change à chaque recalcul) + paramètres de toile.
   // Toute modification du dôme invalide donc le résultat « moins de toile » et le comparatif.
-  function cutKey(){
-    const p = (domeNominal && domeNominal.params) || {};
-    return ['g' + domeGen, p.base, p.subdivClass, p.detail, p.subdivMethod, p.symmetry, p.partial, p.alignTheBase ? 1 : 0,
-      p.radius, dome && dome.offset ? dome.offset.h : 0,
-      JSON.stringify(FABRIC), seamWeight()].join('|');
-  }
-  function seamWeight(){ return Math.max(0, parseFloat(document.getElementById('paramSeamWeight').value) || 0) / 100; }
+  function cutKey(){ seamWeight(); return DomeState.key(ds); }
+  function seamWeight(){ return (ds.seamWeight = DomeState.seamWeightFromInput(document.getElementById('paramSeamWeight').value)); }
   function startOptim(){
-    const key = cutKey(), tool = makeEtages(dome), myDome = dome;
+    const key = cutKey(), tool = makeEtages(ds.dome), myDome = ds.dome;
     optimState = { key, tool, result: null, progress: 0, text: 'Démarrage…' };
     const st = optimState;
-    Optim.optimizeFabric(tool, USABLE_WIDTH_M, SEAM, OVERLAP_TOL_M, seamWeight(), (f, t) => {
+    Optim.optimizeFabric(tool, ds.fabric.usable, ds.fabric.seam, ds.fabric.overlapTol, seamWeight(), (f, t) => {
       st.progress = f; st.text = t;
       if (optimState === st && (mode2D === 'etages' || mode2D === 'rouleau' || mode2D === 'flat')) drawBusy('Recherche du découpage « moins de toile »', f, t);
     }).then(r => {
-      if (optimState !== st || dome !== myDome) return;
+      if (optimState !== st || ds.dome !== myDome) return;
       st.result = r; etagesCache = null; nestCache = null;
       render2D(); render();
       if (infoVisible()) renderInfo();
@@ -9374,8 +9354,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       etagesTool = optimState.tool;
       res = optimState.result;
     } else {
-      etagesTool = makeEtages(dome);
-      res = Toile.planFabric(etagesTool, USABLE_WIDTH_M, SEAM, OVERLAP_TOL_M,
+      etagesTool = makeEtages(ds.dome);
+      res = Toile.planFabric(etagesTool, ds.fabric.usable, ds.fabric.seam, ds.fabric.overlapTol,
         { strategy, base: document.getElementById('paramBaseRow').value });
     }
     etagesCache = res.plan;
@@ -9389,7 +9369,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   function allPieces(){ return etagesCache.flatMap(b => b.pieces); }
   function pieceByName(n){ return allPieces().find(pc => pc.name === n); }
   function sheetOf(n){ return sheetCache.get(n); }
-  function fitsLaize(sh){ return sh.cutWidth <= USABLE_WIDTH_M + 1e-9; }
+  function fitsLaize(sh){ return sh.cutWidth <= ds.fabric.usable + 1e-9; }
   // Étape 3 (audit 30/10/2026) : un morceau plus large que la laize utile ne peut pas être coupé.
   // Dans ce cas le plan de coupe et TOUS ses exports sont refusés (pas d'affichage partiel).
   function laizeFailures(){
@@ -9399,9 +9379,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   // Si seuls des morceaux de la rangée du bas dépassent : quel ourlet (avec leurs marges actuelles) les ferait passer ?
   function bottomSuggestion(bad){
     if (!bad.length || !bad.every(sh => sh.bottomRow)) return '';
-    const cur = SEAM.bottom || { A: SEAM.A, B: SEAM.B, hem: SEAM.hem };
+    const cur = ds.fabric.seam.bottom || { A: ds.fabric.seam.A, B: ds.fabric.seam.B, hem: ds.fabric.seam.hem };
     const pcs = bad.map(sh => pieceByName(sh.name)).filter(Boolean);
-    const fitsWith = v => pcs.every(pc => Toile.applyAllowances(etagesTool.pieceSheet(etagesCache, pc), { A: v.A, B: v.B, hem: v.hem }).cutWidth <= USABLE_WIDTH_M + 1e-9);
+    const fitsWith = v => pcs.every(pc => Toile.applyAllowances(etagesTool.pieceSheet(etagesCache, pc), { A: v.A, B: v.B, hem: v.hem }).cutWidth <= ds.fabric.usable + 1e-9);
     const maxHem = (A, B) => { if (!fitsWith({ A, B, hem: 0 })) return -1; let lo = 0, hi = 0.2;
       for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (fitsWith({ A, B, hem: m })) lo = m; else hi = m; } return Math.floor(lo * 1000) / 1000; };
     const opts = [];
@@ -9424,8 +9404,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     ctx2d.fillText('⛔ Laize trop étroite — plan de coupe refusé', W/2, H/2 - 22*dpr);
     ctx2d.fillStyle = '#1c1f22'; ctx2d.font = (11*dpr) + 'px monospace';
     const maxW = Math.max(...bad.map(sh => sh.cutWidth));
-    ctx2d.fillText(bad.length + ' morceau(x) plus large(s) que la largeur utile (' + mm(USABLE_WIDTH_M) + ' mm)', W/2, H/2 + 4*dpr);
-    ctx2d.fillText('laize minimale nécessaire : ' + mm(maxW + 2*SELVAGE_M) + ' mm', W/2, H/2 + 24*dpr);
+    ctx2d.fillText(bad.length + ' morceau(x) plus large(s) que la largeur utile (' + mm(ds.fabric.usable) + ' mm)', W/2, H/2 + 4*dpr);
+    ctx2d.fillText('laize minimale nécessaire : ' + mm(maxW + 2*ds.fabric.selvage) + ' mm', W/2, H/2 + 24*dpr);
     ctx2d.textAlign = 'left';
     const hint = document.getElementById('hint2d');
     hint.textContent = 'Aucun patron ni export tant qu\'un morceau ne tient pas dans la laize : on ne coupe pas une toile qu\'on ne peut pas réaliser.';
@@ -9434,11 +9414,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     const el = document.getElementById('panelsReadout');
     el.style.display = '';
     let h = '<div class="bad" style="font-weight:700">⛔ Plan de coupe refusé : ' + bad.length + ' morceau(x) ne tiennent pas dans la laize, même seuls.</div>' +
-      '<div style="margin:6px 0">Largeur utile actuelle : <b>' + mm(USABLE_WIDTH_M) + ' mm</b> (laize ' + mm(FABRIC_W_M) + ' − 2 × lisière ' + mm(SELVAGE_M) + '). ' +
-      'Laize minimale pour cette découpe : <b>' + mm(maxW + 2*SELVAGE_M) + ' mm</b>.</div>' +
+      '<div style="margin:6px 0">Largeur utile actuelle : <b>' + mm(ds.fabric.usable) + ' mm</b> (laize ' + mm(ds.fabric.laize) + ' − 2 × lisière ' + mm(ds.fabric.selvage) + '). ' +
+      'Laize minimale pour cette découpe : <b>' + mm(maxW + 2*ds.fabric.selvage) + ' mm</b>.</div>' +
       '<table><tr><th>Morceau</th><th>Triangles</th><th>Largeur de coupe (mm)</th><th>Dépassement (mm)</th></tr>';
     bad.slice().sort((a, b) => b.cutWidth - a.cutWidth).forEach(sh => {
-      h += '<tr><td>' + sh.name + '</td><td>' + sh.triangles.length + '</td><td class="bad">' + mm(sh.cutWidth) + '</td><td class="bad">+' + mm(sh.cutWidth - USABLE_WIDTH_M) + '</td></tr>';
+      h += '<tr><td>' + sh.name + '</td><td>' + sh.triangles.length + '</td><td class="bad">' + mm(sh.cutWidth) + '</td><td class="bad">+' + mm(sh.cutWidth - ds.fabric.usable) + '</td></tr>';
     });
     h += '</table>' + bottomSuggestion(bad) + '<div class="muted" style="margin-top:6px">Pour débloquer : une laize plus large, des marges plus petites (onglet Cover+, « Coutures » ou « Rangée du bas »), une autre découpe (« Triangle par triangle » donne les morceaux les plus étroits), ou un dôme plus petit / de fréquence plus haute (triangles plus petits). Les fiches, le plan de coupe, l\'impression PDF et le CSV restent bloqués tant qu\'un morceau dépasse.</div>';
     el.innerHTML = h;
@@ -9462,8 +9442,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   const deg = v => v.toFixed(1) + '°';
   const SIDE_TXT = { A: 'A — recouvrant', B: 'B — recouvert', H: 'ourlet' };
   function nominalLength(e){
-    if (!dome.offset) return null;
-    return dome.offset.nominalLengthOf.get(Toile.edgeKey(e.nodeIds[0], e.nodeIds[1]));
+    if (!ds.dome.offset) return null;
+    return ds.dome.offset.nominalLengthOf.get(Toile.edgeKey(e.nodeIds[0], e.nodeIds[1]));
   }
   function polyPath(pts, S){
     ctx2d.beginPath();
@@ -9495,7 +9475,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     const gap = 0.25;
     const rowLen = rows.map(r => r.reduce((a,u) => a + u.len, 0) + gap*(r.length-1));
     const maxLen = Math.max(...rowLen);
-    const rowH = Math.max(USABLE_WIDTH_M, ...rows.flat().map(u => u.wid));
+    const rowH = Math.max(ds.fabric.usable, ...rows.flat().map(u => u.wid));
     const labelH = 16*dpr;
     const pad = 10*dpr, bottomPad = 40*dpr;
     const pxScale = Math.min((W - 2*pad) / maxLen, (H - pad - bottomPad - rows.length*labelH) / (rows.length * rowH * 1.08));
@@ -9516,12 +9496,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       r.forEach(u => {
         const col = pieceColor(u.pc);
         ctx2d.fillStyle = 'rgba(28,31,34,0.05)';
-        ctx2d.fillRect(x0, y0, u.len*pxScale, USABLE_WIDTH_M*pxScale);
+        ctx2d.fillRect(x0, y0, u.len*pxScale, ds.fabric.usable*pxScale);
         ctx2d.setLineDash([3*dpr, 3*dpr]);
         ctx2d.strokeStyle = 'rgba(28,31,34,0.25)'; ctx2d.lineWidth = 1*dpr;
-        ctx2d.strokeRect(x0, y0, u.len*pxScale, USABLE_WIDTH_M*pxScale);
+        ctx2d.strokeRect(x0, y0, u.len*pxScale, ds.fabric.usable*pxScale);
         ctx2d.setLineDash([]);
-        const S = p => ({ x: x0 + p.x*pxScale, y: y0 + (USABLE_WIDTH_M - p.y)*pxScale });
+        const S = p => ({ x: x0 + p.x*pxScale, y: y0 + (ds.fabric.usable - p.y)*pxScale });
         // contour de coupe
         polyPath(u.sh.cut, S);
         ctx2d.fillStyle = u.ok ? 'rgba(' + col.join(',') + ',0.18)' : 'rgba(178,58,47,0.25)'; ctx2d.fill();
@@ -9549,8 +9529,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     const nBad = sheets.filter(sh => !fitsLaize(sh)).length;
     const estLen = sheets.reduce((s, sh) => s + sh.cutLength, 0);
     const nPieces = allPieces().length;
-    info.textContent = nPieces + ' morceaux · ' + gabGroups.length + ' gabarits (' + dome.faces.length + ' △)';
-    hint.textContent = 'Cliquez un morceau (ici ou sur le dôme) pour sa fiche patron — contours de coupe marges comprises · largeur utile ' + mm(USABLE_WIDTH_M) + ' mm · ' +
+    info.textContent = nPieces + ' morceaux · ' + gabGroups.length + ' gabarits (' + ds.dome.faces.length + ' △)';
+    hint.textContent = 'Cliquez un morceau (ici ou sur le dôme) pour sa fiche patron — contours de coupe marges comprises · largeur utile ' + mm(ds.fabric.usable) + ' mm · ' +
       st.sewn + ' arêtes cousues / ' + st.total + (st.closures ? ' (dont ' + st.closures + ' fermeture d\'anneau)' : '') +
       ' · ≈ ' + estLen.toFixed(1) + ' m de toile si les morceaux sont mis bout à bout (voir « Plan de coupe » pour le métrage réel)' + (nBad ? ' · ⚠ ' + nBad + ' morceau(x) hors laize' : '');
     hint.style.color = nBad ? '#b23a2f' : '';
@@ -9587,7 +9567,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     if (!nestCache) {
       const items = allPieces().map(pc => { const sh = sheetOf(pc.name);
         return { name: pc.name, poly: sh.cut, L: sh.cutLength, W: sh.cutWidth, area: sh.cutArea }; });
-      nestCache = Nesting.nest(items, USABLE_WIDTH_M, { row: 0.01, tries: 8 });
+      nestCache = Nesting.nest(items, ds.fabric.usable, { row: 0.01, tries: 8 });
       nestCache.naive = items.reduce((a, i) => a + i.L, 0);
       nestCache.byName = new Map(nestCache.placed.map(p => [p.name, p]));
     }
@@ -9595,7 +9575,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   }
   // position d'un point de la fiche (repère du morceau) sur le rouleau
   function rollPoint(pl, p){
-    return { x: pl.x + (pl.rot ? pl.L - p.x : p.x), y: SELVAGE_M + pl.y + (pl.rot ? pl.W - p.y : p.y) };
+    return { x: pl.x + (pl.rot ? pl.L - p.x : p.x), y: ds.fabric.selvage + pl.y + (pl.rot ? pl.W - p.y : p.y) };
   }
 
   function render2DRoll(){
@@ -9613,18 +9593,18 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     // le rouleau est replié en tronçons empilés (comme des lignes de texte)
     const pad = 34*dpr, gapRow = 26*dpr;
     let seg = 5;
-    const fitSeg = sg => { const nSeg = Math.ceil(nr.length / sg); const sc = (W - 2*pad) / sg; return { nSeg, sc, h: nSeg * (FABRIC_W_M*sc + gapRow) }; };
+    const fitSeg = sg => { const nSeg = Math.ceil(nr.length / sg); const sc = (W - 2*pad) / sg; return { nSeg, sc, h: nSeg * (ds.fabric.laize*sc + gapRow) }; };
     while (fitSeg(seg).h > H - 50*dpr && seg < 200) seg += 5;
     const { nSeg, sc } = fitSeg(seg);
-    const rowH = FABRIC_W_M * sc;
+    const rowH = ds.fabric.laize * sc;
     for (let k = 0; k < nSeg; k++) {
       const x0 = k * seg, top = 12*dpr + k * (rowH + gapRow);
       const segLen = Math.min(seg, nr.length - x0);
-      const S = p => ({ x: pad + (p.x - x0) * sc, y: top + (FABRIC_W_M - SELVAGE_M - p.y) * sc });
+      const S = p => ({ x: pad + (p.x - x0) * sc, y: top + (ds.fabric.laize - ds.fabric.selvage - p.y) * sc });
       // toile + lisières
       ctx2d.fillStyle = '#f1ece0'; ctx2d.fillRect(pad, top, segLen*sc, rowH);
       ctx2d.fillStyle = 'rgba(28,31,34,0.12)';
-      ctx2d.fillRect(pad, top, segLen*sc, SELVAGE_M*sc); ctx2d.fillRect(pad, top + rowH - SELVAGE_M*sc, segLen*sc, SELVAGE_M*sc);
+      ctx2d.fillRect(pad, top, segLen*sc, ds.fabric.selvage*sc); ctx2d.fillRect(pad, top + rowH - ds.fabric.selvage*sc, segLen*sc, ds.fabric.selvage*sc);
       ctx2d.strokeStyle = '#8a8f94'; ctx2d.lineWidth = 1*dpr; ctx2d.strokeRect(pad, top, segLen*sc, rowH);
       ctx2d.save(); ctx2d.beginPath(); ctx2d.rect(pad, top, segLen*sc, rowH); ctx2d.clip();
       nr.placed.forEach(pl => {
@@ -9652,7 +9632,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     }
     const gain = 1 - nr.length / nr.naive;
     info.textContent = 'Rouleau ' + nr.length.toFixed(2) + ' m';
-    hint.textContent = 'Plan de coupe — laize ' + mm(FABRIC_W_M) + ' mm (lisières grisées) · ' + nr.length.toFixed(2) + ' m de toile (au lieu de ' + nr.naive.toFixed(1) +
+    hint.textContent = 'Plan de coupe — laize ' + mm(ds.fabric.laize) + ' mm (lisières grisées) · ' + nr.length.toFixed(2) + ' m de toile (au lieu de ' + nr.naive.toFixed(1) +
       ' m sans placement, −' + Math.round(gain*100) + ' %) · utilisation ' + Math.round(nr.utilisation*100) + ' % · ↻ = tourné 180° · cliquez un morceau pour sa fiche' +
       (nr.check.overlaps || nr.check.outside ? ' · ⚠ contrôle : ' + nr.check.overlaps + ' chevauchement(s)' : '');
     hint.style.color = (nr.check.overlaps || nr.check.outside || nr.tooWide.length) ? '#b23a2f' : '';
@@ -9666,7 +9646,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     h += '<div class="muted">Règles : rotation 0° ou 180° seulement (droit-fil), jamais retourné (endroit), trait de coupe commun autorisé. X = distance depuis le début du rouleau, Y = distance depuis le bord de référence de la toile (lisière comprise), au coin bas-gauche du rectangle de coupe du morceau.</div>';
     h += '<table class="clickable"><tr><th>Morceau</th><th>De X (m)</th><th>À X (m)</th><th>Y (mm)</th><th>Rotation</th><th>Coupe (mm)</th></tr>';
     nr.placed.slice().sort((a, b) => a.x - b.x).forEach(pl => {
-      h += '<tr data-piece="' + pl.name + '"><td><b>' + pl.name + '</b></td><td>' + pl.x.toFixed(3) + '</td><td>' + (pl.x + pl.L).toFixed(3) + '</td><td>' + mm(SELVAGE_M + pl.y) +
+      h += '<tr data-piece="' + pl.name + '"><td><b>' + pl.name + '</b></td><td>' + pl.x.toFixed(3) + '</td><td>' + (pl.x + pl.L).toFixed(3) + '</td><td>' + mm(ds.fabric.selvage + pl.y) +
         '</td><td>' + (pl.rot ? '180° ↻' : '0°') + '</td><td>' + mm(pl.L) + ' × ' + mm(pl.W) + '</td></tr>';
     });
     el.innerHTML = h + '</table>';
@@ -9686,14 +9666,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   function tracingMeta(title){
     const V = document.getElementById('paramDetail').value;
     const D = parseFloat(document.getElementById('paramDiameter').value).toFixed(2).replace('.', ',');
-    const preset = Toile.SEAM_PRESETS[SEAM.type];
+    const preset = Toile.SEAM_PRESETS[ds.fabric.seam.type];
     return {
       title,
       dome: domeLabel() + ' · statut ' + STATUS_ICON[geometryStatus().level] + ' géométrie ' + STATUS_WORD[geometryStatus().level] + ', ' + STATUS_ICON[fabricationStatus().level] + ' toile ' + STATUS_WORD[fabricationStatus().level],
-      structure: dome.offset ? 'sans connecteur GoodKarma, toile sur montants (appui ' + mm(dome.offset.h) + ' mm)' : 'avec connecteur (nœud à nœud)',
-      seams: preset.label + ' A' + mm(SEAM.A) + '/B' + mm(SEAM.B) + ', ourlet ' + mm(SEAM.hem) +
-        (SEAM.bottom ? ' · rangée du bas : A' + mm(SEAM.bottom.A) + '/B' + mm(SEAM.bottom.B) + ', ourlet ' + mm(SEAM.bottom.hem) : ''),
-      laize: mm(FABRIC_W_M) + ' mm (utile ' + mm(USABLE_WIDTH_M) + ')',
+      structure: ds.dome.offset ? 'sans connecteur GoodKarma, toile sur montants (appui ' + mm(ds.dome.offset.h) + ' mm)' : 'avec connecteur (nœud à nœud)',
+      seams: preset.label + ' A' + mm(ds.fabric.seam.A) + '/B' + mm(ds.fabric.seam.B) + ', ourlet ' + mm(ds.fabric.seam.hem) +
+        (ds.fabric.seam.bottom ? ' · rangée du bas : A' + mm(ds.fabric.seam.bottom.A) + '/B' + mm(ds.fabric.seam.bottom.B) + ', ourlet ' + mm(ds.fabric.seam.bottom.hem) : ''),
+      laize: mm(ds.fabric.laize) + ' mm (utile ' + mm(ds.fabric.usable) + ')',
       date: new Date().toLocaleDateString('fr-BE')
     };
   }
@@ -9708,8 +9688,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     const meta = tracingMeta(title);
     const nr = ensureNest();
     if (!nr) return;
-    meta.selvage = SELVAGE_M;
-    meta.fabricW = FABRIC_W_M;
+    meta.selvage = ds.fabric.selvage;
+    meta.fabricW = ds.fabric.laize;
     meta.roll = nr;
     meta.placements = new Map(nr.placed.map(p => [p.name, p]));
     if (withSummary) meta.gabarits = gabGroups;
@@ -9740,14 +9720,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     ctx2d.clearRect(0,0,W,H);
 
     const pad = 60*dpr;
-    const spanY = Math.max(sh.cutWidth, USABLE_WIDTH_M);
+    const spanY = Math.max(sh.cutWidth, ds.fabric.usable);
     const base = Math.min((W - 2*pad) / sh.cutLength, (H - 2*pad - 30*dpr) / spanY);
     const sc = base * view2d.zoom;
     const ox = W/2 - (sh.cutLength/2)*sc + view2d.panX, oy = H/2 + (spanY/2)*sc + view2d.panY - 10*dpr;
     const S = p => ({ x: ox + p.x*sc, y: oy - p.y*sc });
 
     // laize utile derrière la pièce
-    const l0 = S({x: -0.1, y: 0}), l1 = S({x: sh.cutLength + 0.1, y: USABLE_WIDTH_M});
+    const l0 = S({x: -0.1, y: 0}), l1 = S({x: sh.cutLength + 0.1, y: ds.fabric.usable});
     ctx2d.fillStyle = 'rgba(43,90,138,0.06)';
     ctx2d.fillRect(l0.x, l1.y, l1.x - l0.x, l0.y - l1.y);
     ctx2d.setLineDash([5*dpr, 4*dpr]); ctx2d.strokeStyle = 'rgba(43,90,138,0.5)'; ctx2d.lineWidth = 1*dpr;
@@ -9820,7 +9800,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     ctx2d.strokeStyle = '#6b7278'; ctx2d.lineWidth = 1*dpr;
     ctx2d.beginPath(); ctx2d.moveTo(b0.x, b0.y + 26*dpr); ctx2d.lineTo(b1.x, b1.y + 26*dpr); ctx2d.stroke();
     ctx2d.font = (9*dpr)+'px monospace'; ctx2d.fillStyle = ok ? '#6b7278' : '#b23a2f'; ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'top';
-    ctx2d.fillText('coupe ' + mm(sh.cutLength) + ' × ' + mm(sh.cutWidth) + ' mm' + (ok ? '' : ' ⚠ HORS LAIZE') + '  ·  bande bleue = largeur utile ' + mm(USABLE_WIDTH_M) + ' mm, rouleau →', (b0.x + b1.x)/2, b0.y + 30*dpr);
+    ctx2d.fillText('coupe ' + mm(sh.cutLength) + ' × ' + mm(sh.cutWidth) + ' mm' + (ok ? '' : ' ⚠ HORS LAIZE') + '  ·  bande bleue = largeur utile ' + mm(ds.fabric.usable) + ' mm, rouleau →', (b0.x + b1.x)/2, b0.y + 30*dpr);
 
     const hint = document.getElementById('hint2d');
     document.getElementById('dev2dInfo').textContent = 'Morceau ' + sh.name + ' — ' + sh.triangles.length + ' triangles';
@@ -9832,7 +9812,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   function renderPieceSheetTable(sh, pc){
     const el = document.getElementById('panelsReadout');
     el.style.display = '';
-    const gk = !!dome.offset;
+    const gk = !!ds.dome.offset;
     let h = '<div class="sheet-head"><b>Fiche patron — morceau ' + sh.name + '</b>' + (sh.closedRing ? ' (anneau complet : les deux extrémités se recousent)' : '') +
       (tracingBlocked() ? ' ' + AXES_BLOCK_HTML : ' <button id="btnSheetPrint">Fiche de traçage (imprimer / PDF)</button> <button id="btnSheetCsv" class="ghost">CSV</button>') + '</div>';
     h += '<div class="sheet-kpis">' +
@@ -9850,11 +9830,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
           : 'gabarit unique (1 seul morceau).') + '</div>';
     }
     { const nr = ensureNest(), pl = nr.byName.get(sh.name);
-      if (pl) h += '<div class="roll-pos">Sur le rouleau : de <b>' + pl.x.toFixed(3) + ' m</b> à <b>' + (pl.x + pl.L).toFixed(3) + ' m</b>, à ' + mm(SELVAGE_M + pl.y) + ' mm du bord, ' +
+      if (pl) h += '<div class="roll-pos">Sur le rouleau : de <b>' + pl.x.toFixed(3) + ' m</b> à <b>' + (pl.x + pl.L).toFixed(3) + ' m</b>, à ' + mm(ds.fabric.selvage + pl.y) + ' mm du bord, ' +
         (pl.rot ? '<b>tourné 180°</b> : côté sommet du dôme vers le bord de référence' : 'non tourné : côté sommet du dôme vers le bord opposé au bord de référence') + '.</div>'; }
     h += '<div class="muted">Repère : X le long du rouleau, Y à travers la laize, origine en bas à gauche du contour de coupe. Pièce vue de l\'extérieur (endroit), côté sommet en haut. ' +
-      'Les points P sont sur la <b>ligne de couture</b> (' + (gk ? 'surface de toile GoodKarma, appui ' + mm(dome.offset.h) + ' mm' : 'centres des nœuds') + '). ' +
-      'Assemblage : ' + Toile.SEAM_PRESETS[SEAM.type].label + ' — A ' + mm(SEAM.A) + ' mm (recouvrant), B ' + mm(SEAM.B) + ' mm, ourlet ' + mm(SEAM.hem) + ' mm.</div>';
+      'Les points P sont sur la <b>ligne de couture</b> (' + (gk ? 'surface de toile GoodKarma, appui ' + mm(ds.dome.offset.h) + ' mm' : 'centres des nœuds') + '). ' +
+      'Assemblage : ' + Toile.SEAM_PRESETS[ds.fabric.seam.type].label + ' — A ' + mm(ds.fabric.seam.A) + ' mm (recouvrant), B ' + mm(ds.fabric.seam.B) + ' mm, ourlet ' + mm(ds.fabric.seam.hem) + ' mm.</div>';
 
     h += '<div class="sheet-grid"><div><h4>Ligne de couture (points P)</h4><table><tr><th>Point</th><th>Nœud</th><th>X (mm)</th><th>Y (mm)</th><th>Angle</th></tr>';
     sh.points.forEach(p => { h += '<tr><td><b>' + p.label + '</b></td><td>' + p.node + '</td><td>' + mm(p.x) + '</td><td>' + mm(p.y) + '</td><td>' + deg(p.angle) + '</td></tr>'; });
@@ -9895,10 +9875,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     if (laizeFailures().length || fabricationStatus().level === 'red') { render2D(); return; }   // étapes 3 et 5 : export refusé
     const r = [];
     const q = v => '"' + String(v).replace(/"/g, '""') + '"';
-    const gk = !!dome.offset;
+    const gk = !!ds.dome.offset;
     r.push(['Morceau', sh.name],
-           ['Structure', gk ? 'sans connecteur GoodKarma, hauteur d\'appui ' + mm(dome.offset.h) + ' mm' : 'avec connecteur (noeud a noeud)'],
-           ['Assemblage', Toile.SEAM_PRESETS[SEAM.type].label + ' : A ' + mm(SEAM.A) + ' mm, B ' + mm(SEAM.B) + ' mm, ourlet ' + mm(SEAM.hem) + ' mm'],
+           ['Structure', gk ? 'sans connecteur GoodKarma, hauteur d\'appui ' + mm(ds.dome.offset.h) + ' mm' : 'avec connecteur (noeud a noeud)'],
+           ['Assemblage', Toile.SEAM_PRESETS[ds.fabric.seam.type].label + ' : A ' + mm(ds.fabric.seam.A) + ' mm, B ' + mm(ds.fabric.seam.B) + ' mm, ourlet ' + mm(ds.fabric.seam.hem) + ' mm'],
            ['Coupe longueur (mm)', mm(sh.cutLength)], ['Coupe largeur (mm)', mm(sh.cutWidth)],
            ['Toile coupee (m2)', sh.cutArea.toFixed(4)], ['Sans vague', sh.check.flat ? 'oui' : 'non'],
            ['Repere', 'X le long du rouleau, Y a travers la laize, origine en bas a gauche du contour de coupe, vue exterieure'], []);
@@ -9922,25 +9902,25 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   // ---------- encart « agrandissement » du mode GoodKarma ----------
   function renderOffsetInfo(){
     const el = document.getElementById('offsetInfo');
-    if (!dome.offset) { el.style.display = 'none'; return; }
+    if (!ds.dome.offset) { el.style.display = 'none'; return; }
     el.style.display = '';
     el.innerHTML = offsetInfoHtml();
   }
   function offsetInfoHtml(){
-    const o = dome.offset;
+    const o = ds.dome.offset;
     const baseR = d => { const ys = d.points.map(p => p.y), yb = Math.min(...ys);
       return Math.max(...d.points.filter(p => Math.abs(p.y - yb) < 1e-6).map(p => Math.hypot(p.x, p.z))); };
     const topH = d => Math.max(...d.points.map(p => p.y)) - Math.min(...d.points.map(p => p.y));
     let h = '<b>Mode sans connecteur (GoodKarma) — patron agrandi</b> : la toile repose sur la face extérieure des montants, à ' + mm(o.h) +
       ' mm du plan des nœuds calculés. Chaque face est décalée de cette distance ; les nœuds de base restent au sol.' +
       '<table><tr><th>Classe</th><th>Montant nœud à nœud</th><th>Toile (ligne de couture)</th><th>Agrandissement</th><th>Écart dans la classe</th></tr>';
-    dome.edgeClasses.forEach(g => {
+    ds.dome.edgeClasses.forEach(g => {
       h += '<tr><td><b>' + g.name + '</b> ×' + g.count + '</td><td>' + (g.nominal*1000).toFixed(1) + ' mm</td><td>' + (g.length*1000).toFixed(1) + ' mm</td><td>+' +
         ((g.length - g.nominal)*1000).toFixed(1) + ' mm (+' + ((g.length/g.nominal - 1)*100).toFixed(2) + ' %)</td><td>' +
         ((g.max - g.min)*1000 < 0.5 ? '—' : (g.min*1000).toFixed(1) + ' à ' + (g.max*1000).toFixed(1) + ' mm') + '</td></tr>';
     });
-    h += '<tr><td>Ø au sol</td><td>' + (2*baseR(domeNominal)*1000).toFixed(0) + ' mm</td><td>' + (2*baseR(dome)*1000).toFixed(0) + ' mm</td><td>+' + (2*(baseR(dome)-baseR(domeNominal))*1000).toFixed(0) + ' mm</td><td></td></tr>';
-    h += '<tr><td>Hauteur</td><td>' + (topH(domeNominal)*1000).toFixed(0) + ' mm</td><td>' + (topH(dome)*1000).toFixed(0) + ' mm</td><td>+' + ((topH(dome)-topH(domeNominal))*1000).toFixed(0) + ' mm</td><td></td></tr>';
+    h += '<tr><td>Ø au sol</td><td>' + (2*baseR(ds.nominal)*1000).toFixed(0) + ' mm</td><td>' + (2*baseR(ds.dome)*1000).toFixed(0) + ' mm</td><td>+' + (2*(baseR(ds.dome)-baseR(ds.nominal))*1000).toFixed(0) + ' mm</td><td></td></tr>';
+    h += '<tr><td>Hauteur</td><td>' + (topH(ds.nominal)*1000).toFixed(0) + ' mm</td><td>' + (topH(ds.dome)*1000).toFixed(0) + ' mm</td><td>+' + ((topH(ds.dome)-topH(ds.nominal))*1000).toFixed(0) + ' mm</td><td></td></tr>';
     h += '</table><div class="warn" style="margin-top:6px">Les classes ne restent pas parfaitement égales près de la base (la toile descend jusqu\'au sol) : chaque morceau utilise ses longueurs exactes. ' +
       'Planéité des triangles de toile : écart max ' + (o.maxPlaneDev*1000).toFixed(1) + ' mm par rapport au plan des montants. ' +
       'Vérifiez la hauteur d\'appui : c\'est la distance, perpendiculaire à la face, entre le plan passant par les nœuds calculés et le dessus des montants.</div>';
@@ -9960,12 +9940,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   function imageProj(){ return document.getElementById('paramImageProj').value; }
   function computeImageUV(){
     const proj = imageProj();
-    if (imageUV && imageUV.dome === dome && imageUV.proj === proj) return imageUV.map;
+    if (imageUV && imageUV.dome === ds.dome && imageUV.proj === proj) return imageUV.map;
     const map = new Map();
-    const ys = dome.points.map(p => p.y), yTop = Math.max(...ys), yBot = Math.min(...ys);
+    const ys = ds.dome.points.map(p => p.y), yTop = Math.max(...ys), yBot = Math.min(...ys);
     const ha = p => Math.atan2(Math.hypot(p.x, p.z), p.y);
-    const maxHa = Math.max(...dome.points.map(ha)) || 1;
-    dome.points.forEach(p => {
+    const maxHa = Math.max(...ds.dome.points.map(ha)) || 1;
+    ds.dome.points.forEach(p => {
       const r = Math.hypot(p.x, p.z);
       if (proj === 'ciel') {
         const rho = ha(p) / maxHa;
@@ -9974,7 +9954,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
         map.set(p._id, [r < 1e-12 ? null : (Math.atan2(p.z, p.x) + Math.PI) / (2 * Math.PI), (yTop - p.y) / ((yTop - yBot) || 1)]);
       }
     });
-    imageUV = { dome, proj, map };
+    imageUV = { dome: ds.dome, proj, map };
     return map;
   }
   function drawTexturedFace(f, pts, shade){
@@ -10158,7 +10138,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   let peelPref = null;
   function syncPeelMenu(){
     const sel = document.getElementById('paramPeelType');
-    const av = Peel.availableTypes(dome, etagesTool, etagesCache);
+    const av = Peel.availableTypes(ds.dome, etagesTool, etagesCache);
     const cur = peelPref || sel.value || 'one'; peelPref = null;
     sel.innerHTML = av.map(t => '<option value="' + t.id + '"' + (t.ok ? '' : ' disabled') + ' title="' + (t.reason || '').replace(/"/g, '&quot;') + '">' +
       t.label + (t.ok ? '' : ' — impossible ici') + '</option>').join('');
@@ -10167,7 +10147,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   function buildPeelLayout(){
     const type = peelType();
     if (peelLayout && peelLayout.plan === etagesCache && peelLayout.sheets === sheetCache && peelLayout.req === type) return peelLayout;
-    peelLayout = Peel.build(dome, etagesTool, etagesCache, sheetOf, type);
+    peelLayout = Peel.build(ds.dome, etagesTool, etagesCache, sheetOf, type);
     peelLayout.plan = etagesCache; peelLayout.sheets = sheetCache; peelLayout.req = type;
     return peelLayout;
   }
@@ -10248,7 +10228,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
           const Le = Math.hypot(B.x - A.x, B.y - A.y);
           if (Le > 70 * dpr) { const c = t.pts.map(toS), g = { x: (c[0].x + c[1].x + c[2].x) / 3, y: (c[0].y + c[1].y + c[2].y) / 3 };
             const m = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }, d = Math.hypot(g.x - m.x, g.y - m.y) || 1;
-            const P = dome.pointById.get(t.pointIds[u]), Q = dome.pointById.get(t.pointIds[v]);
+            const P = ds.dome.pointById.get(t.pointIds[u]), Q = ds.dome.pointById.get(t.pointIds[v]);
             txt(mm(Math.hypot(P.x - Q.x, P.y - Q.y, P.z - Q.z)) + '', m.x + (g.x - m.x) / d * 9 * dpr, m.y + (g.y - m.y) / d * 9 * dpr, upright(Math.atan2(B.y - A.y, B.x - A.x)), (8.5 * dpr) + 'px monospace', '#7a2620'); }
         }));
         const c = part.flatMap(t => t.pts).map(toS);
@@ -10325,7 +10305,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     if (mode2D === 'etages') { render2DEtages(); return; }
     if (mode2D === 'rouleau') { render2DRoll(); return; }
     if (mode2D === 'flat') { render2DFlat(); return; }
-    if (!dome) return;
+    if (!ds.dome) return;
     const rect = canvas2d.getBoundingClientRect();
     canvas2d.width = rect.width * devicePixelRatio;
     canvas2d.height = rect.height * devicePixelRatio;
@@ -10344,8 +10324,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     info.textContent = ids.length + ' triangle' + (ids.length>1?'s':'');
 
     const developed = ids.map(idx => {
-      const f = dome.faces[idx];
-      const P = f.pointIds.map(id => dome.pointById.get(id));
+      const f = ds.dome.faces[idx];
+      const P = f.pointIds.map(id => ds.dome.pointById.get(id));
       return { idx, flat: flattenTriangle(P[0], P[1], P[2]) };
     });
 
@@ -10691,7 +10671,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   }
   function draw3DBase(){
     initBase3D(); if (!baseEng) { $id('baseInfo3d').textContent = 'rendu 3D indisponible sur cet appareil'; return; }
-    const SD = domeStruct || domeNominal, model = Design.domeModel(SD);
+    const SD = ds.struct || ds.nominal, model = Design.domeModel(SD);
     if (!baseCam) baseCam = { yaw: 0.7, pitch: 0.38, dist: model.radius * 3.8, target: [0, model.height * 0.45, 0] };
     if (baseFor !== SD) {
       const st = Design.defaultState();
@@ -10702,10 +10682,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     baseEng.render(baseCam, false);
   }
   function renderBase(){
-    if (!domeNominal) return;
+    if (!ds.nominal) return;
     if (openTrace) renderBaseTrace(); else draw3DBase();
     updateOpeningsReadout();
-    const D = domeStruct || domeNominal, model = Design.domeModel(D), stt = Design.stats(model, Design.defaultState());
+    const D = ds.struct || ds.nominal, model = Design.domeModel(D), stt = Design.stats(model, Design.defaultState());
     const R = D.params.radius, fr = (v, n) => v.toFixed(n === undefined ? 2 : n).replace('.', ',');
     const d3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
     let toile = 0; D.faces.forEach(f => { const [a, b, c] = f.pointIds.map(id => D.pointById.get(id)); const u = [b.x - a.x, b.y - a.y, b.z - a.z], v = [c.x - a.x, c.y - a.y, c.z - a.z];
@@ -10722,17 +10702,17 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       ['Classes de montants', D.edgeClasses.length], ['Connecteurs', Object.keys(hist).sort((a, b) => a - b).map(n => hist[n] + ' × ' + n + ' branches').join(', ')],
       ['Base plate', flat ? '✓ oui' : '✗ non — écart ' + Math.round(flatErr * 1000) + ' mm entre nœuds du bord']];
     $id('baseKpis').innerHTML = '<div class="kpi-grid">' + kp.map(r => '<span>' + r[0] + '</span><b>' + r[1] + '</b>').join('') + '</div>' +
-      '<div class="muted" style="margin-top:10px">Calculé sur la géométrie réelle (facettes), centres des nœuds. ' + (dome.offset ? 'Structure GoodKarma : la toile est ' + mm(dome.offset.h) + ' mm au-dessus (voir Cover+).' : '') + '</div>';
+      '<div class="muted" style="margin-top:10px">Calculé sur la géométrie réelle (facettes), centres des nœuds. ' + (ds.dome.offset ? 'Structure GoodKarma : la toile est ' + mm(ds.dome.offset.h) + ' mm au-dessus (voir Cover+).' : '') + '</div>';
     $id('baseInfo3d').textContent = domeLabel();
     // montants
-    const gk = !!dome.offset;
+    const gk = !!ds.dome.offset;
     let h = '<div class="sheet-head"><b>Montants — ' + D.stats.lineCount + ' en ' + D.edgeClasses.length + ' longueurs</b><span class="muted">longueur de centre de nœud à centre de nœud (liste de débit simple)</span></div>';
     h += '<table><tr><th>Classe</th><th>Nombre</th><th>Longueur (mm)</th><th>Facteur de corde</th>' + (gk ? '<th>Toile GoodKarma (mm)</th>' : '') + '<th>Total (m)</th></tr>' +
-      D.edgeClasses.map(g => { const t = gk ? dome.edgeClasses.find(c => c.name === g.name) : null;
+      D.edgeClasses.map(g => { const t = gk ? ds.dome.edgeClasses.find(c => c.name === g.name) : null;
         return '<tr><td><b>' + g.name + '</b></td><td>×' + g.count + '</td><td>' + (g.length * 1000).toFixed(2) + '</td><td>' + (g.length / R).toFixed(6) + '</td>' + (t ? '<td>' + (t.length * 1000).toFixed(1) + '</td>' : '') + '<td>' + fr(g.length * g.count, 2) + '</td></tr>'; }).join('') +
       '<tr><td class="muted">Total</td><td><b>' + D.stats.lineCount + '</b></td><td colspan="' + (gk ? 3 : 2) + '"></td><td><b>' + fr(strutLen, 2) + '</b></td></tr></table>';
-    if (D !== domeNominal) h += '<div class="muted" style="margin-top:4px">Avec ouvertures. Dôme plein : ' + domeNominal.stats.lineCount + ' montants (' +
-      domeNominal.edgeClasses.map(g => g.count + '×' + g.name).join(' · ') + ').</div>';
+    if (D !== ds.nominal) h += '<div class="muted" style="margin-top:4px">Avec ouvertures. Dôme plein : ' + ds.nominal.stats.lineCount + ' montants (' +
+      ds.nominal.edgeClasses.map(g => g.count + '×' + g.name).join(' · ') + ').</div>';
     $id('baseStruts').innerHTML = h;
     $id('baseTris').innerHTML = baseTrianglesHtml(baseTriangleTypes());
     // avertissements d'usage
@@ -10757,8 +10737,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     return ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
   }
   function geometryStatus(){
-    if (!domeNominal) return { level: 'yellow', reasons: [] };
-    const p = domeNominal.params, V = p.detail, m = p.subdivMethod, sym = p.symmetry, part = p.partial;
+    if (!ds.nominal) return { level: 'yellow', reasons: [] };
+    const p = ds.nominal.params, V = p.detail, m = p.subdivMethod, sym = p.symmetry, part = p.partial;
     const askedM = baseParams().subdivMethod, full = part === '1' || part === '1/1';
     const reasons = []; let level;
     if (V === 1 && sym !== 'Pentad' && part === '3/4')
@@ -10784,7 +10764,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     if (sym !== 'Pentad') { if (level === 'green') level = 'yellow'; reasons.push('Symétrie ' + sym + ' : découpe par plan horizontal, sans référence indépendante.'); }
     if (p.alignTheBase && p.alignMoved > 0) { if (level === 'green') level = 'yellow'; reasons.push('Base alignée : ' + p.alignMoved + ' nœuds du bord déplacés, nouvelles longueurs sans référence.'); }
     else if (p.alignTheBase) reasons.push('Base alignée : la base était déjà plate, aucun nœud déplacé.');
-    if (!full) { const e = baseFlatError(domeNominal); if (e > 0.0005) reasons.push('Base non plate (écart ' + Math.round(e * 1000) + ' mm entre nœuds du bord)' + (p.canAlignTheBase && !p.alignTheBase ? ' : cocher « Aligner la base » si besoin.' : '.')); }
+    if (!full) { const e = baseFlatError(ds.nominal); if (e > 0.0005) reasons.push('Base non plate (écart ' + Math.round(e * 1000) + ' mm entre nœuds du bord)' + (p.canAlignTheBase && !p.alignTheBase ? ' : cocher « Aligner la base » si besoin.' : '.')); }
     return { level, reasons };
   }
   // fabrication : 🔴 si la géométrie est refusée ou si des morceaux ont des vagues ; sinon 🟠 (aucune toile cousue avec ces patrons)
@@ -10797,7 +10777,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     if (g.level === 'red') return { level: 'red', reasons: ['Géométrie refusée : pas de patron.'] };
     // décision de Nathan (30/10/2026) : Triad, Cross et sphère entière restent refusés pour la toile
     // jusqu'à l'étape 9 (découpe depuis l'axe, pôle bas), reportée à un audit ultérieur
-    const pp = domeNominal && domeNominal.params;
+    const pp = ds.nominal && ds.nominal.params;
     if (pp && pp.symmetry !== 'Pentad') return { level: 'red', reasons: ['Toile en symétrie ' + pp.symmetry + ' : découpe par étages pas encore juste (étape 9, reportée). Patrons refusés.'] };
     if (pp && (pp.partial === '1/1' || pp.partial === '1')) return { level: 'red', reasons: ['Toile de sphère entière : pôle bas pas encore découpé (étape 9, reportée). Patrons refusés.'] };
     const nf = nonFlatSheets();
@@ -10843,7 +10823,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   }
   function domeLabel(){
     const bp = baseParams();
-    const dn = domeramaName(bp.detail, domeNominal ? domeNominal.params.subdivMethod : bp.subdivMethod, bp.partial, bp.symmetry);
+    const dn = domeramaName(bp.detail, ds.nominal ? ds.nominal.params.subdivMethod : bp.subdivMethod, bp.partial, bp.symmetry);
     return bp.detail + 'V ' + bp.subdivMethod + (bp.symmetry !== 'Pentad' ? ' ' + bp.symmetry : '') + ' ' + bp.partial + (dn ? ' (Domerama ' + dn + ')' : '') + (bp.alignTheBase ? ' (base alignée)' : '') + ' Ø' + parseFloat($id('paramDiameter').value).toFixed(2).replace('.', ',') + ' m';
   }
   function showView(which){
@@ -10865,12 +10845,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     const sheets = [...res.sheets.values()];
     const groups = Toile.groupGabarits(sheets, true);
     const st = tool.seamStats(res.plan);
-    const nr = Nesting.nest(sheets.map(sh => ({ name: sh.name, poly: sh.cut, L: sh.cutLength, W: sh.cutWidth, area: sh.cutArea })), USABLE_WIDTH_M, { row: 0.01, tries: 8 });
+    const nr = Nesting.nest(sheets.map(sh => ({ name: sh.name, poly: sh.cut, L: sh.cutLength, W: sh.cutWidth, area: sh.cutArea })), ds.fabric.usable, { row: 0.01, tries: 8 });
     return {
       pieces: sheets.length, gabarits: groups.length, sewn: st.sewn, total: st.total,
-      cutArea: sheets.reduce((a, x) => a + x.cutArea, 0), roll: nr.length, rollArea: nr.length * FABRIC_W_M,
+      cutArea: sheets.reduce((a, x) => a + x.cutArea, 0), roll: nr.length, rollArea: nr.length * ds.fabric.laize,
       util: nr.utilisation, maxLen: Math.max(...sheets.map(x => x.cutLength)),
-      over: sheets.filter(x => x.cutWidth > USABLE_WIDTH_M + 1e-9).length, flat: sheets.every(x => x.check.flat)
+      over: sheets.filter(x => x.cutWidth > ds.fabric.usable + 1e-9).length, flat: sheets.every(x => x.check.flat)
     };
   }
   async function runComparison(){
@@ -10890,8 +10870,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
         while (!os.result) { await new Promise(r => setTimeout(r, 150)); if (compareState !== st || optimState !== os) return; renderInfo(); }
         tool = os.tool; res = os.result;
       } else {
-        tool = makeEtages(dome);
-        res = Toile.planFabric(tool, USABLE_WIDTH_M, SEAM, OVERLAP_TOL_M, { strategy: sg.id, base: document.getElementById('paramBaseRow').value });
+        tool = makeEtages(ds.dome);
+        res = Toile.planFabric(tool, ds.fabric.usable, ds.fabric.seam, ds.fabric.overlapTol, { strategy: sg.id, base: document.getElementById('paramBaseRow').value });
       }
       st.rows.set(sg.id, measurePlan(tool, res));
     }
@@ -10924,18 +10904,18 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
         '<td>' + (m.flat ? '✓ sans vague' : '<span class="bad">✗ vague</span>') + (m.over ? ' · <span class="bad">' + m.over + ' hors laize</span>' : ' · laize ✓') + '</td>' +
         '<td>' + (sg.id === cur ? '<span class="muted">choisie</span>' : '<button class="use-strat" data-strat="' + sg.id + '">Utiliser</button>') + '</td></tr>';
     });
-    h += '</table><div class="muted">Calculé avec les réglages actuels (laize ' + mm(FABRIC_W_M) + ' mm, largeur utile ' + mm(USABLE_WIDTH_M) + ' mm, ' +
-      Toile.SEAM_PRESETS[SEAM.type].label.toLowerCase() + ' A' + mm(SEAM.A) + '/B' + mm(SEAM.B) + ', ourlet ' + mm(SEAM.hem) + ', rangée du bas : ' +
+    h += '</table><div class="muted">Calculé avec les réglages actuels (laize ' + mm(ds.fabric.laize) + ' mm, largeur utile ' + mm(ds.fabric.usable) + ' mm, ' +
+      Toile.SEAM_PRESETS[ds.fabric.seam.type].label.toLowerCase() + ' A' + mm(ds.fabric.seam.A) + '/B' + mm(ds.fabric.seam.B) + ', ourlet ' + mm(ds.fabric.seam.hem) + ', rangée du bas : ' +
       (document.getElementById('paramBaseRow').value === 'ring' ? 'anneau' : '5 morceaux') + '). En vert : la meilleure valeur de chaque colonne. ' +
       'Rouleau = longueur de toile à acheter avec le plan de coupe automatique.</div>';
     const curRow = st && st.rows.get(cur);
     if (curRow) {
       const net = baseTriangleTypes().reduce((a, t) => a + t.area * t.faces.length, 0);
-      const usable = curRow.roll * USABLE_WIDTH_M;
+      const usable = curRow.roll * ds.fabric.usable;
       h += '<div class="explain"><b>Comment lire ces chiffres</b> <a class="help-q" data-help="aide-comparatif" title="Explication détaillée">?</a> — exemple avec la découpe choisie (' + STRATS.find(x => x.id === cur).label + ') :' +
         '<ul><li>Le dôme lui-même fait <b>' + net.toFixed(1) + ' m²</b>. Avec les marges et l\'ourlet, on découpe <b>' + curRow.cutArea.toFixed(1) + ' m²</b> de toile (<b>toile coupée</b>) : ' + (curRow.cutArea - net).toFixed(1) + ' m² de marges.</li>' +
-        '<li>Pour placer ces morceaux, il faut dérouler <b>' + curRow.roll.toFixed(1) + ' m</b> de rouleau (<b>le métrage à acheter</b>), soit ' + curRow.roll.toFixed(1) + ' m × ' + (FABRIC_W_M).toFixed(2) + ' m = <b>' + curRow.rollArea.toFixed(1) + ' m²</b>.</li>' +
-        '<li>Sur la largeur utile (' + mm(USABLE_WIDTH_M) + ' mm, sans les lisières), cela fait ' + usable.toFixed(1) + ' m², dont ' + curRow.cutArea.toFixed(1) + ' m² servent : <b>utilisation ' + Math.round(curRow.util * 100) + ' %</b>. Les ' + (usable - curRow.cutArea).toFixed(1) + ' m² restants sont de la chute.</li></ul>' +
+        '<li>Pour placer ces morceaux, il faut dérouler <b>' + curRow.roll.toFixed(1) + ' m</b> de rouleau (<b>le métrage à acheter</b>), soit ' + curRow.roll.toFixed(1) + ' m × ' + (ds.fabric.laize).toFixed(2) + ' m = <b>' + curRow.rollArea.toFixed(1) + ' m²</b>.</li>' +
+        '<li>Sur la largeur utile (' + mm(ds.fabric.usable) + ' mm, sans les lisières), cela fait ' + usable.toFixed(1) + ' m², dont ' + curRow.cutArea.toFixed(1) + ' m² servent : <b>utilisation ' + Math.round(curRow.util * 100) + ' %</b>. Les ' + (usable - curRow.cutArea).toFixed(1) + ' m² restants sont de la chute.</li></ul>' +
         'Image : la toile coupée est la pâte qui finit dans les biscuits, le rouleau est toute la pâte étalée, l\'utilisation est la part qui a servi.</div>';
     }
     return h;
@@ -10943,16 +10923,16 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
 
   function renderInfo(){
     const el = document.getElementById('viewInfo');
-    if (!dome) return;
+    if (!ds.dome) return;
     const openIds = [...el.querySelectorAll('details[open]')].map(d => d.id);
     const types = baseTriangleTypes();
     let h = '<div class="info-head"><h2>Informations</h2><button id="btnInfoBack">← Retour au patron</button></div>';
     h += '<section class="info-card"><h3>Comparatif des découpes</h3>' + comparisonHtml() + '</section>';
     h += '<section class="info-card">' + baseTrianglesHtml(types) + '</section>';
-    h += '<section class="info-card"><h3>Classes de montants</h3><table><tr><th>Classe</th><th>Nombre</th><th>Longueur nœud à nœud (mm)</th>' + (dome.offset ? '<th>Toile GoodKarma (mm)</th>' : '') + '</tr>' +
-      domeNominal.edgeClasses.map(g => { const t = dome.offset ? dome.edgeClasses.find(c => c.name === g.name) : null;
+    h += '<section class="info-card"><h3>Classes de montants</h3><table><tr><th>Classe</th><th>Nombre</th><th>Longueur nœud à nœud (mm)</th>' + (ds.dome.offset ? '<th>Toile GoodKarma (mm)</th>' : '') + '</tr>' +
+      ds.nominal.edgeClasses.map(g => { const t = ds.dome.offset ? ds.dome.edgeClasses.find(c => c.name === g.name) : null;
         return '<tr><td><b>' + g.name + '</b></td><td>×' + g.count + '</td><td>' + (g.length*1000).toFixed(2) + '</td>' + (t ? '<td>' + (t.length*1000).toFixed(1) + '</td>' : '') + '</tr>'; }).join('') +
-      '</table>' + (dome.offset ? '<div class="offset-info" style="margin-top:8px">' + offsetInfoHtml() + '</div>' : '') + '</section>';
+      '</table>' + (ds.dome.offset ? '<div class="offset-info" style="margin-top:8px">' + offsetInfoHtml() + '</div>' : '') + '</section>';
     h += '<section class="info-card"><h3>Comprendre les options et réglages</h3>' + CoverInfo.helpHtml() + '</section>';
     el.innerHTML = h;
     openIds.forEach(id => { const d = document.getElementById(id); if (d) d.open = true; });
@@ -10979,7 +10959,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   document.getElementById('tabDesign').addEventListener('click', () => showView('design'));
   document.getElementById('tabBase').addEventListener('click', () => showView('base'));
   // accès du module Design (onglet séparé) au dôme courant
-  window.CoverApp = { dome: () => domeStruct || domeNominal, label: domeLabel, showView };
+  window.CoverApp = { dome: () => ds.struct || ds.nominal, label: domeLabel, showView };
   // « ? » à côté de chaque réglage : ouvre l'explication correspondante
   Object.keys(CoverInfo.HELP_FOR).forEach(id => {
     const input = document.getElementById(id);
