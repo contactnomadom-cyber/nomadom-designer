@@ -40,12 +40,23 @@
   function seamWeightFromInput(cm) { return Math.max(0, parseFloat(cm) || 0) / 100; }
 
   // Nouvel objet dôme, vide.
+  //  fabric.laize      : laize du rouleau.
+  //  fabric.selvage    : lisière inutilisable de chaque bord du rouleau.
+  //  fabric.usable     : largeur utile = laize − 2 × lisière. Le CONTOUR DE COUPE
+  //                      (marges comprises) d'un morceau doit y tenir.
+  //  fabric.seam       : marges A (côté recouvrant), B (côté recouvert), ourlet bas, rangée du bas.
+  //  fabric.overlapTol : tolérance de chevauchement lors du dépliage d'un groupe.
   function create() {
     return {
       gen: 0,                 // numéro de génération (augmente à chaque recalcul)
-      domes: { nominal: null, cloth: null, struct: null, active: null },
+      nominal: null,          // dôme de la structure (nœud à nœud)
+      cloth: null,            // dôme toile complet (avant ouverture)
+      struct: null,           // dôme structure avec ouvertures (onglets Base et Design)
+      dome: null,             // dôme toile avec ouvertures : celui que Cover+ découpe
       fabric: fabricFromInputs(DEFAULT_FABRIC_INPUTS),
       seamWeight: seamWeightFromInput(10),
+      // Le contour est mémorisé en étiquettes de nœuds (N1–N6…) : les identifiants
+      // internes changent à chaque calcul, les étiquettes non (même dôme, autre Ø).
       openings: { labels: [], forKey: null, result: null }
     };
   }
@@ -54,8 +65,7 @@
   // Toute modification invalide « moins de toile » et le comparatif.
   // Identique caractère pour caractère à cutKey() de la 0.9.12.
   function key(state) {
-    const nominal = state.domes.nominal, active = state.domes.active;
-    const p = (nominal && nominal.params) || {};
+    const p = (state.nominal && state.nominal.params) || {}, active = state.dome;
     return ['g' + state.gen, p.base, p.subdivClass, p.detail, p.subdivMethod, p.symmetry, p.partial, p.alignTheBase ? 1 : 0,
       p.radius, active && active.offset ? active.offset.h : 0,
       JSON.stringify(state.fabric), state.seamWeight].join('|');

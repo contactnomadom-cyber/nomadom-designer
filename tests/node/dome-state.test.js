@@ -19,7 +19,7 @@ const refs = [
 for (const r of refs) {
   const s = DS.create();
   s.gen = 1;
-  s.domes.nominal = s.domes.active = E.generateDome(Object.assign({ base: 'Icosahedron', subdivClass: 'I' }, r.p));
+  s.nominal = s.dome = E.generateDome(Object.assign({ base: 'Icosahedron', subdivClass: 'I' }, r.p));
   check(DS.key(s) === r.key, r.id + ' : clé ' + DS.key(s) + ' ≠ ' + r.key);
   // la clé change si la génération, la toile ou le poids de couture changent
   const k0 = DS.key(s);
