@@ -55,6 +55,8 @@
       dome: null,             // dôme toile avec ouvertures : celui que Cover+ découpe
       fabric: fabricFromInputs(DEFAULT_FABRIC_INPUTS),
       seamWeight: seamWeightFromInput(10),
+      // découpe : stratégie (pieces | gabarits | axes | toile | triangles) et rangée du bas (ring | sectors)
+      cut: { strategy: 'pieces', baseRow: 'ring' },
       // Le contour est mémorisé en étiquettes de nœuds (N1–N6…) : les identifiants
       // internes changent à chaque calcul, les étiquettes non (même dôme, autre Ø).
       openings: { labels: [], forKey: null, result: null }

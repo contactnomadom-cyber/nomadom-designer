@@ -870,6 +870,7 @@
     ds.fabric = DomeState.fabricFromInputs({ laizeMm: v('paramFabricW'), selvageMm: v('paramSelvage'), overlapTolMm: v('paramOverlapTol'),
       seamAMm: v('paramSeamA'), seamBMm: v('paramSeamB'), hemMm: v('paramHem'), seamType: v('paramSeamType'),
       bottomOn: botOn, bottomAMm: v('paramBotA'), bottomBMm: v('paramBotB'), bottomHemMm: v('paramBotHem') });
+    readCutParams();
     const preset = Toile.SEAM_PRESETS[ds.fabric.seam.type];
     document.getElementById('seamNote').textContent = preset ? preset.note + ' · le morceau du dessus recouvre celui du dessous (ruissellement)' : '';
   }
@@ -897,6 +898,9 @@
   // Clé de découpe : identité complète du dôme (base, fréquence, méthode, symétrie, coupe, base alignée,
   // diamètre, structure) + numéro de génération (change à chaque recalcul) + paramètres de toile.
   // Toute modification du dôme invalide donc le résultat « moins de toile » et le comparatif.
+  function readCutParams(){
+    ds.cut = { strategy: document.getElementById('paramCutStrategy').value, baseRow: document.getElementById('paramBaseRow').value };
+  }
   function cutKey(){ seamWeight(); return DomeState.key(ds); }
   function seamWeight(){ return (ds.seamWeight = DomeState.seamWeightFromInput(document.getElementById('paramSeamWeight').value)); }
   function startOptim(){
@@ -932,7 +936,7 @@
   // renvoie false tant que la découpe n'est pas prête (recherche en cours)
   function ensureEtages(){
     if (etagesCache) return true;
-    const strategy = document.getElementById('paramCutStrategy').value;
+    const strategy = ds.cut.strategy;
     let res;
     if (strategy === 'toile') {
       if (!optimState || optimState.key !== cutKey()) { startOptim(); return false; }
@@ -942,7 +946,7 @@
     } else {
       etagesTool = makeEtages(ds.dome);
       res = Toile.planFabric(etagesTool, ds.fabric.usable, ds.fabric.seam, ds.fabric.overlapTol,
-        { strategy, base: document.getElementById('paramBaseRow').value });
+        { strategy, base: ds.cut.baseRow });
     }
     etagesCache = res.plan;
     sheetCache = res.sheets;
@@ -1266,7 +1270,7 @@
   // ADR-0002 (étanchéité avant tout) : la découpe « axes » aligne les coutures
   // montantes du sommet au sol ; elle reste consultable, mais aucune fiche de
   // traçage ni CSV de fabrication n'est fourni pour elle.
-  function tracingBlocked(){ return document.getElementById('paramCutStrategy').value === 'axes'; }
+  function tracingBlocked(){ return ds.cut.strategy === 'axes'; }
   const AXES_BLOCK_HTML = '<span class="axes-block">⛔ Fiches de traçage non fournies : découpe déconseillée (coutures montantes alignées → étanchéité)</span>';
   function printTracing(sheets, withSummary, title){
     if (tracingBlocked()) return;
@@ -1712,7 +1716,7 @@
   // rotation + translation (jamais retourné) sur sa position dans la pelure.
   // ---------------------------------------------------------
   let peelLayout = null;
-  function peelStrategy(){ const s = document.getElementById('paramCutStrategy').value; return s === 'gabarits' || s === 'triangles' || s === 'axes'; }
+  function peelStrategy(){ const s = ds.cut.strategy; return s === 'gabarits' || s === 'triangles' || s === 'axes'; }
   function rigid(a0, a1, b0, b1){
     const ang = Math.atan2(b1.y - b0.y, b1.x - b0.x) - Math.atan2(a1.y - a0.y, a1.x - a0.x), c = Math.cos(ang), s = Math.sin(ang);
     return p => ({ x: b0.x + c * (p.x - a0.x) - s * (p.y - a0.y), y: b0.y + s * (p.x - a0.x) + c * (p.y - a0.y) });
@@ -2440,7 +2444,7 @@
     };
   }
   async function runComparison(){
-    const key = cutKey() + '|' + document.getElementById('paramBaseRow').value;
+    const key = cutKey() + '|' + ds.cut.baseRow;
     if (compareState && compareState.key === key && (compareState.running || compareState.rows.size === STRATS.length)) return;
     const st = { key, rows: new Map(), running: true };
     compareState = st;
@@ -2457,7 +2461,7 @@
         tool = os.tool; res = os.result;
       } else {
         tool = makeEtages(ds.dome);
-        res = Toile.planFabric(tool, ds.fabric.usable, ds.fabric.seam, ds.fabric.overlapTol, { strategy: sg.id, base: document.getElementById('paramBaseRow').value });
+        res = Toile.planFabric(tool, ds.fabric.usable, ds.fabric.seam, ds.fabric.overlapTol, { strategy: sg.id, base: ds.cut.baseRow });
       }
       st.rows.set(sg.id, measurePlan(tool, res));
     }
@@ -2466,7 +2470,7 @@
   }
 
   function comparisonHtml(){
-    const st = compareState, cur = document.getElementById('paramCutStrategy').value;
+    const st = compareState, cur = ds.cut.strategy;
     const rows = STRATS.map(sg => ({ sg, m: st ? st.rows.get(sg.id) : null }));
     const done = rows.filter(r => r.m);
     const best = (f, dir) => done.length ? (dir < 0 ? Math.min(...done.map(r => f(r.m))) : Math.max(...done.map(r => f(r.m)))) : null;
@@ -2492,7 +2496,7 @@
     });
     h += '</table><div class="muted">Calculé avec les réglages actuels (laize ' + mm(ds.fabric.laize) + ' mm, largeur utile ' + mm(ds.fabric.usable) + ' mm, ' +
       Toile.SEAM_PRESETS[ds.fabric.seam.type].label.toLowerCase() + ' A' + mm(ds.fabric.seam.A) + '/B' + mm(ds.fabric.seam.B) + ', ourlet ' + mm(ds.fabric.seam.hem) + ', rangée du bas : ' +
-      (document.getElementById('paramBaseRow').value === 'ring' ? 'anneau' : '5 morceaux') + '). En vert : la meilleure valeur de chaque colonne. ' +
+      (ds.cut.baseRow === 'ring' ? 'anneau' : '5 morceaux') + '). En vert : la meilleure valeur de chaque colonne. ' +
       'Rouleau = longueur de toile à acheter avec le plan de coupe automatique.</div>';
     const curRow = st && st.rows.get(cur);
     if (curRow) {
@@ -2533,7 +2537,7 @@
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }));
     el.querySelectorAll('.use-strat').forEach(b => b.addEventListener('click', () => {
-      document.getElementById('paramCutStrategy').value = b.getAttribute('data-strat');
+      document.getElementById('paramCutStrategy').value = b.getAttribute('data-strat'); readCutParams();
       syncCutControls(); etagesCache = null; nestCache = null;
       showView('cover'); setMode('etages'); selectPiece(null);
     }));
