@@ -35,6 +35,23 @@ for (const r of refs) for (const base of ['ring', 'sectors']) {
   // les anciens types restent sans recouvrement sur les références
   for (const t of Peel.TYPES) { const Lt = Peel.build(dome, tool, res.plan, sheetOf, t.id); check(Lt.overlap <= 1e-6, id + ' · ' + t.id + ' : recouvrement ' + Lt.overlap.toFixed(4)); }
 }
+// découpe « Gabarits alignés sur les axes » : la pelure 5 fentes (axe des arêtes) ne casse aucun morceau
+for (const r of refs) {
+  const dome = E.generateDome(r.p), tool = makeEtages(dome);
+  const res = Toile.planFabric(tool, 1.48, SEAM, 0.05, { strategy: 'axes' });
+  const id = r.id + ' · axes';
+  const L = Peel.build(dome, tool, res.plan, nm => res.sheets.get(nm), 'edges5');
+  check(L.type === 'edges5', id + ' : repli sur ' + L.type);
+  check(L.broken.length === 0, id + ' : ' + L.broken.length + ' morceau(x) cassé(s) par les fentes des axes');
+  check(L.overlap <= 1e-6, id + ' : recouvrement à plat ' + L.overlap.toFixed(4) + ' m');
+  const sheets = [...res.sheets.values()];
+  check(sheets.every(s => s.check.flat), id + ' : morceau non développable');
+  if (r.p.detail === 3) {
+    check(sheets.length === 25, id + ' : ' + sheets.length + ' morceaux au lieu de 25');
+    check(Toile.groupGabarits(sheets).length === 5, id + ' : ' + Toile.groupGabarits(sheets).length + ' gabarits au lieu de 5');
+    check(Math.max(...sheets.map(s => s.cutWidth)) <= 1.48 + 1e-9, id + ' : un morceau dépasse la laize');
+  }
+}
 console.log('Pelure : ' + (n - fails.length) + '/' + n + ' contrôles OK');
 fails.forEach(f => console.log('  ✗ ' + f));
 process.exit(fails.length ? 1 : 0);

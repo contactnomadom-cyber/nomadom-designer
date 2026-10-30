@@ -50,7 +50,7 @@ for (const c of combos) {
   let dome;
   try { dome = E.generateDome({ detail: c.V, subdivMethod: c.m, symmetry: c.sym, partial: c.part, alignTheBase: c.align, radius: 2.5 }); }
   catch (e) { if (e.code === 'ALIGN_FLIP') { out.known.push(id + ' : alignement refusé (attendu)'); continue; } out.failures.push(id + ' : moteur ' + e.message); continue; }
-  for (const strategy of ['pieces', 'gabarits', 'triangles']) for (const base of (strategy === 'pieces' ? ['ring', 'sectors'] : ['ring'])) {
+  for (const strategy of ['pieces', 'gabarits', 'axes', 'triangles']) for (const base of (strategy === 'pieces' ? ['ring', 'sectors'] : ['ring'])) {
     const sid = id + ' · ' + strategy + (base === 'sectors' ? ' (5 secteurs)' : '');
     const t0 = Date.now(); let tool, res, chk, nest;
     try {

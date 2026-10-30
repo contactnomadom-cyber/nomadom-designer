@@ -1735,17 +1735,20 @@
   // rotation + translation (jamais retourné) sur sa position dans la pelure.
   // ---------------------------------------------------------
   let peelLayout = null;
-  function peelStrategy(){ const s = document.getElementById('paramCutStrategy').value; return s === 'gabarits' || s === 'triangles'; }
+  function peelStrategy(){ const s = document.getElementById('paramCutStrategy').value; return s === 'gabarits' || s === 'triangles' || s === 'axes'; }
   function rigid(a0, a1, b0, b1){
     const ang = Math.atan2(b1.y - b0.y, b1.x - b0.x) - Math.atan2(a1.y - a0.y, a1.x - a0.x), c = Math.cos(ang), s = Math.sin(ang);
     return p => ({ x: b0.x + c * (p.x - a0.x) - s * (p.y - a0.y), y: b0.y + s * (p.x - a0.x) + c * (p.y - a0.y) });
   }
   function peelType(){ return document.getElementById('paramPeelType').value || 'one'; }
   // menu « Type d'ouverture » : seuls les types possibles pour ce dôme et cette découpe
+  // « Gabarits alignés sur les axes » : la pelure s'ouvre d'office sur les
+  // 5 axes des arêtes d'origine, là où tombent les jonctions entre gabarits
+  let peelPref = null;
   function syncPeelMenu(){
     const sel = document.getElementById('paramPeelType');
     const av = Peel.availableTypes(dome, etagesTool, etagesCache);
-    const cur = sel.value || 'one';
+    const cur = peelPref || sel.value || 'one'; peelPref = null;
     sel.innerHTML = av.map(t => '<option value="' + t.id + '"' + (t.ok ? '' : ' disabled') + ' title="' + (t.reason || '').replace(/"/g, '&quot;') + '">' +
       t.label + (t.ok ? '' : ' — impossible ici') + '</option>').join('');
     sel.value = av.some(t => t.id === cur && t.ok) ? cur : 'one';
@@ -2221,6 +2224,7 @@
     document.getElementById('lblBaseRow').style.display = (st === 'pieces' || st === 'gabarits') ? '' : 'none';
   }
   document.getElementById('paramCutStrategy').addEventListener('change', syncCutControls);
+  document.getElementById('paramCutStrategy').addEventListener('change', function(){ if (this.value === 'axes') { peelPref = 'edges5'; peelLayout = null; } });
   syncCutControls();
   ['paramSeamA','paramSeamB'].forEach(id => document.getElementById(id).addEventListener('change', function(){
     const p = Toile.SEAM_PRESETS[document.getElementById('paramSeamType').value];
@@ -2253,6 +2257,7 @@
   const STRATS = [
     { id: 'pieces', label: 'Moins de morceaux', note: 'le moins de coutures' },
     { id: 'gabarits', label: 'Moins de gabarits', note: 'morceaux identiques répétés' },
+    { id: 'axes', label: 'Gabarits alignés sur les axes', note: 'jonctions sur les 5 fentes de la pelure' },
     { id: 'toile', label: 'Moins de toile', note: 'compromis toile / coutures' },
     { id: 'triangles', label: 'Triangle par triangle', note: 'chaque triangle séparé' }
   ];
@@ -2491,7 +2496,7 @@
           bCut = best(m => m.cutArea, -1), bRoll = best(m => m.roll, -1), bUtil = best(m => m.util, 1);
     const cell = (v, b, txt, worse) => '<td class="' + (b !== null && Math.abs(v - b) < 1e-9 ? 'best' : '') + '">' + txt + '</td>';
     const q = id => '<a class="help-q" data-help="' + id + '" title="Que représente cette colonne ?">?</a>';
-    let h = '<table class="compare"><tr><th>Découpe des étages <a class="help-q" data-help="aide-decoupe" title="Les 4 stratégies">?</a></th><th>Morceaux' + q('aide-col-morceaux') + '</th><th>Gabarits' + q('aide-col-gabarits') +
+    let h = '<table class="compare"><tr><th>Découpe des étages <a class="help-q" data-help="aide-decoupe" title="Les 5 stratégies">?</a></th><th>Morceaux' + q('aide-col-morceaux') + '</th><th>Gabarits' + q('aide-col-gabarits') +
       '</th><th>Arêtes cousues' + q('aide-col-aretes') + '</th><th>Toile coupée (m²)' + q('aide-col-coupee') + '</th><th>Rouleau (m)' + q('aide-col-rouleau') +
       '</th><th>Rouleau (m²)' + q('aide-col-rouleau-m2') + '</th><th>Utilisation' + q('aide-col-utilisation') + '</th><th>Plus long morceau' + q('aide-col-long') +
       '</th><th>Contrôles' + q('aide-col-controles') + '</th><th></th></tr>';

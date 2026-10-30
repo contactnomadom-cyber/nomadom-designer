@@ -24,7 +24,7 @@ with sync_playwright() as p:
     pg.click('#tabCover'); pg.click('#btnDevelopEtages'); wait_info()
     check(pg.locator('#btnPrintAll').count() == 1, 'laize 1500 : export disponible en Étages')
     setW(600)
-    for strat in ['pieces', 'gabarits', 'triangles', 'toile']:
+    for strat in ['pieces', 'gabarits', 'axes', 'triangles', 'toile']:
         pg.select_option('#paramCutStrategy', strat); pg.wait_for_timeout(400)
         for btn, nom in [('#btnDevelopEtages', 'Étages'), ('#btnRoll', 'Plan de coupe'), ('#btnFlat', 'Vue aplatie')]:
             pg.click(btn); i = wait_info(); r = T('#panelsReadout')
