@@ -16,6 +16,7 @@
     "design3d-src":       "src/rendering/design3d.js",
     "design3d-three-src": "src/rendering/design3d-three.js",
     "ouvertures-src":     "src/geometry/ouvertures.js",
+    "unfold-src":         "src/geometry/unfold.js",
     "designui-src":       "src/products/habitat/designui.js",
     "quadri-geom-src":    "src/products/quadrisphere/quadri-geom.js",
     "quadri-ui-src":      "src/products/quadrisphere/quadri-ui.js",
