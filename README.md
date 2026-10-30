@@ -63,7 +63,8 @@ nomadom-designer/
 │   ├── textile/               # etages.js (découpe en étages), toile.js (marges, laize, GoodKarma), peel.js (vue aplatie)
 │   ├── fabrication/           # nesting.js (rouleau), optim.js (moins de toile), export.js (fiches de traçage),
 │   │                          # plan-rules.js (laize, rangée du bas, comparatif, CSV)
-│   ├── rendering/             # design3d.js (WebGL2 maison), design3d-three.js (Three.js)
+│   ├── rendering/             # design3d.js (WebGL2 maison), design3d-three.js (Three.js),
+│   │                          # view2d.js (Vue aplatie, pelure d'orange, plan de coupe sur le rouleau)
 │   ├── ui/info.js             # onglet Informations, aide
 │   └── products/
 │       ├── habitat/           # design.js, designui.js (aménagement intérieur)
@@ -72,7 +73,7 @@ nomadom-designer/
 ├── data/references/           # références de validation figées (antiprism/, domerama/, domes/, workshop/)
 ├── tests/
 │   ├── node/                  # engine, textile, arcs, peel, dome-state, unfold, status, plan-rules, compare-strategies (logique pure)
-│   └── browser/               # Playwright : t_beta, t_status, t_names, t_cleanup, t_laize, t_bottom, t_kruschke_align, t_stale_optim, t_smoke_quadri, t_axes_block, t_openings
+│   └── browser/               # Playwright : t_beta, t_status, t_names, t_cleanup, t_laize, t_bottom, t_kruschke_align, t_stale_optim, t_smoke_quadri, t_axes_block, t_openings, t_diameter
 ├── docs/                      # architecture (ADR), audits, validation, glossaire
 ├── scripts/                   # build, test-all, release, split
 └── dist/nomadom-designer.html # fichier livré (généré, jamais modifié à la main)
