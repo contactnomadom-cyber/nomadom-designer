@@ -43,6 +43,21 @@ Statuts : 💡 idée · ❓ questions ouvertes · ⏸ en suspens · 🛠 en cour
 
 ---
 
+## 3. Panneaux Kumiko dans l'aménagement Design — ❓ (30/10/2026)
+
+**Besoin** : intégrer les panneaux décoratifs Kumiko (lattes de bois assemblées en motifs japonais, posées dans les triangles) comme **option de l'aménagement Design** (`src/products/habitat/`), pas comme produit séparé. Vocabulaire conservé : kumiko, waku (cadre), jigumi (grille), tsukeko (pièces du motif).
+
+**Décidé (Nathan, 30/10/2026)**
+- Kumiko est une option de Design.
+- Point de départ : le moteur et les tests Kumiko du projet Claude « Acidome Cover+ » — ils fonctionnaient ; voir s'ils peuvent être améliorés avant intégration.
+- Mission pilote de la gouvernance multi-IA (ADR-0003), découpée en deux fiches : NOMAD-2026-002 (moteur seul, niveau Technique) puis NOMAD-2026-003 (interface Design, niveau Visuel avec revue Gemini).
+
+**Questions ouvertes ❓**
+1. Quelles améliorations du moteur (justesse des cotes, fabrication des lattes, performance) ? Réponse attendue du bilan de NOMAD-2026-002.
+2. Documents de fabrication Kumiko (liste de débit des lattes, angles) dès la première version, ou seulement l'aperçu ?
+
+---
+
 ## Fait
 - ✅ 0.9.13 — A10 : architecture restructurée (objet dôme unique, calculs dans des modules testés, interface < 2 000 lignes) ; Ø affiché = Ø calculé.
 - ✅ 0.9.12 — Pelure « 5 fentes — suivant les gabarits (zigzag) » ; découpe « axes » gardée avec avertissement et sans document de fabrication ; ADR-0002 étanchéité avant tout.

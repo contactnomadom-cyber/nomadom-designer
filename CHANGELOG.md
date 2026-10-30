@@ -3,6 +3,7 @@
 ## Outillage (30/10/2026, sans changement de l'application)
 - `CLAUDE.md` : procédure d'économie de tokens pour toutes les sessions, avec l'exception « LECTURE APPROFONDIE AUTORISÉE » accordée par Nathan.
 - `scripts/code-map.mjs` (carte du code) et `test-all.mjs --only` (tests ciblés).
+- Gouvernance multi-IA (mission NOMAD-2026-001) : ADR-0003 (Nathan décide ; Claude Code développe et intègre ; ChatGPT et Gemini conseillent ; dépôt public volontaire ; formulation de la référence 3V en vérification) et `docs/equipe-ia/` (rôles, circuit, fiche de mission, fiche de revue, contexte court). Section « Équipe IA » dans `CLAUDE.md`. Application inchangée (HTML assemblé identique).
 
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
