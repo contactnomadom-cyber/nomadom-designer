@@ -6,6 +6,13 @@
 
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
+## 0.9.13 — 30/10/2026 (A10 : architecture restructurée)
+- Aucun changement visible, sauf une correction : quand la case Ø est vide, l'en-tête, les fiches de traçage imprimées et le tableau des triangles de base affichaient « ØNaN m » ; ils affichent maintenant le Ø réellement calculé (5,00 m).
+- Objet dôme unique (`src/core/dome-state.js`) : dômes calculés, toile, découpe et ouvertures au même endroit ; plus de réglages en double.
+- Calculs sortis de l'interface vers des modules testés sous Node : `src/geometry/unfold.js` (triangles de base, dépliage), `src/core/status.js` (statuts 🟢🟡🟠🔴, barrière avant patrons et exports), `src/fabrication/plan-rules.js` (laize, ourlets de la rangée du bas, comparatif, CSV). Affichage de la vue aplatie et du plan de coupe rangé dans `src/rendering/view2d.js`. `app.js` : 2 601 → 1 946 lignes.
+- Équivalence prouvée avec la 0.9.12 : 377 cas (dépliage), 12 973 cas sur 2 162 dômes (statuts), 763 cas (fabrication, CSV caractère pour caractère), 16 vues 2D identiques au pixel.
+- Contrôles : nouvelles suites `state`, `unfold`, `status`, `plan` (Node) et `t_openings`, `t_diameter` (navigateur) ; 20 suites au total.
+
 ## 0.9.12 — 30/10/2026 (étanchéité avant tout)
 - Vue aplatie : nouveau type d'ouverture « 5 fentes — suivant les gabarits (zigzag) ». Les fentes tombent sur les jonctions entre gabarits : aucun morceau cassé (3V Ø5 m « Moins de gabarits » : 0 au lieu de 11 à 20), 5 pétales identiques.
 - Vue aplatie : charnières choisies sans chevauchement, la même pour les 5 pétales (48 pelures améliorées, aucune dégradée).
