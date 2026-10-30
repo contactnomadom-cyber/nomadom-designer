@@ -1,5 +1,9 @@
 # Journal des versions — Nomad'Om Designer
 
+## Outillage (30/10/2026, sans changement de l'application)
+- `CLAUDE.md` : procédure d'économie de tokens pour toutes les sessions, avec l'exception « LECTURE APPROFONDIE AUTORISÉE » accordée par Nathan.
+- `scripts/code-map.mjs` (carte du code) et `test-all.mjs --only` (tests ciblés).
+
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
 ## 0.9.11 — 30/10/2026 (première version du dépôt Git)

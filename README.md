@@ -23,18 +23,11 @@ Le produit livré est **un seul fichier HTML**, qui marche hors ligne : `dist/no
 
 ---
 
-## Pour les sessions d'IA (règles du dépôt)
+## Pour les sessions d'IA
 
-1. **Lire** ce README, `docs/architecture/` et `docs/glossary.md` avant de commencer.
-2. **Une branche par chantier** (`feature/…`, `fix/…`). Ne jamais travailler directement sur `main`.
-3. **Modifier les sources** (`src/`, `vendor/`, `tests/`, `data/`) — **jamais** `dist/` à la main. Plus de scripts de patch par remplacement de texte.
-4. **Assembler et contrôler** : `node scripts/test-all.mjs` (complet, ≈ 10 min) ; `--quick` pendant le travail.
-5. **Une seule session intégratrice** fusionne dans `main`, reconstruit, relance le contrôle complet, puis publie. Si `main` a avancé entre-temps : fusionner, reconstruire, retester.
-6. **Publier** seulement après `node scripts/release.mjs` → « FEU VERT ». Publier uniquement `dist/nomadom-designer.html`.
-7. À chaque version : numéro dans le pied de page et le badge (gabarit `src/index.html`), `package.json`, `CHANGELOG.md`, et un commit intitulé « Version X.Y.Z — … » sur `main`. Les sessions ne peuvent pas pousser d'étiquettes Git (refusé par le proxy) : la version se repère par ce commit.
-8. **Ne jamais** supprimer, affaiblir ou ignorer un test pour « passer au vert » sans explication écrite et accord de Nathan. Une valeur de référence ne change que si l'ancienne était fausse, preuve à l'appui.
-9. Les deux **dômes de référence** ne doivent jamais changer : 3V Kruschke 7/12 Ø 5 m (61 nœuds, 165 montants, 105 faces ; 30 × 824,27 / 35 × 955,73 / 80 × 1 053,72 / 20 × 1 102,64 mm) et 2V Chords 1/2 Ø 5,30 m (30 × 1 448,31 / 35 × 1 637,79 mm).
-10. **Convention** : code en anglais, interface en français, termes d'atelier en français (voir `docs/glossary.md`). Renommer seulement ce que le chantier touche déjà.
+Toutes les consignes (économie de tokens, commandes, tests à lancer selon les fichiers, règles Git et de publication, pièges connus, format du compte rendu) sont dans **`CLAUDE.md`**, lu automatiquement à l'ouverture du dépôt. Un seul endroit, pas de doublon.
+
+**Pour Nathan — débloquer une lecture approfondie** : par défaut, les IA lisent le code de façon ciblée pour économiser les tokens. Si une IA doit tout comprendre en profondeur (audit, bug introuvable, refonte), elle doit te le demander en disant quoi lire, pourquoi et à quel coût. Tu l'autorises en écrivant : **« LECTURE APPROFONDIE AUTORISÉE »**, éventuellement suivi du périmètre (par exemple « pour src/app »). L'accord ne vaut que pour la tâche en cours.
 
 ---
 
@@ -45,6 +38,8 @@ Le produit livré est **un seul fichier HTML**, qui marche hors ligne : `dist/no
 | `node scripts/build.mjs` | Assemble `dist/nomadom-designer.html` à partir de `src/index.html` + modules (`build/manifest.json`) |
 | `node scripts/test-all.mjs` | Assemble puis lance toute la batterie **sur le fichier assemblé** ; rapport dans `build/check/report.md` |
 | `node scripts/test-all.mjs --quick` | Contrôle rapide (≈ 3 min), ne vaut pas feu vert |
+| `node scripts/test-all.mjs --only engine,t_beta,…` | Tests ciblés selon les fichiers modifiés (table dans `CLAUDE.md`), ne vaut pas feu vert |
+| `node scripts/code-map.mjs [module] [-f fonction]` | Carte du code : où se trouve une fonction, sans lire les fichiers en entier |
 | `node scripts/release.mjs` | Feu vert seulement si le HTML de `dist/` est exactement celui qui a passé le contrôle complet |
 | `node scripts/split.mjs fichier.html` | Redécoupe un HTML assemblé en gabarit + modules (amorçage, ou vérifier un fichier reçu) |
 
