@@ -1,6 +1,6 @@
 {
   "name": "nomadom-designer",
-  "version": "0.9.11",
+  "version": "0.9.12",
   "private": true,
   "description": "Nomad'Om Designer — conception et fabrication de dômes géodésiques (géométrie, toile Cover+, aménagement, Quadrisphère). Livré en un seul fichier HTML hors ligne.",
   "scripts": {
