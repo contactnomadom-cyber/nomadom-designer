@@ -4,6 +4,7 @@
   "modules": {
     "threekit-src":       "vendor/three/threekit-r169.js",
     "dome-engine-src":    "src/core/dome-engine.js",
+    "dome-state-src":     "src/core/dome-state.js",
     "etages-src":         "src/textile/etages.js",
     "toile-src":          "src/textile/toile.js",
     "export-src":         "src/fabrication/export.js",
