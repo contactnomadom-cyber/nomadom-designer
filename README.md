@@ -12,7 +12,7 @@ Le produit livré est **un seul fichier HTML**, qui marche hors ligne : `dist/no
 
 - **Le fichier à utiliser** : `dist/nomadom-designer.html` (télécharger, ouvrir dans le navigateur).
 - **Ce qui a changé** : `CHANGELOG.md`.
-- **Revenir à une ancienne version** : chaque version publiée a une étiquette Git (`v0.9.11`, …) ; demander à une session de récupérer le fichier de cette version.
+- **Revenir à une ancienne version** : chaque version publiée correspond à un commit intitulé « Version X.Y.Z » (voir `CHANGELOG.md` et l'historique sur GitHub) ; demander à une session de récupérer `dist/nomadom-designer.html` de ce commit. Optionnel : sur GitHub, « Releases » → « Draft a new release » sur ce commit pour marquer la version.
 - **Vérification en 5 minutes avant d'accepter une version** :
   1. le numéro de version en bas de page est celui annoncé ;
   2. les 5 onglets s'ouvrent (Base, Cover+, Design, Quadrisphère, Informations) ;
@@ -31,7 +31,7 @@ Le produit livré est **un seul fichier HTML**, qui marche hors ligne : `dist/no
 4. **Assembler et contrôler** : `node scripts/test-all.mjs` (complet, ≈ 10 min) ; `--quick` pendant le travail.
 5. **Une seule session intégratrice** fusionne dans `main`, reconstruit, relance le contrôle complet, puis publie. Si `main` a avancé entre-temps : fusionner, reconstruire, retester.
 6. **Publier** seulement après `node scripts/release.mjs` → « FEU VERT ». Publier uniquement `dist/nomadom-designer.html`.
-7. À chaque version : numéro dans le pied de page et le badge (gabarit `src/index.html`), `package.json`, `CHANGELOG.md`, étiquette Git `vX.Y.Z`.
+7. À chaque version : numéro dans le pied de page et le badge (gabarit `src/index.html`), `package.json`, `CHANGELOG.md`, et un commit intitulé « Version X.Y.Z — … » sur `main`. Les sessions ne peuvent pas pousser d'étiquettes Git (refusé par le proxy) : la version se repère par ce commit.
 8. **Ne jamais** supprimer, affaiblir ou ignorer un test pour « passer au vert » sans explication écrite et accord de Nathan. Une valeur de référence ne change que si l'ancienne était fausse, preuve à l'appui.
 9. Les deux **dômes de référence** ne doivent jamais changer : 3V Kruschke 7/12 Ø 5 m (61 nœuds, 165 montants, 105 faces ; 30 × 824,27 / 35 × 955,73 / 80 × 1 053,72 / 20 × 1 102,64 mm) et 2V Chords 1/2 Ø 5,30 m (30 × 1 448,31 / 35 × 1 637,79 mm).
 10. **Convention** : code en anglais, interface en français, termes d'atelier en français (voir `docs/glossary.md`). Renommer seulement ce que le chantier touche déjà.
