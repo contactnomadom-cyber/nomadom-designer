@@ -1,6 +1,6 @@
 # CLAUDE.md — consignes pour toute session sur ce dépôt
 
-Nomad'Om Designer : conception et fabrication de dômes géodésiques (géométrie, toile **Cover+**, aménagement Design, pavillon Quadrisphère). Livré en **un seul HTML hors ligne** : `dist/nomadom-designer.html`, généré depuis `src/`. Propriétaire : Nathan, artisan, pas développeur. **Justesse avant fonctionnalités** ; statuts 🟢 vérifié · 🟡 calculé · 🟠 non vérifié en atelier · 🔴 refusé. Réponses en français, simples, une analogie par notion nouvelle.
+Nomad'Om Designer : conception et fabrication de dômes géodésiques (géométrie, toile **Cover+**, aménagement Design, pavillon Quadrisphère). Livré en **un seul HTML hors ligne** : `dist/nomadom-designer.html`, généré depuis `src/`. Propriétaire : Nathan, artisan, pas développeur. **Justesse avant fonctionnalités** ; **étanchéité avant tout** (toile et futures couvertures solides) : ordre de priorité de tout choix **faisabilité technique → performance → écoulement des eaux → étanchéité**, puis seulement présentation, esthétique, économie ; une option déconseillée reste visible avec avertissement mais sans document de fabrication (ADR-0002) ; statuts 🟢 vérifié · 🟡 calculé · 🟠 non vérifié en atelier · 🔴 refusé. Réponses en français, simples, une analogie par notion nouvelle.
 
 ## Économie de tokens (obligatoire)
 - **Ne jamais lire en entier** : `vendor/` (Three.js, 733 ko), `dist/`, `build/check/`, `docs/audits/` (rapports longs, à consulter par recherche).
