@@ -44,4 +44,5 @@ Statuts : 💡 idée · ❓ questions ouvertes · ⏸ en suspens · 🛠 en cour
 ---
 
 ## Fait
+- ✅ 0.9.13 — A10 : architecture restructurée (objet dôme unique, calculs dans des modules testés, interface < 2 000 lignes) ; Ø affiché = Ø calculé.
 - ✅ 0.9.12 — Pelure « 5 fentes — suivant les gabarits (zigzag) » ; découpe « axes » gardée avec avertissement et sans document de fabrication ; ADR-0002 étanchéité avant tout.
