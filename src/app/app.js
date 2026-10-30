@@ -575,7 +575,7 @@
       ['Méthode de subdivision', document.getElementById('paramMethod').value],
       ['Symétrie', document.getElementById('paramSymmetry').value], ['Base alignée', document.getElementById('paramAlign').checked ? 'oui' : 'non'],
       ['Découpage', document.getElementById('paramPartial').value],
-      ['Diamètre', parseFloat(document.getElementById('paramDiameter').value).toFixed(2) + ' m'],
+      ['Diamètre', domeDiameter().toFixed(2) + ' m'],
       ['Structure', ds.dome.offset ? 'sans connecteur GoodKarma — toile sur montants (' + mm(ds.dome.offset.h) + ' mm)' : 'avec connecteur — nœud à nœud']
     ];
     let h = '<div class="sheet-head"><b>Triangles de base — ' + types.length + ' formes pour ' + ds.dome.faces.length + ' faces</b></div>';
@@ -994,8 +994,6 @@
 
   // ---------- Étape 8 : fiches de traçage à la main (impression / PDF) ----------
   function tracingMeta(title){
-    const V = document.getElementById('paramDetail').value;
-    const D = parseFloat(document.getElementById('paramDiameter').value).toFixed(2).replace('.', ',');
     const preset = Toile.SEAM_PRESETS[ds.fabric.seam.type];
     return {
       title,
@@ -1793,10 +1791,12 @@
     renderStatus();
     return false;
   }
+  // Ø du dôme réellement calculé (case vide ou invalide : le calcul prend 5 m)
+  function domeDiameter(){ return ds.nominal ? 2 * ds.nominal.params.radius : (parseFloat($id('paramDiameter').value) || 5); }
   function domeLabel(){
     const bp = baseParams();
     const dn = domeramaName(bp.detail, ds.nominal ? ds.nominal.params.subdivMethod : bp.subdivMethod, bp.partial, bp.symmetry);
-    return bp.detail + 'V ' + bp.subdivMethod + (bp.symmetry !== 'Pentad' ? ' ' + bp.symmetry : '') + ' ' + bp.partial + (dn ? ' (Domerama ' + dn + ')' : '') + (bp.alignTheBase ? ' (base alignée)' : '') + ' Ø' + parseFloat($id('paramDiameter').value).toFixed(2).replace('.', ',') + ' m';
+    return bp.detail + 'V ' + bp.subdivMethod + (bp.symmetry !== 'Pentad' ? ' ' + bp.symmetry : '') + ' ' + bp.partial + (dn ? ' (Domerama ' + dn + ')' : '') + (bp.alignTheBase ? ' (base alignée)' : '') + ' Ø' + domeDiameter().toFixed(2).replace('.', ',') + ' m';
   }
   function showView(which){
     const info = which === 'info', design = which === 'design', base = which === 'base';
