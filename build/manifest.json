@@ -11,6 +11,7 @@
     "export-src":         "src/fabrication/export.js",
     "nesting-src":        "src/fabrication/nesting.js",
     "optim-src":          "src/fabrication/optim.js",
+    "plan-rules-src":     "src/fabrication/plan-rules.js",
     "info-src":           "src/ui/info.js",
     "peel-src":           "src/textile/peel.js",
     "design-src":         "src/products/habitat/design.js",
