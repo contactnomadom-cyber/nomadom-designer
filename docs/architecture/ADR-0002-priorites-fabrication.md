@@ -1,4 +1,4 @@
-# ADR-0002 — Priorités de conception : la toile doit tenir l'eau avant d'être pratique (30/10/2026)
+# ADR-0002 — Étanchéité avant tout : priorités de conception (30/10/2026)
 
 ## Contexte
 Le 30/10/2026, une découpe « Gabarits alignés sur les axes » a été développée pour que la pelure d'orange à 5 fentes droites (axe des arêtes d'origine) ne casse aucun morceau. Elle était équivalente sur le papier : même nombre de morceaux, mêmes largeurs, même longueur de couture.
@@ -15,7 +15,9 @@ Pour **tout** le développement de l'application, chaque choix (découpe, coutur
 4. **Étanchéité** — le moins possible de croisements épais ou de points difficiles à étancher.
 Seulement ensuite : facilité de présentation, esthétique, économie de toile, nombre de gabarits.
 
+**L'étanchéité est le point crucial** (complément de Nathan, même jour) : c'est la difficulté majeure des dômes géodésiques et ce qui est le plus dur à obtenir. Faisabilité et performance sont les conditions de départ ; **toute la réflexion s'organise autour de l'écoulement des eaux et de l'étanchéité**, pour la toile aujourd'hui comme pour les **couvertures solides** plus tard (panneaux, bardeaux, joints, recouvrements, faîtages).
+
 ## Conséquences pour toute session
-- Une option qui améliore la présentation ou l'économie **au détriment** des points 1 à 4 n'est pas proposée par défaut. Si Nathan la demande, elle est marquée d'un avertissement explicite dans l'interface et l'aide.
+- Une option qui améliore la présentation ou l'économie **au détriment** des points 1 à 4 n'est pas proposée par défaut. Si Nathan la demande, elle reste **visible avec un avertissement très apparent** (interface, comparatif, aide) et l'application **ne fournit aucun document de fabrication** pour elle (pas de fiche de traçage, pas de CSV, pas de plan de découpe exportable). Premier cas : la découpe « Gabarits alignés sur les axes » (30/10/2026).
 - Toute nouvelle découpe ou couture est accompagnée d'un comptage objectif : jonctions (T / croix), coutures continues, croisements, épaisseurs. Le résultat est présenté à Nathan **avant** de l'implémenter.
 - Statuts : ce qui relève de la couture ou de l'étanchéité reste 🟠 tant qu'il n'est pas vérifié en atelier.
