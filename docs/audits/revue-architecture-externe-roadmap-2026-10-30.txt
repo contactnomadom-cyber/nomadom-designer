@@ -1,0 +1,348 @@
+NOMAD’OM DESIGNER
+
+Analyse technique
+et roadmap d’évolution
+
+Audit de la version bêta 0.9.11
+
+  -----------------------------------------------------------------------
+  OBJECTIF
+  Structurer l’évolution de Nomad’Om Designer sans réécriture globale :
+  sécuriser l’existant, fiabiliser les calculs et préparer une
+  architecture multi-produits.
+  -----------------------------------------------------------------------
+
+  -----------------------------------------------------------------------
+
+1. Synthèse exécutive
+
+Le principal enjeu n’est pas le fait que l’application soit distribuée
+dans un fichier HTML unique. Ce format peut rester pratique pour la
+livraison. L’enjeu est plutôt de maîtriser l’organisation du code
+source, les dépendances entre modules, la validation des calculs et la
+reproductibilité des versions.
+
+La stratégie recommandée consiste à sécuriser l’existant, mettre en
+place une chaîne de construction reproductible, renforcer les tests et
+stabiliser les données métier avant d’étendre l’application à de
+nouvelles familles de produits.
+
+Niveau de preuve utilisé
+
+-   [CODE] Élément repéré dans le fichier HTML examiné.
+
+-   [TESTÉ] Vérification effectivement exécutée.
+
+-   [BRIEF] Objectif ou contexte exprimé dans le brief produit.
+
+-   [RECOMMANDATION] Proposition d’architecture ou de méthode, à valider
+    selon les contraintes du projet.
+
+-   [À CONFIRMER] Point qui nécessite un test fonctionnel ou une
+    inspection complémentaire.
+
+Constats initiaux
+
+[CODE] Le fichier contient 17 blocs de script JavaScript non vides. Le
+script principal conserve plusieurs responsabilités importantes,
+notamment l’orchestration, le statut, le rendu et certaines opérations
+de projet.
+
+[CODE] Des fonctions repérées dans le script principal incluent
+readFabricParams() (vers la ligne 9119), initBase3D() (vers 10500),
+draw3DBase() (vers 10511), geometryStatus() (vers 10578),
+fabricationStatus() (vers 10614), renderStatus() (vers 10627),
+fabricationGate() (vers 10652), ainsi que l’export window.CoverApp (vers
+10801).
+
+[TESTÉ] Les 17 blocs JavaScript ont passé une vérification syntaxique
+avec Node.js. Cette vérification ne démontre pas que l’application
+fonctionne correctement dans un navigateur, ni que ses résultats métier
+sont exacts.
+
+[À CONFIRMER] Les comportements fonctionnels, les résultats numériques,
+les interactions d’interface et les parcours complets doivent être
+couverts par des tests de régression dédiés.
+
+2. Les cinq enjeux prioritaires
+
+1.  Architecture — Réduire progressivement la dépendance au script
+    principal sans réécrire l’application.
+
+2.  Fiabilité — S’assurer que toute modification pertinente invalide les
+    calculs, statuts et résultats qui en dépendent.
+
+3.  Données — Définir des structures de données stables pour la
+    géométrie, le textile, les pièces de fabrication et les projets.
+
+4.  Validation — Vérifier les résultats à l’aide de tests
+    reproductibles, notamment sur deux dômes de référence.
+
+5.  Évolutivité — Créer un noyau commun permettant d’ajouter des
+    familles de produits sans mélanger leurs règles métier.
+
+3. Architecture cible
+
+L’architecture cible peut être organisée en six couches aux
+responsabilités explicites.
+
+  -----------------------------------------------------------------------
+  Couche                              Responsabilité
+  ----------------------------------- -----------------------------------
+  1. Géométrie                        Sphères, dômes, fréquences,
+                                      sommets, barres, faces et
+                                      ouvertures structurelles.
+
+  2. Textile                          Paramètres de toile, patrons,
+                                      découpes et propriétés des pièces
+                                      textiles.
+
+  3. Fabrication                      Développés, assemblages, nesting,
+                                      optimisation et contrôles de
+                                      fabrication.
+
+  4. Produits                         Règles spécifiques aux habitats,
+                                      Quadrisphères, objets décoratifs et
+                                      Kumiko.
+
+  5. Application                      État du projet, orchestration,
+                                      sauvegarde, importation et
+                                      exportation.
+
+  6. Présentation                     Interface, visualisation 2D/3D et
+                                      retours utilisateur.
+  -----------------------------------------------------------------------
+
+[CODE] Le fichier comporte notamment geometryStatus(),
+fabricationStatus(), renderStatus(), fabricationGate() et l’objet global
+window.CoverApp. [RECOMMANDATION] Ces responsabilités devraient être
+isolées progressivement, en conservant les comportements existants et en
+extrayant les modules par étapes.
+
+4. Roadmap priorisée
+
+Phase 1 — Sécuriser l’existant
+
+Priorité critique
+
+-   Mettre le projet sous Git et définir une version de référence.
+
+-   Organiser les sources JavaScript en fichiers distincts.
+
+-   Créer un script d’assemblage automatique du HTML final.
+
+-   Vérifier que le fichier assemblé reproduit les comportements de la
+    version actuelle.
+
+Livrable : projet versionné, reproductible et toujours distribuable sous
+la forme d’un seul HTML.
+
+Phase 2 — Fiabiliser calculs et statuts
+
+Priorité critique
+
+-   Cartographier les dépendances entre géométrie, textile, fabrication
+    et affichage.
+
+-   Définir les règles d’invalidation après chaque modification.
+
+-   Distinguer les résultats à jour des résultats périmés.
+
+-   Clarifier les conditions de validation et de blocage des exports.
+
+-   Tester les cas acceptés, refusés et incomplets.
+
+Livrable : validation cohérente qui ne présente pas un résultat périmé
+comme valide.
+
+Phase 3 — Stabiliser les données métier
+
+Priorité élevée
+
+-   Définir DomeGeometry pour la définition et les résultats
+    géométriques.
+
+-   Définir FabricSpec pour les paramètres textiles.
+
+-   Définir FabricPiece pour une pièce textile à fabriquer.
+
+-   Définir Project pour le projet et ses paramètres.
+
+-   Définir FabricationResult pour les résultats et preuves de
+    validation.
+
+-   Distinguer le patron théorique d’une pièce de sa disposition sur une
+    feuille de matière.
+
+Livrable : contrats de données stables entre les modules.
+
+Phase 4 — Construire une base de tests
+
+Priorité élevée
+
+-   Créer des jeux de référence pour les deux dômes existants.
+
+-   Tester les résultats géométriques et les ouvertures.
+
+-   Tester les paramètres textiles et les invalidations.
+
+-   Tester les statuts, imports, exports et sauvegardes.
+
+-   Tester le HTML final assemblé.
+
+Livrable : suite de régression capable de détecter les erreurs avant
+publication.
+
+Phase 5 — Extraire progressivement les modules
+
+Priorité élevée
+
+-   Isoler la logique de statut.
+
+-   Séparer l’orchestration de l’application.
+
+-   Clarifier les responsabilités de la géométrie et de la fabrication.
+
+-   Séparer la logique métier du rendu 3D.
+
+-   Réduire progressivement les dépendances globales.
+
+Livrable : architecture modulaire sans rupture fonctionnelle.
+
+Phase 6 — Préparer les familles de produits
+
+Priorité moyenne à élevée
+
+-   Définir le noyau commun et ses limites.
+
+-   Créer des modules spécifiques pour les habitats géodésiques,
+    Quadrisphères événementielles, objets décoratifs, structures Kumiko
+    et Nomad Vision.
+
+-   Réutiliser les composants communs uniquement lorsque leurs règles
+    sont réellement partagées.
+
+Livrable : plateforme extensible, avec socle commun et logiques produit
+indépendantes.
+
+Phase 7 — Renforcer la gestion des projets
+
+Priorité moyenne
+
+-   Versionner le format JSON des projets.
+
+-   Valider les données importées et contrôler les fichiers GLB et
+    ressources associées.
+
+-   Prévoir une stratégie de migration des anciens projets.
+
+-   Distinguer les préférences locales des données de projet à
+    conserver.
+
+Livrable : projets portables, récupérables et compatibles avec les
+évolutions futures.
+
+5. Ordre d’exécution recommandé
+
+  -----------------------------------------------------------------------
+  Ordre                   Action                  Résultat attendu
+  ----------------------- ----------------------- -----------------------
+  1                       Git et sauvegarde de    Pouvoir revenir à un
+                          référence               état connu.
+
+  2                       Assemblage automatique  Reproduire les versions
+                          du HTML                 de manière fiable.
+
+  3                       Tests de régression     Protéger les résultats
+                                                  existants.
+
+  4                       Audit des dépendances   Éviter les résultats
+                          et statuts              incohérents.
+
+  5                       Stabilisation des       Fiabiliser les échanges
+                          objets métier           entre modules.
+
+  6                       Extraction progressive  Réduire le couplage.
+                          du code                 
+
+  7                       Architecture            Faciliter l’extension.
+                          multi-produits          
+
+  8                       Versionnement des       Pérenniser les données.
+                          projets                 
+  -----------------------------------------------------------------------
+
+6. Principes à préserver
+
+-   Ne pas lancer de réécriture globale avant d’avoir sécurisé
+    l’existant.
+
+-   Ne pas ajouter une famille de produits sans définir ses données et
+    ses responsabilités.
+
+-   Ne pas déclarer un résultat de fabrication valide sans contrôles
+    explicites.
+
+-   Ne pas réaliser de modification structurelle majeure sans tests de
+    régression.
+
+-   Éviter les dépendances implicites entre modules : chaque échange
+    important doit être identifiable.
+
+-   Générer le HTML final de manière reproductible plutôt que de
+    maintenir manuellement une version assemblée fragile.
+
+7. Recommandation finale
+
+Concentrer le premier chantier sur trois objectifs :
+
+6.  Maîtriser le code — Git, organisation des sources et assemblage
+    automatique.
+
+7.  Maîtriser la fiabilité — Tests de référence, invalidation des
+    calculs et statuts de validation.
+
+8.  Maîtriser les données — Objets métier stables et séparation entre
+    géométrie, textile et fabrication.
+
+Conclusion
+
+L’objectif n’est pas de rendre le code plus abstrait ou plus complexe.
+Il est de rendre chaque évolution plus prévisible, chaque résultat plus
+fiable et chaque nouveau produit moins coûteux à développer. La priorité
+est donc de consolider l’architecture et le processus de validation
+avant d’élargir fortement le périmètre fonctionnel.
+
+Annexe — Points techniques repérés dans le code
+
+-   readFabricParams() — vers la ligne 9119.
+
+-   initBase3D() — vers la ligne 10500.
+
+-   draw3DBase() — vers la ligne 10511.
+
+-   geometryStatus() — vers la ligne 10578.
+
+-   fabricationStatus() — vers la ligne 10614.
+
+-   renderStatus() — vers la ligne 10627.
+
+-   fabricationGate() — vers la ligne 10652.
+
+-   window.CoverApp — vers la ligne 10801.
+
+-   Chargement et sauvegarde du projet : load() et save(), vers les
+    lignes 10844 et 10848.
+
+-   Export JSON : vers la ligne 10916.
+
+-   Rendu 3D : draw3DCanvas() vers la ligne 11327 et draw3D() vers la
+    ligne 11394.
+
+-   Chargement de modèle GLB : loadModel() et importGLB(), vers les
+    lignes 11422 et 11427.
+
+Note méthodologique : les numéros de ligne sont indicatifs et se
+rapportent à la version du fichier examinée. Les constats statiques et
+la vérification syntaxique ne remplacent pas une campagne de tests
+fonctionnels dans un navigateur.

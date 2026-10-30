@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Nomad'Om Designer Beta</title>
+<style>
+  :root{
+    --bg: #eceeef;
+    --panel: #f7f8f8;
+    --ink: #1c1f22;
+    --ink-dim: #6b7278;
+    --line: #c7cccf;
+    --accent: #2b5a8a;
+    --accent-ink: #ffffff;
+    --sel: #d8912b;
+    --mono: "IBM Plex Mono", "Consolas", "SF Mono", monospace;
+    --sans: "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 13px;
+  }
+  header{
+    display:flex; align-items:baseline; gap:18px;
+    padding: 10px 16px; background: var(--ink); color: #fff;
+    border-bottom: 3px solid var(--accent);
+  }
+  header h1{
+    font-size: 15px; letter-spacing: 0.06em; margin: 0;
+    font-family: var(--mono); font-weight: 600;
+  }
+  nav.tabs{ display:flex; gap: 2px; }
+  nav.tabs button{
+    font-family: var(--mono); font-size: 12px;
+    background: transparent; color: #b9c0c6; border: none;
+    padding: 6px 12px; cursor: default; border-bottom: 2px solid transparent;
+  }
+  nav.tabs button.active{ color:#fff; border-bottom-color: var(--accent); cursor: default; }
+  nav.tabs button#tabCover, nav.tabs button#tabInfo, nav.tabs button#tabDesign, nav.tabs button#tabBase, nav.tabs button#tabQuadri{ cursor: pointer; }
+  #base3d{ height: 560px; }
+  .kpi-grid{ display:grid; grid-template-columns: 1fr auto; gap: 3px 16px; } .kpi-grid b{ color: var(--accent); text-align:right; }
+  nav.tabs button[disabled]{ opacity: 0.45; }
+
+  main{ padding: 14px 16px 40px; max-width: 1320px; margin: 0 auto; }
+
+  .toolbar{
+    display:flex; flex-wrap: wrap; align-items:center; gap: 18px;
+    background: var(--panel); border: 1px solid var(--line);
+    padding: 10px 14px; margin-bottom: 12px;
+  }
+  .toolbar label{ font-size: 11px; color: var(--ink-dim); display:flex; flex-direction:column; gap:3px; }
+  .toolbar input[type=number]{
+    font-family: var(--mono); font-size: 13px; width: 90px;
+    padding: 4px 6px; border: 1px solid var(--line); background:#fff;
+  }
+  .toolbar button.primary{
+    font-family: var(--mono); font-size: 12px; padding: 7px 14px;
+    background: var(--accent); color: var(--accent-ink); border: none; cursor: pointer;
+  }
+  .toolbar button.primary:hover{ filter: brightness(1.08); }
+  .stat{ font-family: var(--mono); font-size: 12px; color: var(--ink); }
+  .stat b{ color: var(--accent); }
+
+  .panes{ display:flex; gap: 12px; align-items: stretch; }
+  .pane{
+    flex: 1 1 0; background: var(--panel); border: 1px solid var(--line);
+    display:flex; flex-direction:column; min-width: 0;
+  }
+  .pane h2{
+    font-family: var(--mono); font-size: 11px; letter-spacing: .05em;
+    margin: 0; padding: 8px 10px; border-bottom: 1px solid var(--line);
+    color: var(--ink-dim); display:flex; justify-content:space-between;
+  }
+  .pane .body{ position: relative; flex: 1; }
+  canvas{ display:block; width: 100%; height: 520px; cursor: grab; background: #fbfcfc; }
+  canvas.dragging{ cursor: grabbing; }
+  #viewer2d{ cursor: default; }
+
+  .hint{ position:absolute; left:10px; right:10px; bottom:8px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-dim); pointer-events:none; }
+
+  .btnrow{ display:flex; flex-wrap:wrap; gap: 8px; margin-top: 12px; }
+  .btnrow button{
+    font-family: var(--mono); font-size: 12px; padding: 8px 14px;
+    background: #fff; border: 1px solid var(--line); color: var(--ink); cursor: pointer;
+  }
+  .btnrow button.on{ background: var(--accent); color:#fff; border-color: var(--accent); }
+  .btnrow button[disabled]{ opacity: 0.4; cursor: not-allowed; }
+  .btnrow .sep{ width: 1px; background: var(--line); margin: 0 4px; }
+  .btnrow .img-btn{ position: relative; font-family: var(--mono); font-size: 12px; padding: 8px 14px; background:#fff; border:1px solid var(--line); cursor:pointer; overflow:hidden; }
+  .btnrow .img-btn.on{ background: var(--accent); color:#fff; border-color: var(--accent); }
+  .btnrow .img-btn input{ position:absolute; inset:0; opacity:0; cursor:pointer; }
+  .btnrow select{ font-family: var(--mono); font-size: 12px; border:1px solid var(--line); background:#fff; padding: 0 6px; }
+
+  .selection-readout{
+    margin-top: 10px; padding: 10px 12px; background: var(--panel); border:1px solid var(--line);
+    font-family: var(--mono); font-size: 12px; min-height: 20px;
+  }
+  .selection-readout .muted{ color: var(--ink-dim); }
+  .selection-readout table{ border-collapse: collapse; margin-top: 6px; }
+  .selection-readout th, .selection-readout td{ padding: 3px 10px 3px 0; text-align: left; font-weight: normal; }
+  .selection-readout th{ color: var(--ink-dim); border-bottom: 1px solid var(--line); }
+  .selection-readout td.bad{ color: #b23a2f; font-weight: 600; }
+
+  .toolbar + .toolbar{ margin-top: -6px; }
+  .group-title{ font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 600; min-width: 70px; }
+  .toolbar select{ font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); background: #fff; }
+  .toolbar input:disabled{ background: #eef0f1; color: var(--ink-dim); }
+  .seam-note{ font-size: 11px; color: var(--ink-dim); max-width: 320px; }
+  .offset-info{ background: #fff7e8; border: 1px solid #e6c48a; padding: 10px 14px; margin-bottom: 12px; font-family: var(--mono); font-size: 12px; }
+  .offset-info table{ border-collapse: collapse; margin-top: 6px; }
+  .offset-info th, .offset-info td{ padding: 2px 14px 2px 0; text-align: left; font-weight: normal; }
+  .offset-info th{ color: var(--ink-dim); border-bottom: 1px solid #e6c48a; }
+  .offset-info .warn{ color: #8a5a12; }
+  .overlay-sel{ position:absolute; top:8px; left:8px; font-family: var(--mono); font-size: 11.5px; padding: 4px 8px; background:#fff; border:1px solid var(--line); display:flex; gap:6px; align-items:center; z-index: 2; }
+  .overlay-sel select{ font-family: var(--mono); font-size: 11.5px; }
+  .overlay-btn{ position:absolute; top:8px; right:8px; font-family: var(--mono); font-size: 11.5px; padding: 6px 10px;
+    background:#fff; border:1px solid var(--line); cursor:pointer; }
+  .selection-readout table.clickable tr[data-piece]{ cursor: pointer; }
+  .selection-readout table.clickable tr[data-piece]:hover td{ background: #e6edf4; }
+  .selection-readout h4{ font-size: 11.5px; margin: 14px 0 2px; color: var(--accent); letter-spacing: .03em; }
+  .sheet-head{ display:flex; align-items:center; gap: 14px; flex-wrap: wrap; }
+  .sheet-head button{ font-family: var(--mono); font-size: 11.5px; padding: 5px 10px; background: var(--accent); color:#fff; border:none; cursor:pointer; }
+  .sheet-head button.ghost{ background:#fff; color: var(--accent); border: 1px solid var(--accent); }
+  .sheet-kpis{ display:flex; flex-wrap:wrap; gap: 6px 22px; margin: 8px 0 6px; }
+  .sheet-kpis b{ color: var(--accent); }
+  .sheet-grid{ display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1.4fr); gap: 0 28px; }
+  @media (max-width: 900px){ .sheet-grid{ grid-template-columns: 1fr; } .panes{ flex-direction: column; } }
+  .selection-readout tr.on td{ background: #e6edf4; }
+  .small-ids{ font-size: 10.5px; max-width: 360px; }
+  .lab-head{ display:flex; align-items:center; white-space: nowrap; }
+  .help-q{ display:inline-block; margin-left: 5px; width: 14px; height: 14px; line-height: 14px; text-align:center; border-radius: 50%;
+    background: var(--accent); color:#fff; font-size: 10px; font-weight: 700; cursor: pointer; text-decoration: none; }
+  .info-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom: 10px; }
+  .info-head h2{ font-family: var(--mono); font-size: 16px; margin: 0; }
+  .info-head button, .use-strat{ font-family: var(--mono); font-size: 12px; padding: 6px 12px; background:#fff; border:1px solid var(--accent); color: var(--accent); cursor:pointer; }
+  .info-card{ background: var(--panel); border: 1px solid var(--line); padding: 12px 14px; margin-bottom: 12px; font-family: var(--mono); font-size: 12px; overflow-x: auto; }
+  .info-card h3{ margin: 0 0 8px; font-size: 13px; color: var(--accent); }
+  .info-card table{ border-collapse: collapse; }
+  .info-card th, .info-card td{ padding: 4px 12px 4px 0; text-align:left; font-weight: normal; vertical-align: top; }
+  .info-card th{ color: var(--ink-dim); border-bottom: 1px solid var(--line); }
+  .info-card .muted{ color: var(--ink-dim); }
+  table.compare td.best{ background: #e3f1dc; color: #2c5a1d; font-weight: 700; }
+  table.compare tr.current td{ border-top: 1px solid var(--accent); border-bottom: 1px solid var(--accent); }
+  .explain{ margin-top: 10px; padding: 8px 12px; background: #eef4ea; border-left: 3px solid #5c8a4a; font-family: var(--sans); font-size: 13px; line-height: 1.5; }
+  .explain ul{ margin: 4px 0; padding-left: 20px; }
+  .flash{ background: #fff2b3 !important; transition: background .3s; }
+  details.help{ border-bottom: 1px solid var(--line); padding: 6px 0; font-family: var(--sans); font-size: 13px; }
+  details.help summary{ cursor: pointer; font-weight: 600; color: var(--ink); }
+  .help-body{ padding: 6px 4px 4px 14px; line-height: 1.5; max-width: 980px; }
+  .help-body dt{ font-weight: 700; margin-top: 8px; color: var(--accent); }
+  .help-body dd{ margin: 2px 0 0 0; }
+  .gab-dot{ display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; border:1px solid rgba(0,0,0,.3); }
+  .piece-chip{ display:inline-block; padding: 1px 6px; margin: 1px 2px; border: 1px solid var(--line); background:#fff; cursor:pointer; }
+  .piece-chip:hover{ background:#e6edf4; } .piece-chip.cur{ background: var(--accent); color:#fff; border-color: var(--accent); }
+  .gab-info{ margin: 6px 0 2px; padding: 5px 8px; background: #f3eefa; border-left: 3px solid #8a4fb0; }
+  .roll-pos{ margin: 4px 0; padding: 5px 8px; background: #eef4ea; border-left: 3px solid #5c8a4a; }
+  .k-ourlet{ color:#2b5a8a } .k-fermeture{ color:#8a4fb0 } .k-montante{ color:#b23a2f } .k-etage{ color:#1c1f22 }
+
+  #viewDesign .toolbar label.chk{ flex-direction: row; align-items:center; gap:5px; }
+  #viewDesign .toolbar input[type=number]{ width: 70px; }
+  #viewDesign canvas{ height: 560px; }
+  #dsPlan{ cursor: default; }
+  .ds-props input[type=number]{ width: 70px; font-family: var(--mono); }
+  .ds-props input[type=text]{ width: 160px; font-family: var(--mono); }
+  .ds-props label{ display:inline-flex; flex-direction:column; font-size: 10.5px; color: var(--ink-dim); margin: 0 10px 6px 0; }
+  .ds-props button, .ds-actions button{ font-family: var(--mono); font-size: 11.5px; padding: 5px 10px; background:#fff; border:1px solid var(--line); cursor:pointer; margin-right: 6px; }
+  .ds-props button.danger{ color:#b23a2f; border-color:#e0b4ae; }
+  .ds-warn{ color:#b23a2f; font-weight: 600; }
+  .btnrow button.trace, .toolbar button.trace{ background: #d8912b; color:#1c1f22; border-color:#b8761a; }
+  .op-status{ padding: 6px 8px; border: 1px solid var(--line); margin-bottom: 8px; }
+  .op-status.err{ color:#b23a2f; border-color:#e0b4ae; } .op-status.ok{ color:#3e7a3a; border-color:#a9cfa4; }
+  .op-warn{ color:#8a5a12; margin: 2px 0; }
+  .op-card{ border-top: 1px solid var(--line); padding-top: 6px; margin-top: 8px; }
+  .op-card dl{ display:grid; grid-template-columns: auto 1fr; gap: 2px 14px; margin: 4px 0 0; }
+  .op-card dt{ color: var(--ink-dim); } .op-card dd{ margin: 0; }
+  .op-legend{ display:flex; flex-wrap:wrap; gap: 4px 14px; color: var(--ink-dim); font-size: 11px; margin-top: 6px; }
+  .op-legend i{ display:inline-block; width:18px; height:3px; vertical-align:middle; margin-right:4px; }
+  td.down{ color:#b23a2f; font-weight:600; }
+  .edge-classes{ display:flex; gap: 14px; flex-wrap:wrap; margin-top: 10px; }
+  .edge-classes .chip{
+    font-family: var(--mono); font-size: 11.5px; padding: 5px 9px;
+    background: #fff; border: 1px solid var(--line);
+  }
+  .edge-classes .chip b{ color: var(--accent); }
+
+  .beta-badge{ font-size: 9.5px; letter-spacing: .12em; font-weight: 700; color: var(--ink); background: var(--sel); padding: 2px 6px; border-radius: 3px; vertical-align: 2px; margin-left: 4px; }
+  .st-badge{ font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: 3px; white-space: nowrap; cursor: help; }
+  .st-green{ background:#e3f1dc; color:#2c5a1d; } .st-yellow{ background:#fbf1cf; color:#6e5410; } .st-orange{ background:#fbe3cf; color:#7a3d0c; } .st-red{ background:#f6d6d2; color:#8e2a20; }
+  header .st-badge{ font-size: 10.5px; }
+  .st-card{ background: var(--panel); border: 1px solid var(--line); padding: 10px 14px; margin-bottom: 12px; font-size: 12.5px; }
+  .st-card ul{ margin: 6px 0; padding-left: 20px; } .st-card .muted{ color: var(--ink-dim); font-size: 11px; }
+  footer{
+    text-align:center; color: var(--ink-dim); font-family: var(--mono);
+    font-size: 11px; padding: 18px 0 30px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>NOMAD'OM <span style="font-weight:400;opacity:.75">DESIGNER</span> <span class="beta-badge" title="Version bêta 0.9.11 du 30/10/2026">BETA</span></h1>
+  <nav class="tabs">
+    <button id="tabBase">Base</button>
+    <button id="tabCover" class="active">Cover+</button>
+    <button id="tabDesign">Design</button>
+    <button id="tabQuadri" title="Pavillon Quadrisphère — gamme événementielle">Quadrisphère</button>
+    <button id="tabInfo">Informations</button>
+  </nav>
+  <span id="headDome" class="stat" style="margin-left:auto;color:#b9c0c6"></span>
+  <span id="headStatus" class="stat"></span>
+</header>
+
+<main>
+<div id="viewBase" style="display:none">
+  <div class="info-head"><h2>Base — géométrie et structure du dôme</h2><span class="stat">Tout ce qui est réglé ici s'applique à Cover+ (toile) et à Design (aménagement).</span></div>
+  <div class="toolbar">
+    <span class="group-title">Dôme</span>
+    <label>Polyèdre de base
+      <select id="paramBase" style="width:120px;padding:4px 6px"><option value="Icosahedron">Icosaèdre</option></select>
+    </label>
+    <label>Fréquence
+      <select id="paramDetail" style="width:70px;padding:4px 6px"></select>
+    </label>
+    <label>Classe
+      <select id="paramClass" style="width:60px;padding:4px 6px"><option value="I">I</option></select>
+    </label>
+    <label>Méthode de subdivision
+      <select id="paramMethod" style="width:150px;padding:4px 6px"></select>
+    </label>
+    <label>Symétrie (axe)
+      <select id="paramSymmetry" style="width:170px;padding:4px 6px"><option value="Pentad">Pentad — sommet à 5</option><option value="Triad">Triad — face au sommet</option><option value="Cross">Cross — arête au sommet</option></select>
+    </label>
+    <label>Découpage
+      <select id="paramPartial" style="width:200px;padding:4px 6px"></select>
+    </label>
+    <label class="chk" style="flex-direction:row;align-items:center;gap:5px" title="Ramène les nœuds du bord dans un même plan (base plate), en les déplaçant sur la sphère">
+      <input type="checkbox" id="paramAlign"> Aligner la base
+    </label>
+    <label>Diamètre (m)
+      <input id="paramDiameter" type="number" value="5.00" step="0.01" min="0.1">
+    </label>
+    <button class="primary" id="btnRegenerate">Calculer</button>
+  </div>
+  <div class="toolbar">
+    <span class="group-title">Structure</span>
+    <label>Assemblage de la structure
+      <select id="paramStructure" style="width:290px;padding:4px 6px">
+        <option value="connecteur">Avec connecteur — toile au niveau des nœuds</option>
+        <option value="goodkarma">Sans connecteur (GoodKarma) — toile sur les montants</option>
+      </select>
+    </label>
+    <label>Hauteur d'appui (mm)
+      <input id="paramSupportH" type="number" value="120" step="5" min="0" title="Distance entre le plan des nœuds calculés et la face extérieure des montants, perpendiculairement à chaque face">
+    </label>
+    <button id="btnBaseOpen" class="primary" title="Porte, fenêtre, coupole : cliquer sur les montants qui entourent l'ouverture">Tracer les ouvertures</button>
+    <span class="stat">sommets <b id="statPoints">–</b> · montants <b id="statLines">–</b> · faces <b id="statFaces">–</b> · bord <b id="statSelvage">–</b></span>
+  </div>
+  <div id="baseWarn"></div>
+  <div id="domeStatus"></div>
+  <div class="panes">
+    <section class="pane"><h2><span>DÔME 3D</span><span id="baseInfo3d"></span></h2><div class="body"><canvas id="base3d"></canvas><canvas id="baseTrace" style="display:none;cursor:crosshair;touch-action:none;height:560px"></canvas><div class="hint" id="baseHint">glisser = tourner · molette = zoom · double-clic = recadrer</div></div></section>
+    <section class="pane"><h2><span>CHIFFRES CLÉS</span></h2><div class="body" id="baseKpis" style="padding:10px 14px;font-family:var(--mono);font-size:12px;overflow:auto;max-height:560px"></div></section>
+  </div>
+  <div class="selection-readout" id="baseOpenings"></div>
+  <div class="selection-readout" id="baseStruts"></div>
+  <div class="selection-readout" id="baseTris"></div>
+</div>
+<div id="viewCover">
+
+  <div class="toolbar">
+    <span class="group-title">Toile</span>
+    <label>Laize (mm)
+      <input id="paramFabricW" type="number" value="1500" step="10" min="100">
+    </label>
+    <label>Lisière inutilisable / bord (mm)
+      <input id="paramSelvage" type="number" value="10" step="5" min="0">
+    </label>
+    <label>Tolérance chevauchement (mm)
+      <input id="paramOverlapTol" type="number" value="50" step="5" min="0">
+    </label>
+  </div>
+
+  <div class="toolbar">
+    <span class="group-title">Découpe</span>
+    <label>Découpe des étages
+      <select id="paramCutStrategy" style="width:330px;padding:4px 6px">
+        <option value="pieces">Moins de morceaux (le moins de coutures)</option>
+        <option value="gabarits">Moins de gabarits (morceaux identiques répétés)</option>
+        <option value="toile">Moins de toile (compromis toile / coutures)</option>
+        <option value="triangles">Triangle par triangle</option>
+      </select>
+    </label>
+    <label id="lblSeamWeight">Poids d'une couture (cm de toile)
+      <input id="paramSeamWeight" type="number" value="10" step="5" min="0" title="Longueur de rouleau qu'on accepte de dépenser en plus pour éviter une couture. 0 = le moins de toile, quelles que soient les coutures.">
+    </label>
+    <label id="lblBaseRow">Rangée du bas
+      <select id="paramBaseRow" style="width:250px;padding:4px 6px">
+        <option value="ring">Un seul anneau (si la laize le permet)</option>
+        <option value="sectors">5 morceaux identiques</option>
+      </select>
+    </label>
+    <span class="seam-note">Gabarit = forme tracée une fois et réutilisée pour tous les morceaux identiques. ⇋ = même gabarit retourné.</span>
+  </div>
+
+  <div class="toolbar">
+    <span class="group-title">Coutures</span>
+    <label>Type d'assemblage
+      <select id="paramSeamType" style="width:200px;padding:4px 6px">
+        <option value="simple">Couture simple</option>
+        <option value="rabattue">Couture rabattue</option>
+        <option value="recouvrement">Recouvrement / soudure</option>
+        <option value="perso">Personnalisé</option>
+      </select>
+    </label>
+    <label>Marge côté A — recouvrant (mm)
+      <input id="paramSeamA" type="number" value="20" step="5" min="0">
+    </label>
+    <label>Marge côté B — recouvert (mm)
+      <input id="paramSeamB" type="number" value="20" step="5" min="0">
+    </label>
+    <label>Ourlet bas (mm)
+      <input id="paramHem" type="number" value="50" step="5" min="0">
+    </label>
+    <span class="seam-note" id="seamNote"></span>
+  </div>
+
+  <div class="toolbar">
+    <span class="group-title">Rangée du bas</span>
+    <label style="flex-direction:row;align-items:center;gap:5px" title="Les morceaux qui portent l'ourlet (bord du dôme) prennent ces marges sur tous leurs bords — utile quand ils ne tiennent pas dans la laize">
+      <input type="checkbox" id="paramBottomOn"> Marges propres
+    </label>
+    <label>Marge A (mm)
+      <input id="paramBotA" type="number" value="15" step="5" min="0" disabled>
+    </label>
+    <label>Marge B (mm)
+      <input id="paramBotB" type="number" value="15" step="5" min="0" disabled>
+    </label>
+    <label>Ourlet (mm)
+      <input id="paramBotHem" type="number" value="30" step="5" min="0" disabled>
+    </label>
+    <span class="seam-note">S'applique aux morceaux qui touchent le bord du dôme, sur tous leurs bords ; la couture avec la rangée du dessus a donc deux marges différentes. Les autres rangées gardent les marges de « Coutures ».</span>
+  </div>
+
+  <div class="offset-info" id="offsetInfo" style="display:none"></div>
+
+  <div class="panes">
+    <section class="pane">
+      <h2><span>DÔME 3D</span><span id="hoverInfo">&nbsp;</span></h2>
+      <div class="body">
+        <canvas id="viewer3d"></canvas>
+        <div class="hint">glisser = rotation · molette = zoom · clic = sélection · maj+clic = multi-sélection</div>
+      </div>
+    </section>
+    <section class="pane">
+      <h2><span>DÉVELOPPEMENT 2D</span><span id="dev2dInfo">&nbsp;</span></h2>
+      <div class="body">
+        <canvas id="viewer2d"></canvas>
+        <button id="btnBackOverview" class="overlay-btn" style="display:none">← Tous les morceaux</button>
+        <label id="peelTypeBox" class="overlay-sel" style="display:none">Type d'ouverture <select id="paramPeelType"><option value="one">1 fente</option></select></label>
+        <div class="hint" id="hint2d">sélectionnez un ou plusieurs triangles dans la vue 3D</div>
+      </div>
+    </section>
+  </div>
+
+  <div class="btnrow">
+    <button id="modeTriangle" class="on">Triangle</button>
+    <button id="btnCreatePanel">Créer panneau</button>
+    <button id="btnDevelop">Développer</button>
+    <button id="btnDevelopEtages" title="Une bande par rangée de triangles, découpée en un minimum de morceaux qui tiennent dans la laize utile">Étages (par rangée)</button>
+    <button id="btnRoll" title="Placement des morceaux du mode Étages sur le rouleau (rotation 0/180°, sans retournement)">Plan de coupe (rouleau)</button>
+    <div class="sep"></div>
+    <button id="btnFlat" title="Tous les morceaux exacts de la découpe choisie, posés à plat étage par étage, avec toutes les cotes (molette = zoom)">⇊ Vue aplatie (cotes)</button>
+    <label class="img-btn" title="Plaquer une image (JPG, PNG, GIF) sur le dôme 3D">🖼 Image sur le dôme
+      <input type="file" id="paramDomeImage" accept="image/jpeg,image/png,image/gif,image/webp">
+    </label>
+    <select id="paramImageProj" title="Projection de l'image sur le dôme">
+      <option value="ciel">Vue du ciel (centre = sommet)</option>
+      <option value="panorama">Panorama (tour du dôme)</option>
+    </select>
+    <button id="btnImageOff" title="Retirer l'image" style="display:none">✕ Image</button>
+  </div>
+
+  <div class="selection-readout" id="selectionReadout">
+    <span class="muted">Aucun triangle sélectionné — cliquez sur une face du dôme.</span>
+  </div>
+
+  <div class="selection-readout" id="openingsReadout" style="display:none"></div>
+
+  <div class="selection-readout" id="panelsReadout" style="display:none;">
+  </div>
+
+  <div class="edge-classes" id="edgeClasses"></div>
+
+</div>
+<section id="viewQuadri" style="display:none">
+  <div class="info-head"><h2>Quadrisphère — pavillon événementiel</h2><span class="stat">Dôme sur 4 pieds et 4 arches · base octaèdre · conception Nomad'Om</span></div>
+  <div class="toolbar">
+    <span class="group-title">Pavillon</span>
+    <label>Entraxe des pieds (m)
+      <input id="qdSide" type="number" value="5.00" step="0.5" min="4" max="10" title="Côté du carré entre les 4 platines au sol">
+    </label>
+    <label>Fréquence
+      <select id="qdNu" style="width:70px;padding:4px 6px"><option value="2">2V</option><option value="3" selected>3V</option><option value="4">4V</option></select>
+    </label>
+    <label>Hauteur des nœuds d'arche (m)
+      <input id="qdArch" type="number" value="1.60" step="0.05" min="0" title="Hauteur des nœuds de rive qui bordent chaque arche">
+    </label>
+    <label>Profil des pieds
+      <input id="qdK" type="number" value="1.5" step="0.1" min="0.8" max="2.5" title="Plus haut = soulèvement concentré en bas, pieds plus raides">
+    </label>
+    <label class="chk" style="flex-direction:row;align-items:center;gap:5px" title="Ajoute la barre basse sous chaque arche">
+      <input type="checkbox" id="qdLintel"> Linteau sous les arches
+    </label>
+    <span class="stat">sommets <b id="qdStatV">–</b> · barres <b id="qdStatE">–</b> · faîte <b id="qdStatH">–</b></span>
+  </div>
+  <div class="toolbar">
+    <span class="group-title">Structure</span>
+    <label>Assemblage de la structure
+      <select id="qdMode" style="width:290px;padding:4px 6px">
+        <option value="hub">Avec connecteur — barres dans un moyeu acier</option>
+        <option value="gk">Sans connecteur (GoodKarma) — barres boulonnées en moulinet</option>
+      </select>
+    </label>
+    <label>Matériau des barres
+      <select id="qdMat" style="width:120px;padding:4px 6px"><option value="wood">Bois</option><option value="steel">Tube acier</option></select>
+    </label>
+    <label id="qdLblB">Largeur (mm)
+      <input id="qdB" type="number" value="140" step="5" min="20">
+    </label>
+    <label id="qdLblH">Épaisseur (mm)
+      <input id="qdH" type="number" value="70" step="5" min="1">
+    </label>
+    <label>Recul connecteur (mm)
+      <input id="qdHub" type="number" value="120" step="5" min="0" title="Distance du centre du nœud au bout de la barre (mode avec connecteur)">
+    </label>
+  </div>
+  <div class="toolbar">
+    <span class="group-title">Rendu</span>
+    <label>Style
+      <select id="qdStyle" style="width:120px;padding:4px 6px"><option value="real">Réaliste</option><option value="maquette">Maquette</option></select>
+    </label>
+    <label class="chk" style="flex-direction:row;align-items:center;gap:5px"><input type="checkbox" id="qdColors"> Couleur par type de barre</label>
+    <label class="chk" style="flex-direction:row;align-items:center;gap:5px"><input type="checkbox" id="qdCover"> Toile</label>
+    <label class="chk" style="flex-direction:row;align-items:center;gap:5px"><input type="checkbox" id="qdPerson" checked> Silhouette 1,80 m</label>
+    <span class="btnrow" style="margin-top:0">
+      <button id="qdViewIso" type="button">3/4</button><button id="qdViewFront" type="button">Face arche</button><button id="qdViewTop" type="button">Dessus</button>
+    </span>
+  </div>
+  <div id="qdWarn"></div>
+  <div class="panes">
+    <section class="pane"><h2><span>QUADRISPHÈRE 3D</span><span id="qdInfo3d"></span></h2><div class="body"><canvas id="qd3d" style="height:560px"></canvas><div class="hint">glisser = tourner · molette = zoom · double-clic = recadrer</div></div></section>
+    <section class="pane"><h2><span>AVEC OU SANS CONNECTEUR</span></h2><div class="body" id="qdKpis" style="padding:10px 14px;font-family:var(--mono);font-size:12px;overflow:auto;max-height:560px"></div></section>
+  </div>
+  <div class="selection-readout" id="qdCut"></div>
+  <div class="selection-readout" id="qdNodes"></div>
+</section>
+<section id="viewInfo" style="display:none"></section>
+<section id="viewDesign" style="display:none"></section>
+</main>
+
+<footer>
+  Nomad'Om Designer Beta · version bêta 0.9.11 du 30/10/2026 · ouvertures dans Base (étape 1 bis) · Quadrisphère · moteur géométrique porté d'ACIDOME CALC 221027 et validé contre lui (571 combinaisons identiques)
+</footer>
+<script id="threekit-src">{{MODULE:threekit-src}}</script>
+<script id="dome-engine-src">{{MODULE:dome-engine-src}}</script>
+<script id="etages-src">{{MODULE:etages-src}}</script>
+<script id="toile-src">{{MODULE:toile-src}}</script>
+<script id="export-src">{{MODULE:export-src}}</script>
+<script id="nesting-src">{{MODULE:nesting-src}}</script>
+<script id="optim-src">{{MODULE:optim-src}}</script>
+<script id="info-src">{{MODULE:info-src}}</script>
+<script id="peel-src">{{MODULE:peel-src}}</script>
+<script id="design-src">{{MODULE:design-src}}</script>
+<script id="design3d-src">{{MODULE:design3d-src}}</script>
+<script id="design3d-three-src">{{MODULE:design3d-three-src}}</script>
+<script id="ouvertures-src">{{MODULE:ouvertures-src}}</script>
+<script>{{MODULE:main}}</script>
+<script id="designui-src">{{MODULE:designui-src}}</script>
+<script id="quadri-geom-src">{{MODULE:quadri-geom-src}}</script>
+
+<script id="quadri-ui-src">{{MODULE:quadri-ui-src}}</script>
+</body>
+</html>
+
+</body></html>
+
+</body></html>

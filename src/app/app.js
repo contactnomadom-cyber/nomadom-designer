@@ -1,0 +1,2588 @@
+
+(function(){
+  'use strict';
+
+  // ---------------------------------------------------------
+  // Génération du dôme via le moteur validé
+  // ---------------------------------------------------------
+  let dome = null;
+  let rotY = 0.55, rotX = 0.35;
+  let zoom = 1;
+  let dragging = false, lastX = 0, lastY = 0, dragStartX = 0, dragStartY = 0, dragMoved = false;
+  let selection = new Set();
+  let hoverIndex = -1;
+  let mode2D = 'triangle'; // 'triangle' | 'group' | 'etages' | 'rouleau' | 'flat'  (Dôme complet, Fleur, Bandes/Gores retirés en 0.9.11)
+  let panels = []; // panneaux créés (Étape 5), {id, faceIndices}
+  let panelCounter = 0;
+
+  const canvas = document.getElementById('viewer3d');
+  const ctx = canvas.getContext('2d');
+  const canvas2d = document.getElementById('viewer2d');
+  const ctx2d = canvas2d.getContext('2d');
+
+  const MODE_BUTTONS = {
+    triangle: 'modeTriangle', group: 'btnDevelop', etages: 'btnDevelopEtages', rouleau: 'btnRoll', flat: 'btnFlat'
+  };
+  function setMode(m){
+    mode2D = m;
+    if (m !== 'etages') { selectedPiece = null; document.getElementById('btnBackOverview').style.display = 'none'; }
+    Object.keys(MODE_BUTTONS).forEach(k => document.getElementById(MODE_BUTTONS[k]).classList.toggle('on', k === m));
+    document.getElementById('peelTypeBox').style.display = 'none';
+    if (m !== 'etages' && m !== 'rouleau' && m !== 'flat') document.getElementById('panelsReadout').style.display = panels.length ? '' : 'none';
+    if (m !== 'etages' && m !== 'rouleau' && m !== 'flat' && panels.length) updatePanelsReadout();
+  }
+
+  let domeGen = 0;             // numéro de génération du dôme (clé de découpe)
+  // --- Ouvertures (Lot 4, étape 1) ---
+  // Le contour est mémorisé en étiquettes de nœuds (N1–N6…) : les identifiants
+  // internes changent à chaque calcul, les étiquettes non (même dôme, autre Ø).
+  let openTrace = false;       // mode « tracer le contour » actif
+  let openLabels = [];         // [['N1','N6'], …] montants du contour
+  let openFor = null;          // réglages du dôme auxquels le contour se rapporte
+  let openRes = null;          // résultat de Ouvertures.analyse
+  let domeCloth = null;        // dôme toile complet (avant ouverture)
+  let domeStruct = null;       // dôme structure avec ouvertures (onglets Base et Design)
+  let hoverStrut = null;
+  let domeNominal = null;      // dôme de la structure (nœud à nœud)
+  // ---------------------------------------------------------
+  // Onglet Base : listes d'options comme ACIDOME (méthodes selon la
+  // fréquence, découpages p / 4V, alignement de la base si possible)
+  // ---------------------------------------------------------
+  const $id = id => document.getElementById(id);
+  const METHOD_LABEL = { Chords: 'Chords (cordes égales)', Arcs: 'Arcs (arcs égaux)', Mexican: 'Mexican', Kruschke: 'Kruschke' };
+  // Étape 7 (audit 30/10/2026) : double nom de coupe. Acidome compte en p / 4V, Domerama en hauteur de sphère.
+  // Correspondance établie en comparant faces, montants, nœuds et facteurs de corde (rapport d'audit).
+  const DOMERAMA_NAME = {
+    'Chords|1|3/4': '1V', 'Chords|3|5/12': '3V 3/8', 'Chords|3|7/12': '3V 5/8',
+    'Kruschke|3|5/12': '3V 4/9 Kruschke', 'Kruschke|3|7/12': '3V 5/9 Kruschke',
+    'Kruschke|4|3/8': '4V 5/12 Kruschke (à confirmer)', 'Kruschke|4|5/8': '4V 7/12 Kruschke (à confirmer)',
+    'Chords|5|9/20': '5V 7/15'
+  };
+  function domeramaName(V, m, f, sym){
+    if (sym !== 'Pentad') return null;
+    if (m === 'Chords' && f === '1/2' && V % 2 === 0) return V + 'V 1/2';
+    return DOMERAMA_NAME[m + '|' + V + '|' + f] || null;
+  }
+  function partialLabel(V, f, sym, m) {
+    const extra = f === '1/1' ? ' — sphère entière' : f === '1/2' ? ' — hémisphère' : '';
+    const dn = domeramaName(V, m, f, sym);
+    return f + extra + (dn ? ' · Domerama ' + dn : '');
+  }
+  function syncBaseControls(){
+    const dSel = $id('paramDetail'), prevV = parseInt(dSel.value, 10) || 3;
+    if (!dSel.options.length) { dSel.innerHTML = [1, 2, 3, 4, 5, 6, 7, 8].map(v => '<option value="' + v + '">' + v + 'V</option>').join(''); dSel.value = '3'; }
+    const V = parseInt(dSel.value, 10) || prevV;
+    const mSel = $id('paramMethod'), prevM = mSel.value || (V === 3 || V === 4 ? 'Kruschke' : 'Chords');
+    // Étape 8 : Mexican retirée des menus (décision de Nathan) — le moteur la garde pour les tests
+    const methods = ['Chords'].concat(V >= 3 ? ['Arcs'] : [], (V === 3 || V === 4) ? ['Kruschke'] : []);
+    mSel.innerHTML = methods.map(m => '<option value="' + m + '">' + METHOD_LABEL[m] + '</option>').join('');
+    mSel.value = methods.includes(prevM) ? prevM : methods[methods.length - 1] === 'Kruschke' ? 'Kruschke' : 'Chords';
+    const pSel = $id('paramPartial'), prevP = pSel.value || (V === 3 ? '7/12' : '1/2'), sym = $id('paramSymmetry').value;
+    const list = DomeEngine.partialListClassI(V);
+    const target = (() => { try { const [a, b] = prevP.split('/').map(Number); return a / (b || 1); } catch (e) { return 0.5; } })();
+    let best = list[0]; list.forEach(f => { const [a, b] = f.split('/').map(Number); const [c, d] = best.split('/').map(Number); if (Math.abs(a / b - target) < Math.abs(c / d - target)) best = f; });
+    pSel.innerHTML = list.map(f => '<option value="' + f + '">' + partialLabel(V, f, sym, mSel.value) + '</option>').join('');
+    pSel.value = list.includes(prevP) ? prevP : best;
+    const can = !/^1(\/[12])?$/.test(pSel.value);   // 0.9.4 : aussi en Kruschke
+    $id('paramAlign').disabled = !can; if (!can) $id('paramAlign').checked = false;
+    $id('paramAlign').parentNode.style.opacity = can ? '' : '0.5';
+  }
+  function baseParams(){
+    return { detail: parseInt($id('paramDetail').value, 10) || 3, subdivMethod: $id('paramMethod').value || 'Chords',
+      symmetry: $id('paramSymmetry').value, partial: $id('paramPartial').value || '1/2', alignTheBase: $id('paramAlign').checked };
+  }
+  function regenerate(){
+    syncBaseControls();
+    const diameter = parseFloat(document.getElementById('paramDiameter').value) || 5;
+    const radius = diameter / 2;
+    const bp = baseParams(), V = bp.detail;
+    try {
+      domeNominal = DomeEngine.generateDome(Object.assign({ base: 'Icosahedron', subdivClass: 'I', radius }, bp));
+      $id('baseWarn').innerHTML = '';
+    } catch (err) {
+      if (err.code === 'ALIGN_FLIP') {
+        // alignement refusé (triangles retournés) : on recalcule sans aligner et on l'explique
+        $id('paramAlign').checked = false;
+        regenerate();
+        $id('baseWarn').innerHTML = '<div class="offset-info warn">« Aligner la base » refusé pour cette coupe : ' + err.flipped +
+          ' triangle(s) se retourneraient (toile impossible à coudre). Le dôme est calculé sans alignement.</div>';
+        return;
+      }
+      $id('baseWarn').innerHTML = '<div class="offset-info warn">Calcul impossible : ' + err.message + '</div>';
+      return;
+    }
+    // surface de toile : nœud à nœud (avec connecteur) ou face extérieure des montants (GoodKarma)
+    const gk = document.getElementById('paramStructure').value === 'goodkarma';
+    document.getElementById('paramSupportH').disabled = !gk;
+    const h = (parseFloat(document.getElementById('paramSupportH').value) || 0) / 1000;
+    domeCloth = (gk && h > 0) ? Toile.offsetDome(domeNominal, h) : domeNominal;
+    const forKey = JSON.stringify([bp.detail, bp.subdivMethod, bp.symmetry, bp.partial, bp.alignTheBase]);
+    if (openFor !== forKey) { openLabels = []; openFor = forKey; }  // autre géométrie : le contour n'a plus de sens
+    computeOpenings();
+    updateOpeningsReadout();
+    domeGen++;
+
+    const keep = mode2D;
+    selection.clear();
+    hlType = null;
+    etagesCache = null;
+    readFabricParams();
+    setMode(['etages','rouleau','flat'].includes(keep) ? keep : 'triangle');
+    updateStats();
+    renderOffsetInfo();
+    if (infoVisible()) renderInfo();
+    if (window.CoverDesign) window.CoverDesign.domeChanged();
+    $id('headDome').textContent = domeLabel();
+    renderStatus();
+    if ($id('viewBase').style.display !== 'none') renderBase();
+    updateSelectionReadout();
+    render();
+    render2D();
+  }
+
+  function openKeys(){
+    const byLab = new Map([...Ouvertures.nodeLabels(domeNominal)].map(([id, l]) => [l, id]));
+    const S = Ouvertures.strutIndex(domeNominal);
+    return openLabels.map(([a, b]) => Ouvertures.edgeKey(byLab.get(a), byLab.get(b))).filter(k => S.has(k));
+  }
+  function computeOpenings(){
+    const keys = openKeys();
+    openRes = keys.length ? Ouvertures.analyse(domeNominal, keys) : null;
+    dome = Ouvertures.applyToDome(domeCloth, openRes);
+    domeStruct = Ouvertures.structureDome(domeNominal, openRes);
+  }
+  // contour modifié : on recalcule le dôme toile et on vide les découpes en cache
+  function openingsChanged(){
+    computeOpenings();
+    domeGen++;
+    selection.clear();
+    etagesCache = null; nestCache = null; peelLayout = null; hlType = null;
+    if (selectedPiece) selectPiece(null);
+    updateStats(); updateSelectionReadout(); updateOpeningsReadout();
+    baseFor = null;
+    if (window.CoverDesign) window.CoverDesign.domeChanged();
+    if ($id('viewBase').style.display !== 'none') renderBase();
+    else if (infoVisible()) renderInfo(); else { render(); render2D(); }
+  }
+  function toggleStrut(key){
+    const L = Ouvertures.nodeLabels(domeNominal), pair = key.split('-').map(id => L.get(+id)).sort();
+    const i = openLabels.findIndex(p => p[0] === pair[0] && p[1] === pair[1]);
+    if (i >= 0) openLabels.splice(i, 1); else openLabels.push(pair);
+    openingsChanged();
+  }
+  function setOpenTrace(on){
+    openTrace = on;
+    const b = $id('btnBaseOpen'); if (b) { b.classList.toggle('trace', on); b.textContent = on ? 'Terminer le tracé' : 'Tracer les ouvertures'; }
+    $id('base3d').style.display = on ? 'none' : '';
+    $id('baseTrace').style.display = on ? '' : 'none';
+    $id('baseHint').textContent = on ? 'clic sur un montant = l\'ajouter ou le retirer du contour · glisser = tourner · molette = zoom · Échap = terminer'
+      : 'glisser = tourner · molette = zoom · double-clic = recadrer';
+    btHover = null;
+    updateOpeningsReadout();
+    if (on) renderBaseTrace(); else { baseFor = null; draw3DBase(); }
+  }
+  // ----- vue de tracé (onglet Base) : maillage en fil de fer, on pointe les montants -----
+  let btCam = { yaw: 0.6, pitch: 0.35, zoom: 1 }, btProj = null, btHover = null, btDrag = null, btMoved = false;
+  function btProject(p, W, H){
+    const R = domeNominal.params.radius, sc = Math.min(W, H) / (2.6 * R) * btCam.zoom;
+    const cy = Math.cos(btCam.yaw), sy = Math.sin(btCam.yaw), cp = Math.cos(btCam.pitch), sp = Math.sin(btCam.pitch);
+    const x1 = p.x * cy + p.z * sy, z1 = p.z * cy - p.x * sy, y = p.y - R * 0.3;
+    return { sx: W / 2 + x1 * sc, sy: H * 0.55 - (y * cp - z1 * sp) * sc, sz: z1 * cp + y * sp };
+  }
+  function renderBaseTrace(){
+    const cv = $id('baseTrace'); if (!openTrace || !domeNominal || cv.style.display === 'none') return;
+    const r = cv.getBoundingClientRect(), dpr = devicePixelRatio;
+    cv.width = r.width * dpr; cv.height = r.height * dpr;
+    const W = cv.width, H = cv.height, g = cv.getContext('2d');
+    g.clearRect(0, 0, W, H);
+    const P = new Map(domeNominal.points.map(p => [p._id, btProject(p, W, H)])); btProj = P;
+    const D = domeStruct || domeNominal;
+    D.faces.map(f => ({ f, z: f.pointIds.reduce((a, id) => a + P.get(id).sz, 0) / 3 })).sort((a, b) => a.z - b.z).forEach(({ f, z }) => {
+      const q = f.pointIds.map(id => P.get(id));
+      g.beginPath(); g.moveTo(q[0].sx, q[0].sy); g.lineTo(q[1].sx, q[1].sy); g.lineTo(q[2].sx, q[2].sy); g.closePath();
+      g.fillStyle = z < 0 ? 'rgba(150,180,205,0.18)' : 'rgba(150,180,205,0.55)'; g.fill();
+    });
+    const traced = new Set(openKeys());
+    const frame = new Set(openRes && openRes.ok ? openRes.frame.map(x => x.key) : []);
+    const gone = new Set(openRes && openRes.ok ? [...openRes.removed, ...openRes.seuil].map(x => x.key) : []);
+    domeNominal.lines.map(l => { const k = Ouvertures.edgeKey(l.pointIds[0], l.pointIds[1]), a = P.get(l.pointIds[0]), b = P.get(l.pointIds[1]);
+      return { k, a, b, z: (a.sz + b.sz) / 2, sel: l.selvage }; }).sort((u, v) => u.z - v.z).forEach(({ k, a, b, z, sel }) => {
+      let col = z < 0 ? 'rgba(28,31,34,0.16)' : 'rgba(28,31,34,0.55)', w = sel ? 2.2 : 1.3, dash = [];
+      if (gone.has(k)) { col = '#b23a2f'; w = 2.2; dash = [6, 4]; }
+      if (frame.has(k)) { col = '#2b5a8a'; w = 3.2; }
+      if (traced.has(k) && !frame.has(k)) { col = '#d8912b'; w = 3.2; }
+      if (k === btHover) { if (!traced.has(k) && !frame.has(k)) col = '#d8912b'; w += 2.5; }
+      g.save(); g.globalAlpha = z < 0 && !traced.has(k) && k !== btHover ? 0.6 : 1;
+      g.setLineDash(dash.map(v => v * dpr)); g.lineCap = 'round';
+      g.beginPath(); g.moveTo(a.sx, a.sy); g.lineTo(b.sx, b.sy); g.strokeStyle = col; g.lineWidth = w * dpr; g.stroke(); g.restore();
+    });
+  }
+  function pickBaseStrut(ev){
+    if (!btProj) return null;
+    const cv = $id('baseTrace'), r = cv.getBoundingClientRect(), dpr = devicePixelRatio;
+    const mx = (ev.clientX - r.left) * dpr, my = (ev.clientY - r.top) * dpr;
+    let best = null, bs = Infinity;
+    domeNominal.lines.forEach(l => {
+      const a = btProj.get(l.pointIds[0]), b = btProj.get(l.pointIds[1]);
+      const dx = b.sx - a.sx, dy = b.sy - a.sy, t = Math.max(0, Math.min(1, ((mx - a.sx) * dx + (my - a.sy) * dy) / (dx * dx + dy * dy || 1)));
+      const d = Math.hypot(mx - (a.sx + t * dx), my - (a.sy + t * dy));
+      if (d > 9 * dpr) return;
+      const score = d - (a.sz + b.sz) / 2 * 40 * dpr;   // à distance égale, le montant de devant gagne
+      if (score < bs) { bs = score; best = Ouvertures.edgeKey(l.pointIds[0], l.pointIds[1]); }
+    });
+    return best;
+  }
+  function initBaseTrace(){
+    const cv = $id('baseTrace');
+    cv.addEventListener('pointerdown', e => { btDrag = { x: e.clientX, y: e.clientY }; btMoved = false; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener('pointermove', e => {
+      if (btDrag) {
+        const dx = e.clientX - btDrag.x, dy = e.clientY - btDrag.y;
+        if (Math.abs(dx) + Math.abs(dy) > 3) btMoved = true;
+        if (btMoved) { btCam.yaw += dx * 0.008; btCam.pitch = Math.max(-0.3, Math.min(1.5, btCam.pitch + dy * 0.008)); btDrag = { x: e.clientX, y: e.clientY }; renderBaseTrace(); }
+        return;
+      }
+      const k = pickBaseStrut(e);
+      if (k !== btHover) {
+        btHover = k;
+        const st = k && Ouvertures.strutIndex(domeNominal).get(k), L = Ouvertures.nodeLabels(domeNominal);
+        $id('baseInfo3d').textContent = st ? k.split('-').map(id => L.get(+id)).join('–') + ' · ' + st.cls + ' · ' + (st.length * 1000).toFixed(1) + ' mm' + (st.selvage ? ' · bord bas' : '') : domeLabel();
+        renderBaseTrace();
+      }
+    });
+    cv.addEventListener('pointerup', e => { if (!btMoved) { const k = pickBaseStrut(e); if (k) toggleStrut(k); } btDrag = null; });
+    cv.addEventListener('wheel', e => { e.preventDefault(); btCam.zoom = Math.max(0.4, Math.min(5, btCam.zoom * (e.deltaY < 0 ? 1.08 : 0.93))); renderBaseTrace(); }, { passive: false });
+    window.addEventListener('resize', renderBaseTrace);
+  }
+  function updateOpeningsReadout(){
+    const L = Ouvertures.nodeLabels(domeNominal);
+    const lab = k => k.split('-').map(id => L.get(+id)).join('–');
+    const mm = v => (v * 1000).toFixed(1) + ' mm', m2 = v => v.toFixed(2) + ' m²';
+    const cls = o => Object.keys(o).sort().map(k => o[k] + '×' + k).join(' · ') || '—';
+    const ok = openRes && openRes.ok;
+    const body = editable => {
+      let h = '';
+      if (!openLabels.length) h += '<div class="op-status">' + (editable ? 'Cliquez sur « Tracer les ouvertures », puis sur les montants qui entourent l\'ouverture. Le contour doit se refermer, ou finir sur le bord bas (porte : le sol ferme le contour).' : 'Aucune ouverture.') + '</div>';
+      else if (!ok) h += '<div class="op-status err">' + openRes.errors.join('<br>') + ' Tant que le contour n\'est pas fermé, la structure, la toile et le design l\'ignorent.</div>';
+      else h += '<div class="op-status ok">' + openRes.openings.length + ' ouverture' + (openRes.openings.length > 1 ? 's' : '') + ' · ' +
+        openRes.openFaces.length + ' triangle' + (openRes.openFaces.length > 1 ? 's' : '') + ' retiré' + (openRes.openFaces.length > 1 ? 's' : '') +
+        ' · structure, toile (Cover+) et design suivent</div>';
+      if (openRes && editable) openRes.warnings.forEach(w => h += '<div class="op-warn">' + w + '</div>');
+      if (ok) openRes.openings.forEach(o => {
+        h += '<div class="op-card"><h4>Ouverture ' + o.n + (o.closedByGround ? ' · fermée par le sol (porte)' : '') + '</h4><dl>' +
+          '<dt>Triangles (n° du dôme plein)</dt><dd>' + o.faces.join(', ') + '</dd>' +
+          '<dt>Surface de toile retirée</dt><dd>' + m2(o.area) + '</dd>' +
+          '<dt>Hauteur au-dessus de la base</dt><dd>' + mm(o.heightMin) + ' → ' + mm(o.heightMax) + '</dd>' +
+          '<dt>Cadre (montants gardés)</dt><dd>' + cls(o.frameByClass) + '</dd>' +
+          '<dt>Ourlet ou renfort de contour</dt><dd>' + mm(o.frameLength) + '</dd>' +
+          '<dt>Montants retirés</dt><dd>' + cls(o.removedByClass) + '</dd>' +
+          (o.closedByGround ? '<dt>Seuil au sol retiré</dt><dd>' + cls(o.seuilByClass) + ' · ' + mm(o.groundLength) + '</dd>' : '') +
+          '</dl></div>';
+      });
+      if (editable) {
+        h += '<h4>Contour tracé (' + openLabels.length + ' montants)</h4><div class="small-ids">' + (openKeys().map(lab).join(' · ') || '—') + '</div>';
+        h += '<div class="op-legend"><span><i style="background:#d8912b"></i>contour tracé</span><span><i style="background:#2b5a8a"></i>cadre de l\'ouverture</span><span><i style="background:#b23a2f"></i>montant retiré</span></div>';
+      }
+      return h;
+    };
+    // Base : fiche complète, avec les commandes
+    const eb = $id('baseOpenings');
+    eb.innerHTML = '<div class="sheet-head"><b>Ouvertures</b>' +
+      (openLabels.length ? '<button id="opClear" class="ghost">Effacer toutes les ouvertures</button>' : '') +
+      '<span class="muted">porte, fenêtre, coupole : on trace le contour sur les montants</span></div>' + body(true);
+    if ($id('opClear')) $id('opClear').onclick = () => { openLabels = []; openingsChanged(); };
+    // Cover+ : lecture seule
+    const ec = $id('openingsReadout');
+    if (!openLabels.length) { ec.style.display = 'none'; return; }
+    ec.style.display = '';
+    ec.innerHTML = '<div class="sheet-head"><b>Ouvertures</b><button id="opGoBase" class="ghost">Modifier dans l\'onglet Base</button>' +
+      '<span class="muted">les triangles ouverts sont retirés de toutes les découpes · numéros de triangles renumérotés (' + dome.faces.length + ' △)</span></div>' + body(false);
+    $id('opGoBase').onclick = () => showView('base');
+  }
+  function pickStrut(evtX, evtY){
+    const P = canvas._projected; if (!P) return null;
+    const rect = canvas.getBoundingClientRect();
+    const mx = (evtX - rect.left) * devicePixelRatio, my = (evtY - rect.top) * devicePixelRatio;
+    let best = null, bs = Infinity;
+    domeNominal.lines.forEach(l => {
+      const a = P.get(l.pointIds[0]), b = P.get(l.pointIds[1]); if (!a || !b) return;
+      const dx = b.sx - a.sx, dy = b.sy - a.sy, t = Math.max(0, Math.min(1, ((mx - a.sx) * dx + (my - a.sy) * dy) / (dx * dx + dy * dy || 1)));
+      const d = Math.hypot(mx - (a.sx + t * dx), my - (a.sy + t * dy));
+      if (d > 8 * devicePixelRatio) return;
+      const score = d - (a.sz + b.sz) / 2 * 40 * devicePixelRatio;  // à distance égale, le montant de devant gagne
+      if (score < bs) { bs = score; best = Ouvertures.edgeKey(l.pointIds[0], l.pointIds[1]); }
+    });
+    return best;
+  }
+  function drawOpenings(projected){
+    if (!(openRes && openRes.ok)) return;
+    const traced = new Set(openKeys());
+    const frame = new Set(openRes && openRes.ok ? openRes.frame.map(s => s.key) : []);
+    const gone = new Set(openRes && openRes.ok ? [...openRes.removed, ...openRes.seuil].map(s => s.key) : []);
+    domeNominal.lines.map(l => {
+      const k = Ouvertures.edgeKey(l.pointIds[0], l.pointIds[1]), a = projected.get(l.pointIds[0]), b = projected.get(l.pointIds[1]);
+      return { k, a, b, z: (a.sz + b.sz) / 2 };
+    }).sort((u, v) => u.z - v.z).forEach(({ k, a, b, z }) => {
+      let col = null, w = 1.4, dash = [];
+      if (gone.has(k)) { col = '#b23a2f'; w = 2.2; dash = [6, 4]; }
+      if (frame.has(k)) { col = '#2b5a8a'; w = 3.2; }
+      if (!col) return;
+      ctx.save(); ctx.globalAlpha = z < 0 ? 0.5 : 1;
+      ctx.setLineDash(dash.map(v => v * devicePixelRatio)); ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy);
+      ctx.strokeStyle = col; ctx.lineWidth = w * devicePixelRatio; ctx.stroke(); ctx.restore();
+    });
+  }
+
+  function updateStats(){
+    document.getElementById('statPoints').textContent = dome.stats.pointCount;
+    document.getElementById('statLines').textContent = (domeStruct || dome).stats.lineCount;
+    document.getElementById('statFaces').textContent = dome.stats.faceCount;
+    document.getElementById('statSelvage').textContent = (domeStruct || dome).stats.selvageCount;
+
+    const el = document.getElementById('edgeClasses');
+    el.innerHTML = '';
+    domeNominal.edgeClasses.forEach(g => {
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      const t = dome.offset ? dome.edgeClasses.find(c => c.name === g.name) : null;
+      chip.innerHTML = '<b>' + g.name + '</b> = ' + (g.length*1000).toFixed(2) + ' mm &nbsp;(×' + g.count + ')' +
+        (t ? ' &nbsp;→ toile ' + (t.length*1000).toFixed(1) + ' mm' : '');
+      el.appendChild(chip);
+    });
+  }
+
+  // ---------------------------------------------------------
+  // Rendu 3D (projection orthographique custom, sans dépendance)
+  // ---------------------------------------------------------
+  function resizeCanvas(){
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * devicePixelRatio;
+    canvas.height = rect.height * devicePixelRatio;
+  }
+
+  function project(p){
+    const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+    const x1 = p.x * cosY + p.z * sinY;
+    const z1 = p.z * cosY - p.x * sinY;
+    const y1 = p.y;
+    const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+    const y2 = y1 * cosX - z1 * sinX;
+    const z2 = z1 * cosX + y1 * sinX;
+    return { x: x1, y: y2, z: z2 };
+  }
+
+  // palette des pièces (mode Étages) — couleurs franches, alternées pour
+  // que deux pièces voisines ne se confondent pas
+  const PIECE_COLORS = [[216,145,43],[95,150,200],[120,175,110],[200,110,120],[160,130,200],[90,170,170],[205,180,90],[150,150,150]];
+
+  function render(){
+    if (!dome) return;
+    resizeCanvas();
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    const radius = dome.params.radius;
+    const scale = (Math.min(W, H) / (radius * 2.6)) * zoom;
+    const cx = W / 2, cy = H / 2 + Math.min(W,H) * 0.06;
+
+    const projected = new Map();
+    dome.points.forEach(p => {
+      const rp = project(p);
+      projected.set(p._id, { sx: cx + rp.x * scale, sy: cy - rp.y * scale, sz: rp.z });
+    });
+
+    const faceDepth = dome.faces.map(f => {
+      const pts = f.pointIds.map(id => projected.get(id));
+      const avgZ = (pts[0].sz + pts[1].sz + pts[2].sz) / 3;
+      return { f, avgZ, pts };
+    });
+    faceDepth.sort((a, b) => a.avgZ - b.avgZ);
+
+    const lightDir = { x: 0.35, y: 0.55, z: 0.78 };
+    const ll = Math.hypot(lightDir.x, lightDir.y, lightDir.z);
+    lightDir.x/=ll; lightDir.y/=ll; lightDir.z/=ll;
+
+    // en mode Étages, chaque triangle prend la couleur de sa pièce
+    const pieceColorOf = new Map();
+    let selFaces = null;
+    const typeColorMap = (mode2D === 'triangle' && selection.size === 0) ? typeOfFace() : new Map();
+    if ((mode2D === 'etages' || mode2D === 'rouleau' || mode2D === 'flat') && etagesCache) {
+      etagesCache.forEach(b => b.pieces.forEach(pc => {
+        const col = pieceColor(pc);
+        pc.chain.forEach(idx => pieceColorOf.set(idx, col));
+      }));
+      if (selectedPiece) { const sp = pieceByName(selectedPiece); if (sp) selFaces = new Set(sp.chain); }
+    }
+
+    faceDepth.forEach(({ f, pts }) => {
+      const P = f.pointIds.map(id => dome.pointById.get(id));
+      const e1 = { x: P[1].x-P[0].x, y: P[1].y-P[0].y, z: P[1].z-P[0].z };
+      const e2 = { x: P[2].x-P[0].x, y: P[2].y-P[0].y, z: P[2].z-P[0].z };
+      let nx = e1.y*e2.z - e1.z*e2.y, ny = e1.z*e2.x - e1.x*e2.z, nz = e1.x*e2.y - e1.y*e2.x;
+      const nl = Math.hypot(nx,ny,nz) || 1;
+      nx/=nl; ny/=nl; nz/=nl;
+      let shade = nx*lightDir.x + ny*lightDir.y + nz*lightDir.z;
+      shade = 0.45 + 0.5 * Math.max(0, shade);
+
+      const isSelected = selection.has(f.index);
+      const isHover = hoverIndex === f.index;
+
+      let fill;
+      const tf = (mode2D === 'triangle' && selection.size === 0) ? typeColorMap.get(f.index) : null;
+      if (isSelected) fill = shadeColor([216,145,43], shade);
+      else if (tf) fill = hlType && tf.id !== hlType ? shadeColor([205,210,214], shade + 0.25) : shadeColor(tf.color, shade + 0.15);
+      else if (selFaces) fill = selFaces.has(f.index) ? shadeColor([216,145,43], shade + 0.2) : shadeColor([205,210,214], shade + 0.25);
+      else if (pieceColorOf.has(f.index)) fill = shadeColor(pieceColorOf.get(f.index), shade + 0.15);
+      else fill = shadeColor([150,180,205], shade);
+      if (isHover && !isSelected) fill = shadeColor([190,205,220], shade);
+
+      ctx.beginPath();
+      ctx.moveTo(pts[0].sx, pts[0].sy);
+      ctx.lineTo(pts[1].sx, pts[1].sy);
+      ctx.lineTo(pts[2].sx, pts[2].sy);
+      ctx.closePath();
+      if (domeImage) {
+        // image plaquée : la face prend sa portion d'image, ombrée ; sélection en surimpression
+        drawTexturedFace(f, pts, shade);
+        const hl = isSelected || (selFaces && selFaces.has(f.index)) ? 'rgba(216,145,43,0.55)'
+          : (tf && hlType === tf.id) ? 'rgba(' + tf.color.join(',') + ',0.6)' : (isHover ? 'rgba(255,255,255,0.35)' : null);
+        if (hl) { ctx.beginPath(); ctx.moveTo(pts[0].sx, pts[0].sy); ctx.lineTo(pts[1].sx, pts[1].sy); ctx.lineTo(pts[2].sx, pts[2].sy); ctx.closePath(); ctx.fillStyle = hl; ctx.fill(); }
+      } else {
+        ctx.fillStyle = fill;
+        ctx.fill();
+      }
+      ctx.lineWidth = 1 * devicePixelRatio;
+      ctx.strokeStyle = 'rgba(28,31,34,0.55)';
+      ctx.stroke();
+
+      const midx = (pts[0].sx+pts[1].sx+pts[2].sx)/3;
+      const midy = (pts[0].sy+pts[1].sy+pts[2].sy)/3;
+      const fontSize = 9.5 * devicePixelRatio * Math.min(1.6, Math.max(0.6, zoom));
+      ctx.font = fontSize + 'px monospace';
+      ctx.fillStyle = 'rgba(20,22,24,0.75)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(f.index, midx, midy);
+    });
+
+    // en mode Étages : coutures entre pièces en trait épais
+    if ((mode2D === 'etages' || mode2D === 'flat') && etagesCache) {
+      const pieceOf = new Map();
+      let pid = 0;
+      etagesCache.forEach(b => b.pieces.forEach(pc => { pc.chain.forEach(i => pieceOf.set(i, pid)); pid++; }));
+      dome.faceAdjacency.forEach((adj, i) => adj.forEach(a => {
+        if (a.neighbor <= i || pieceOf.get(i) === pieceOf.get(a.neighbor)) return;
+        const A = projected.get(a.edgePointIds[0]), B = projected.get(a.edgePointIds[1]);
+        ctx.beginPath(); ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy);
+        ctx.strokeStyle = '#b23a2f'; ctx.lineWidth = 2 * devicePixelRatio; ctx.stroke();
+      }));
+    }
+
+    dome.lines.forEach(l => {
+      if (!l.selvage) return;
+      const a = projected.get(l.pointIds[0]);
+      const b = projected.get(l.pointIds[1]);
+      ctx.beginPath();
+      ctx.moveTo(a.sx, a.sy);
+      ctx.lineTo(b.sx, b.sy);
+      ctx.strokeStyle = '#1c1f22';
+      ctx.lineWidth = 2.2 * devicePixelRatio;
+      ctx.stroke();
+    });
+
+    drawOpenings(projected);
+    canvas._projected = projected;
+    canvas._faceDepth = faceDepth;
+  }
+
+  function shadeColor(rgb, shade){
+    shade = Math.min(1.1, shade);
+    const c = v => Math.max(0, Math.min(255, Math.round(v*shade)));
+    return 'rgb(' + c(rgb[0]) + ',' + c(rgb[1]) + ',' + c(rgb[2]) + ')';
+  }
+
+  // ---------------------------------------------------------
+  // Développement 2D — Étape 4 : triangle par triangle
+  // ---------------------------------------------------------
+  function classifyLength(len){
+    let best = null, bestDiff = Infinity;
+    dome.edgeClasses.forEach(g => {
+      const diff = Math.abs(g.length - len);
+      if (diff < bestDiff) { bestDiff = diff; best = g; }
+    });
+    return best;
+  }
+
+  function flattenTriangle(P0, P1, P2){
+    const d = (a,b) => Math.hypot(a.x-b.x, a.y-b.y, a.z-b.z);
+    const lAB = d(P0,P1), lAC = d(P0,P2), lBC = d(P1,P2);
+    const Ax = 0, Ay = 0, Bx = lAB, By = 0;
+    const cosA = (lAB*lAB + lAC*lAC - lBC*lBC) / (2*lAB*lAC);
+    const angleA = Math.acos(Math.max(-1, Math.min(1, cosA)));
+    const Cx = lAC * Math.cos(angleA);
+    const Cy = lAC * Math.sin(angleA);
+    const angleAtA = angleA;
+    const cosB = (lAB*lAB + lBC*lBC - lAC*lAC) / (2*lAB*lBC);
+    const angleAtB = Math.acos(Math.max(-1, Math.min(1, cosB)));
+    const angleAtC = Math.PI - angleAtA - angleAtB;
+    return {
+      pts: [{x:Ax,y:Ay}, {x:Bx,y:By}, {x:Cx,y:Cy}],
+      edges: [lAB, lBC, lAC],
+      angles: [angleAtA, angleAtB, angleAtC]
+    };
+  }
+
+  // ---------------------------------------------------------
+  // Triangles de base : les différentes formes de triangle qui composent
+  // le dôme pour les options de construction choisies (fréquence, méthode
+  // de subdivision, découpage, structure). Deux faces sont du même type si
+  // leurs 3 côtés coïncident à 0,5 mm près (un symétrique = même type).
+  // ---------------------------------------------------------
+  const TYPE_COLORS = [[216,145,43],[95,150,200],[120,175,110],[200,110,120],[160,130,200],[90,170,170],[205,180,90],[150,150,150],[230,120,70],[70,120,180]];
+  let typeCache = null, hlType = null;
+  function baseTriangleTypes(){
+    if (typeCache && typeCache.dome === dome) return typeCache.types;
+    const d3 = (a,b) => Math.hypot(a.x-b.x, a.y-b.y, a.z-b.z);
+    const types = [];
+    dome.faces.forEach(f => {
+      const P = f.pointIds.map(id => dome.pointById.get(id));
+      const L = [d3(P[0],P[1]), d3(P[1],P[2]), d3(P[2],P[0])].sort((a,b) => a-b);
+      let t = types.find(t => t.L.every((v,i) => Math.abs(v - L[i]) < 0.0005));
+      if (!t) { t = { L, faces: [] }; types.push(t); }
+      t.faces.push(f.index);
+    });
+    // ordre : du plus petit au plus grand, puis nom T1, T2…
+    types.sort((a,b) => (a.L[0]+a.L[1]+a.L[2]) - (b.L[0]+b.L[1]+b.L[2]));
+    types.forEach((t, i) => {
+      t.id = 'T' + (i+1);
+      t.color = TYPE_COLORS[i % TYPE_COLORS.length];
+      t.cls = t.L.map(v => classifyLength(v).name);
+      // base posée à plat : le côté « différent » d'un isocèle, sinon le plus long
+      let bi = 2;
+      if (Math.abs(t.L[0] - t.L[1]) < 0.0005 && Math.abs(t.L[1] - t.L[2]) >= 0.0005) bi = 2;
+      else if (Math.abs(t.L[1] - t.L[2]) < 0.0005 && Math.abs(t.L[0] - t.L[1]) >= 0.0005) bi = 0;
+      const b = t.L[bi], o = t.L.filter((_, k) => k !== bi), l1 = o[0], l2 = o[1];
+      const ax = (b*b + l1*l1 - l2*l2) / (2*b), ay = Math.sqrt(Math.max(0, l1*l1 - ax*ax));
+      t.pts = [{x:0,y:0},{x:b,y:0},{x:ax,y:ay}];
+      t.sides = [{len:b, cls:classifyLength(b).name}, {len:l2, cls:classifyLength(l2).name}, {len:l1, cls:classifyLength(l1).name}]; // 0-1, 1-2, 2-0
+      const ang = (p, q, r) => { const ux=q.x-p.x, uy=q.y-p.y, vx=r.x-p.x, vy=r.y-p.y; return Math.acos(Math.max(-1, Math.min(1, (ux*vx+uy*vy)/(Math.hypot(ux,uy)*Math.hypot(vx,vy))))) * 180/Math.PI; };
+      t.angles = [ang(t.pts[0],t.pts[1],t.pts[2]), ang(t.pts[1],t.pts[2],t.pts[0]), ang(t.pts[2],t.pts[0],t.pts[1])];
+      t.area = b * ay / 2;
+      t.height = ay;
+      const eq = Math.abs(t.L[0]-t.L[2]) < 0.0005, iso = !eq && (Math.abs(t.L[0]-t.L[1]) < 0.0005 || Math.abs(t.L[1]-t.L[2]) < 0.0005);
+      t.kind = eq ? 'équilatéral' : (iso ? 'isocèle' : 'quelconque');
+    });
+    typeCache = { dome, types };
+    return types;
+  }
+  function typeOfFace(){
+    const m = new Map(); baseTriangleTypes().forEach(t => t.faces.forEach(fi => m.set(fi, t))); return m;
+  }
+
+  function renderBaseTriangles(W, H){
+    const dpr = devicePixelRatio;
+    const types = baseTriangleTypes();
+    const hint = document.getElementById('hint2d'), info = document.getElementById('dev2dInfo');
+    const n = types.length;
+    const nCols = Math.min(n, Math.max(1, Math.round(Math.sqrt(n * W / Math.max(H,1)))));
+    const nRows = Math.ceil(n / nCols);
+    const cellW = W / nCols, cellH = H / nRows;
+    const maxB = Math.max(...types.map(t => t.pts[1].x)), maxH = Math.max(...types.map(t => t.height));
+    const sc = Math.min((cellW - 90*dpr) / maxB, (cellH - 90*dpr) / maxH);
+    types.forEach((t, i) => {
+      const col = i % nCols, row = Math.floor(i / nCols);
+      const cx = (col + 0.5) * cellW, cy = row * cellH + 46*dpr + (cellH - 90*dpr) / 2 + t.height*sc/2;
+      const S = p => ({ x: cx + (p.x - t.pts[1].x/2) * sc, y: cy - p.y * sc });
+      const q = t.pts.map(S);
+      ctx2d.beginPath(); ctx2d.moveTo(q[0].x,q[0].y); ctx2d.lineTo(q[1].x,q[1].y); ctx2d.lineTo(q[2].x,q[2].y); ctx2d.closePath();
+      ctx2d.fillStyle = 'rgba(' + t.color.join(',') + ',' + (hlType === t.id ? 0.7 : 0.4) + ')'; ctx2d.fill();
+      ctx2d.strokeStyle = '#1c1f22'; ctx2d.lineWidth = (hlType === t.id ? 2.6 : 1.6) * dpr; ctx2d.stroke();
+      // titre
+      ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+      ctx2d.font = 'bold ' + (12*dpr) + 'px monospace'; ctx2d.fillStyle = '#1c1f22';
+      ctx2d.fillText(t.id + '  ×' + t.faces.length, cx, row * cellH + 16*dpr);
+      ctx2d.font = (9.5*dpr) + 'px monospace'; ctx2d.fillStyle = '#6b7278';
+      ctx2d.fillText(t.cls.join('-') + ' · ' + t.kind, cx, row * cellH + 31*dpr);
+      // côtés
+      [[0,1],[1,2],[2,0]].forEach(([a,b], k) => {
+        const A = q[a], B = q[b], dx = B.x-A.x, dy = B.y-A.y, L = Math.hypot(dx,dy) || 1;
+        const nx = dy/L, ny = -dx/L; // extérieur (triangle tracé dans le sens horaire à l'écran)
+        const m = { x: (A.x+B.x)/2 + nx*12*dpr, y: (A.y+B.y)/2 + ny*12*dpr };
+        let ang = Math.atan2(dy, dx); if (ang > Math.PI/2) ang -= Math.PI; if (ang < -Math.PI/2) ang += Math.PI;
+        ctx2d.save(); ctx2d.translate(m.x, m.y); ctx2d.rotate(ang);
+        ctx2d.font = 'bold ' + (9.5*dpr) + 'px monospace'; ctx2d.fillStyle = '#2b5a8a';
+        ctx2d.fillText(t.sides[k].cls + ' ' + (t.sides[k].len*1000).toFixed(1), 0, 0);
+        ctx2d.restore();
+      });
+      // angles
+      const g = { x: (q[0].x+q[1].x+q[2].x)/3, y: (q[0].y+q[1].y+q[2].y)/3 };
+      q.forEach((v, k) => {
+        const p = { x: v.x + (g.x - v.x) * 0.28, y: v.y + (g.y - v.y) * 0.28 };
+        ctx2d.font = (8.5*dpr) + 'px monospace'; ctx2d.fillStyle = '#1c1f22';
+        ctx2d.fillText(t.angles[k].toFixed(2) + '°', p.x, p.y);
+      });
+    });
+    info.textContent = n + ' triangles de base · ' + dome.faces.length + ' faces';
+    hint.textContent = 'Triangles de base de cette configuration (même couleur sur le dôme) — cliquez un type dans le tableau pour le repérer, ou une face du dôme pour la développer';
+    hint.style.color = '';
+    renderBaseTrianglesTable(types);
+  }
+
+  function renderBaseTrianglesTable(types){
+    const el = document.getElementById('panelsReadout');
+    el.style.display = '';
+    el.innerHTML = baseTrianglesHtml(types);
+  }
+  function baseTrianglesHtml(types){
+    const V = document.getElementById('paramDetail').value;
+    const params = [
+      ['Base', document.getElementById('paramBase').value],
+      ['Fréquence', V + 'V'],
+      ['Classe', document.getElementById('paramClass').value],
+      ['Méthode de subdivision', document.getElementById('paramMethod').value],
+      ['Symétrie', document.getElementById('paramSymmetry').value], ['Base alignée', document.getElementById('paramAlign').checked ? 'oui' : 'non'],
+      ['Découpage', document.getElementById('paramPartial').value],
+      ['Diamètre', parseFloat(document.getElementById('paramDiameter').value).toFixed(2) + ' m'],
+      ['Structure', dome.offset ? 'sans connecteur GoodKarma — toile sur montants (' + mm(dome.offset.h) + ' mm)' : 'avec connecteur — nœud à nœud']
+    ];
+    let h = '<div class="sheet-head"><b>Triangles de base — ' + types.length + ' formes pour ' + dome.faces.length + ' faces</b></div>';
+    h += '<div class="sheet-kpis">' + params.map(p => '<span>' + p[0] + ' <b>' + p[1] + '</b></span>').join('') + '</div>';
+    h += '<table class="clickable"><tr><th>Type</th><th>Nombre</th><th>Côtés</th><th>Longueurs (mm)</th><th>Angles</th><th>Hauteur (mm)</th><th>Surface (m²)</th><th>Forme</th><th>N° des faces</th></tr>';
+    types.forEach(t => {
+      h += '<tr data-type="' + t.id + '"' + (hlType === t.id ? ' class="on"' : '') + '><td><span class="gab-dot" style="background:rgb(' + t.color.join(',') + ')"></span><b>' + t.id + '</b></td><td><b>×' + t.faces.length + '</b></td><td>' +
+        t.sides.map(sd => sd.cls).join('-') + '</td><td>' + t.sides.map(sd => (sd.len*1000).toFixed(1)).join(' / ') + '</td><td>' + t.angles.map(a => a.toFixed(2) + '°').join(' / ') +
+        '</td><td>' + (t.height*1000).toFixed(0) + '</td><td>' + t.area.toFixed(3) + '</td><td>' + t.kind + '</td><td class="muted small-ids">' + t.faces.join(', ') + '</td></tr>';
+    });
+    const tot = types.reduce((a, t) => a + t.area * t.faces.length, 0);
+    h += '<tr><td class="muted">Total</td><td><b>' + dome.faces.length + '</b></td><td colspan="4"></td><td><b>' + tot.toFixed(2) + '</b></td><td colspan="2" class="muted">surface nette couverte</td></tr></table>';
+    h += '<div class="muted">Longueurs de ' + (dome.offset ? 'toile (surface GoodKarma)' : 'centre de nœud à centre de nœud') + ', sans marge. Les lettres A, B, C… sont les classes de montants. Les angles sont dans l\'ordre des côtés : côté 1 posé à plat en bas.</div>';
+    return h;
+  }
+
+  // ---------------------------------------------------------
+  // Développement 2D — Étape 6 : dépliage d'un groupe connecté
+  // ---------------------------------------------------------
+  function unfoldGroup(faceIndices){
+    const idSet = new Set(faceIndices);
+    const localAdj = new Map();
+    faceIndices.forEach(idx => {
+      localAdj.set(idx, (dome.faceAdjacency[idx] || []).filter(a => idSet.has(a.neighbor)));
+    });
+
+    const placedPts = new Map();
+    const placements = [];
+    const visited = new Set();
+
+    function placeRoot(idx){
+      const f = dome.faces[idx];
+      const P = f.pointIds.map(id => dome.pointById.get(id));
+      const flat = flattenTriangle(P[0], P[1], P[2]);
+      f.pointIds.forEach((id, i) => { if (!placedPts.has(id)) placedPts.set(id, flat.pts[i]); });
+      placements.push({ idx, pointIds: f.pointIds.slice() });
+      visited.add(idx);
+    }
+
+    function placeNeighbor(idx, sharedEdgePointIds){
+      const f = dome.faces[idx];
+      const unknownId = f.pointIds.find(id => sharedEdgePointIds.indexOf(id) === -1);
+      const [id1, id2] = sharedEdgePointIds;
+      const P1 = placedPts.get(id1), P2 = placedPts.get(id2);
+
+      const dist3d = (a,b) => Math.hypot(a.x-b.x, a.y-b.y, a.z-b.z);
+      const p3 = dome.pointById;
+      const d1 = dist3d(p3.get(unknownId), p3.get(id1));
+      const d2 = dist3d(p3.get(unknownId), p3.get(id2));
+
+      const dx = P2.x-P1.x, dy = P2.y-P1.y;
+      const d = Math.hypot(dx,dy) || 1e-9;
+      const a = (d1*d1 - d2*d2 + d*d) / (2*d);
+      const hh = Math.sqrt(Math.max(0, d1*d1 - a*a));
+      const xm = P1.x + a*dx/d, ym = P1.y + a*dy/d;
+      const rx = -dy/d, ry = dx/d;
+      const sol1 = { x: xm + hh*rx, y: ym + hh*ry };
+      const sol2 = { x: xm - hh*rx, y: ym - hh*ry };
+
+      let refPoint = null;
+      for (const pl of placements) {
+        if (pl.pointIds.indexOf(id1) !== -1 && pl.pointIds.indexOf(id2) !== -1) {
+          const otherId = pl.pointIds.find(id => id!==id1 && id!==id2);
+          refPoint = placedPts.get(otherId);
+          break;
+        }
+      }
+      function side(pt){ return (P2.x-P1.x)*(pt.y-P1.y) - (P2.y-P1.y)*(pt.x-P1.x); }
+      const refSide = refPoint ? side(refPoint) : 1;
+      const chosen = (side(sol1) * refSide < 0) ? sol1 : sol2;
+
+      if (!placedPts.has(unknownId)) placedPts.set(unknownId, chosen);
+      placements.push({ idx, pointIds: f.pointIds.slice() });
+      visited.add(idx);
+    }
+
+    const root = Math.min(...faceIndices);
+    placeRoot(root);
+    let frontier = [root];
+    while (frontier.length){
+      const next = [];
+      frontier.forEach(idx => {
+        (localAdj.get(idx) || []).forEach(a => {
+          if (!visited.has(a.neighbor)) {
+            placeNeighbor(a.neighbor, a.edgePointIds);
+            next.push(a.neighbor);
+          }
+        });
+      });
+      frontier = next;
+    }
+
+    const unreached = faceIndices.filter(idx => !visited.has(idx));
+    return { placements, placedPts, unreached };
+  }
+
+  function projectOntoAxis(pts, axis){
+    let min=Infinity, max=-Infinity;
+    pts.forEach(p => { const d = p.x*axis.x + p.y*axis.y; if(d<min)min=d; if(d>max)max=d; });
+    return [min, max];
+  }
+
+  function trianglesOverlapDepthSAT(pts1, pts2){
+    const edgesOf = pts => [[pts[0],pts[1]],[pts[1],pts[2]],[pts[2],pts[0]]];
+    const axes = [];
+    edgesOf(pts1).concat(edgesOf(pts2)).forEach(([a,b]) => {
+      const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1;
+      axes.push({x:-dy/len, y:dx/len});
+    });
+    let minDepth = Infinity;
+    for (const axis of axes){
+      const [min1,max1] = projectOntoAxis(pts1, axis);
+      const [min2,max2] = projectOntoAxis(pts2, axis);
+      const depth = Math.min(max1,max2) - Math.max(min1,min2);
+      if (depth <= 1e-9) return 0;
+      if (depth < minDepth) minDepth = depth;
+    }
+    return minDepth;
+  }
+
+  function detectOverlaps(placements, placedPts, toleranceM){
+    toleranceM = toleranceM || 0;
+    const overlaps = [];
+    for (let i=0;i<placements.length;i++){
+      for (let j=i+1;j<placements.length;j++){
+        const A = placements[i], B = placements[j];
+        const shared = A.pointIds.some(id => B.pointIds.indexOf(id) !== -1);
+        if (shared) continue;
+        const ptsA = A.pointIds.map(id => placedPts.get(id));
+        const ptsB = B.pointIds.map(id => placedPts.get(id));
+        const depth = trianglesOverlapDepthSAT(ptsA, ptsB);
+        if (depth > toleranceM) overlaps.push({ a: A.idx, b: B.idx, depth });
+      }
+    }
+    return overlaps;
+  }
+
+  function render2DGroup(){
+    const rect = canvas2d.getBoundingClientRect();
+    canvas2d.width = rect.width * devicePixelRatio;
+    canvas2d.height = rect.height * devicePixelRatio;
+    const W = canvas2d.width, H = canvas2d.height;
+    ctx2d.clearRect(0,0,W,H);
+
+    const hint = document.getElementById('hint2d');
+    const info = document.getElementById('dev2dInfo');
+    const ids = [...selection].sort((a,b)=>a-b);
+
+    if (ids.length === 0) {
+      hint.textContent = 'sélectionnez un groupe de triangles connectés, puis cliquez "Développer"';
+      info.textContent = '';
+      return;
+    }
+
+    const result = unfoldGroup(ids);
+    const overlaps = detectOverlaps(result.placements, result.placedPts, OVERLAP_TOL_M);
+
+    info.textContent = ids.length + ' triangles → panneau';
+    let hintMsg = 'Groupe déplié (' + result.placements.length + '/' + ids.length + ' faces placées)';
+    if (result.unreached.length) hintMsg += ' — ⚠ non connecté au groupe : #' + result.unreached.join(', #');
+    if (overlaps.length) hintMsg += ' — ⚠ chevauchement au-delà de la tolérance (' + (OVERLAP_TOL_M*1000).toFixed(0) + 'mm) : ' +
+      overlaps.map(o=>'#'+o.a+'/#'+o.b+' ('+(o.depth*1000).toFixed(1)+'mm)').join(', ');
+    hint.textContent = hintMsg;
+    hint.style.color = (result.unreached.length || overlaps.length) ? '#b23a2f' : '';
+
+    const allPts = [...result.placedPts.values()];
+    const xs = allPts.map(p=>p.x), ys = allPts.map(p=>p.y);
+    const minX=Math.min(...xs), maxX=Math.max(...xs), minY=Math.min(...ys), maxY=Math.max(...ys);
+    const spanX = maxX-minX || 1, spanY = maxY-minY || 1;
+    const pxScale = Math.min(W/spanX, H/spanY) * 0.82;
+    const cx = W/2, cy = H/2;
+    const midX = (minX+maxX)/2, midY=(minY+maxY)/2;
+    const S = p => ({ x: cx + (p.x-midX)*pxScale, y: cy - (p.y-midY)*pxScale });
+
+    const internalEdgeKeys = new Set();
+    const overlapSet = new Set(overlaps.flatMap(o => [o.a, o.b]));
+
+    result.placements.forEach(pl => {
+      const pts2d = pl.pointIds.map(id => S(result.placedPts.get(id)));
+      ctx2d.beginPath();
+      ctx2d.moveTo(pts2d[0].x, pts2d[0].y);
+      ctx2d.lineTo(pts2d[1].x, pts2d[1].y);
+      ctx2d.lineTo(pts2d[2].x, pts2d[2].y);
+      ctx2d.closePath();
+      ctx2d.fillStyle = overlapSet.has(pl.idx) ? 'rgba(178,58,47,0.30)' : 'rgba(150,180,205,0.30)';
+      ctx2d.fill();
+
+      const cxT=(pts2d[0].x+pts2d[1].x+pts2d[2].x)/3, cyT=(pts2d[0].y+pts2d[1].y+pts2d[2].y)/3;
+      ctx2d.font = (9*devicePixelRatio)+'px monospace';
+      ctx2d.fillStyle = '#1c1f22';
+      ctx2d.textAlign='center'; ctx2d.textBaseline='middle';
+      ctx2d.fillText('#'+pl.idx, cxT, cyT);
+    });
+
+    result.placements.forEach(pl => {
+      for (let i=0;i<3;i++){
+        const idA = pl.pointIds[i], idB = pl.pointIds[(i+1)%3];
+        const key = idA<idB ? idA+'-'+idB : idB+'-'+idA;
+        const adj = (dome.faceAdjacency[pl.idx]||[]).find(a =>
+          (a.edgePointIds[0]===idA && a.edgePointIds[1]===idB) || (a.edgePointIds[0]===idB && a.edgePointIds[1]===idA));
+        const neighborInGroup = adj && selection.has(adj.neighbor);
+        const a2 = S(result.placedPts.get(idA)), b2 = S(result.placedPts.get(idB));
+        ctx2d.beginPath();
+        ctx2d.moveTo(a2.x, a2.y); ctx2d.lineTo(b2.x, b2.y);
+        if (neighborInGroup) {
+          if (internalEdgeKeys.has(key)) continue;
+          internalEdgeKeys.add(key);
+          ctx2d.setLineDash([4*devicePixelRatio, 3*devicePixelRatio]);
+          ctx2d.strokeStyle = 'rgba(28,31,34,0.45)';
+          ctx2d.lineWidth = 1*devicePixelRatio;
+        } else {
+          ctx2d.setLineDash([]);
+          ctx2d.strokeStyle = '#1c1f22';
+          ctx2d.lineWidth = 2.2*devicePixelRatio;
+        }
+        ctx2d.stroke();
+      }
+    });
+    ctx2d.setLineDash([]);
+  }
+
+  // ---------------------------------------------------------
+  // Paramètres de toile et de couture
+  // FABRIC_W_M     : laize du rouleau.
+  // SELVAGE_M      : lisière inutilisable de chaque bord du rouleau.
+  // USABLE_WIDTH_M : largeur utile = laize − 2 × lisière. Le CONTOUR DE COUPE
+  //                  (marges comprises) d'un morceau doit y tenir.
+  // SEAM           : marges A (côté recouvrant), B (côté recouvert), ourlet bas.
+  // OVERLAP_TOL_M  : tolérance de chevauchement lors du dépliage d'un groupe.
+  // ---------------------------------------------------------
+  let FABRIC_W_M = 1.5, SELVAGE_M = 0.01, OVERLAP_TOL_M = 0.05, USABLE_WIDTH_M = 1.48;
+  let SEAM = { A: 0.02, B: 0.02, hem: 0.05, type: 'simple' };
+  // Étape 11 : FabricSpec — un seul objet décrit la toile (laize, lisière, largeur utile, tolérance, marges,
+  // rangée du bas). Recalculé uniquement par readFabricParams() ; figé pour qu'aucun module ne le modifie.
+  let FABRIC = null;
+
+  function readFabricParams(){
+    const num = (id, def) => { const v = parseFloat(document.getElementById(id).value); return isNaN(v) ? def : v; };
+    FABRIC_W_M = num('paramFabricW', 1500) / 1000;
+    SELVAGE_M = Math.max(0, num('paramSelvage', 0)) / 1000;
+    OVERLAP_TOL_M = Math.max(0, num('paramOverlapTol', 0)) / 1000;
+    USABLE_WIDTH_M = Math.max(0, FABRIC_W_M - 2*SELVAGE_M);
+    SEAM = { A: Math.max(0, num('paramSeamA', 0)) / 1000, B: Math.max(0, num('paramSeamB', 0)) / 1000,
+             hem: Math.max(0, num('paramHem', 0)) / 1000, type: document.getElementById('paramSeamType').value };
+    // rangée du bas : marges propres (morceaux qui portent l'ourlet)
+    const botOn = document.getElementById('paramBottomOn').checked;
+    ['paramBotA', 'paramBotB', 'paramBotHem'].forEach(id => { document.getElementById(id).disabled = !botOn; });
+    SEAM.bottom = botOn ? { A: Math.max(0, num('paramBotA', 0)) / 1000, B: Math.max(0, num('paramBotB', 0)) / 1000,
+      hem: Math.max(0, num('paramBotHem', 0)) / 1000 } : null;
+    FABRIC = Object.freeze({ laize: FABRIC_W_M, selvage: SELVAGE_M, usable: USABLE_WIDTH_M, overlapTol: OVERLAP_TOL_M,
+      seam: Object.freeze(Object.assign({}, SEAM, { bottom: SEAM.bottom ? Object.freeze(Object.assign({}, SEAM.bottom)) : null })) });
+    const preset = Toile.SEAM_PRESETS[SEAM.type];
+    document.getElementById('seamNote').textContent = preset ? preset.note + ' · le morceau du dessus recouvre celui du dessous (ruissellement)' : '';
+  }
+
+  // ---------------------------------------------------------
+  // Mode « Étages (par rangée) » — topo du 23/10 avec Nathan :
+  //  - objectif : le moins de morceaux possible, chacun avec le plus de
+  //    triangles possible (= le moins de coutures) ;
+  //  - un étage = une rangée de triangles entre deux anneaux de nœuds,
+  //    en dents de scie (accepté tant que ça tient dans la laize) ;
+  //  - les coupes entre morceaux tombent toujours sur une arête montante
+  //    d'un triangle (jamais au milieu d'un triangle) ;
+  //  - le sommet = 5 triangles indépendants, cousus ensemble.
+  // 27/10 : marges A/B + ourlet, contour de coupe, mode GoodKarma (toile.js).
+  // ---------------------------------------------------------
+  let etagesCache = null;     // plan de découpe courant
+  let etagesTool = null;      // fonctions etages.js liées au dôme courant
+  let selectedPiece = null;   // nom de la pièce sélectionnée (ex. 'E2-1') ou null
+  let sheetCache = new Map(); // nom -> fiche patron (avec marges)
+  let etagesHit = [];         // zones cliquables de la vue d'ensemble
+  let gabGroups = [];         // gabarits : [{ id:'G1', members:[{sheet, mirrored}], ref }]
+  let view2d = { zoom: 1, panX: 0, panY: 0 };   // zoom/déplacement de la vue détaillée
+
+  let optimState = null;      // recherche « moins de toile » : { key, tool, result, progress, text }
+  // Clé de découpe : identité complète du dôme (base, fréquence, méthode, symétrie, coupe, base alignée,
+  // diamètre, structure) + numéro de génération (change à chaque recalcul) + paramètres de toile.
+  // Toute modification du dôme invalide donc le résultat « moins de toile » et le comparatif.
+  function cutKey(){
+    const p = (domeNominal && domeNominal.params) || {};
+    return ['g' + domeGen, p.base, p.subdivClass, p.detail, p.subdivMethod, p.symmetry, p.partial, p.alignTheBase ? 1 : 0,
+      p.radius, dome && dome.offset ? dome.offset.h : 0,
+      JSON.stringify(FABRIC), seamWeight()].join('|');
+  }
+  function seamWeight(){ return Math.max(0, parseFloat(document.getElementById('paramSeamWeight').value) || 0) / 100; }
+  function startOptim(){
+    const key = cutKey(), tool = makeEtages(dome), myDome = dome;
+    optimState = { key, tool, result: null, progress: 0, text: 'Démarrage…' };
+    const st = optimState;
+    Optim.optimizeFabric(tool, USABLE_WIDTH_M, SEAM, OVERLAP_TOL_M, seamWeight(), (f, t) => {
+      st.progress = f; st.text = t;
+      if (optimState === st && (mode2D === 'etages' || mode2D === 'rouleau' || mode2D === 'flat')) drawBusy('Recherche du découpage « moins de toile »', f, t);
+    }).then(r => {
+      if (optimState !== st || dome !== myDome) return;
+      st.result = r; etagesCache = null; nestCache = null;
+      render2D(); render();
+      if (infoVisible()) renderInfo();
+    });
+  }
+  function drawBusy(title, f, t){
+    const rect = canvas2d.getBoundingClientRect();
+    canvas2d.width = rect.width * devicePixelRatio; canvas2d.height = rect.height * devicePixelRatio;
+    const W = canvas2d.width, H = canvas2d.height, dpr = devicePixelRatio;
+    ctx2d.clearRect(0,0,W,H);
+    ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+    ctx2d.font = 'bold ' + (12*dpr) + 'px monospace'; ctx2d.fillStyle = '#1c1f22';
+    ctx2d.fillText(title, W/2, H/2 - 28*dpr);
+    ctx2d.strokeStyle = '#c7cccf'; ctx2d.strokeRect(W*0.2, H/2 - 8*dpr, W*0.6, 16*dpr);
+    ctx2d.fillStyle = '#2b5a8a'; ctx2d.fillRect(W*0.2, H/2 - 8*dpr, W*0.6*f, 16*dpr);
+    ctx2d.font = (10*dpr) + 'px monospace'; ctx2d.fillStyle = '#6b7278';
+    ctx2d.fillText(Math.round(f*100) + ' % — ' + (t || ''), W/2, H/2 + 26*dpr);
+    document.getElementById('hint2d').textContent = 'Calcul en cours : on essaie plusieurs longueurs de morceaux par étage et on place chaque essai sur le rouleau.';
+    document.getElementById('dev2dInfo').textContent = 'calcul…';
+  }
+
+  // renvoie false tant que la découpe n'est pas prête (recherche en cours)
+  function ensureEtages(){
+    if (etagesCache) return true;
+    const strategy = document.getElementById('paramCutStrategy').value;
+    let res;
+    if (strategy === 'toile') {
+      if (!optimState || optimState.key !== cutKey()) { startOptim(); return false; }
+      if (!optimState.result) return false;
+      etagesTool = optimState.tool;
+      res = optimState.result;
+    } else {
+      etagesTool = makeEtages(dome);
+      res = Toile.planFabric(etagesTool, USABLE_WIDTH_M, SEAM, OVERLAP_TOL_M,
+        { strategy, base: document.getElementById('paramBaseRow').value });
+    }
+    etagesCache = res.plan;
+    sheetCache = res.sheets;
+    nestCache = null;
+    gabGroups = Toile.groupGabarits(allPieces().map(pc => sheetCache.get(pc.name)), true);
+    if (selectedPiece && !allPieces().some(pc => pc.name === selectedPiece)) selectedPiece = null;
+    document.getElementById('btnBackOverview').style.display = selectedPiece ? '' : 'none';
+    return true;
+  }
+  function allPieces(){ return etagesCache.flatMap(b => b.pieces); }
+  function pieceByName(n){ return allPieces().find(pc => pc.name === n); }
+  function sheetOf(n){ return sheetCache.get(n); }
+  function fitsLaize(sh){ return sh.cutWidth <= USABLE_WIDTH_M + 1e-9; }
+  // Étape 3 (audit 30/10/2026) : un morceau plus large que la laize utile ne peut pas être coupé.
+  // Dans ce cas le plan de coupe et TOUS ses exports sont refusés (pas d'affichage partiel).
+  function laizeFailures(){
+    if (!etagesCache) return [];
+    return allPieces().map(pc => sheetOf(pc.name)).filter(sh => sh && !fitsLaize(sh));
+  }
+  // Si seuls des morceaux de la rangée du bas dépassent : quel ourlet (avec leurs marges actuelles) les ferait passer ?
+  function bottomSuggestion(bad){
+    if (!bad.length || !bad.every(sh => sh.bottomRow)) return '';
+    const cur = SEAM.bottom || { A: SEAM.A, B: SEAM.B, hem: SEAM.hem };
+    const pcs = bad.map(sh => pieceByName(sh.name)).filter(Boolean);
+    const fitsWith = v => pcs.every(pc => Toile.applyAllowances(etagesTool.pieceSheet(etagesCache, pc), { A: v.A, B: v.B, hem: v.hem }).cutWidth <= USABLE_WIDTH_M + 1e-9);
+    const maxHem = (A, B) => { if (!fitsWith({ A, B, hem: 0 })) return -1; let lo = 0, hi = 0.2;
+      for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (fitsWith({ A, B, hem: m })) lo = m; else hi = m; } return Math.floor(lo * 1000) / 1000; };
+    const opts = [];
+    const h1 = maxHem(cur.A, cur.B);
+    if (h1 >= 0) opts.push('marges A' + mm(cur.A) + '/B' + mm(cur.B) + ' avec un ourlet de <b>' + mm(h1) + ' mm</b> au plus');
+    [[0.015, 0.015], [0.01, 0.01]].forEach(([A, B]) => { if (A < Math.max(cur.A, cur.B) - 1e-9) { const hh = maxHem(A, B); if (hh >= 0) opts.push('marges A' + mm(A) + '/B' + mm(B) + ' avec un ourlet de <b>' + mm(hh) + ' mm</b> au plus'); } });
+    if (!opts.length) return '<div style="margin-top:6px">Ces morceaux sont tous dans la rangée du bas, mais même sans marge ni ourlet ils ne tiennent pas : il faut une laize plus large ou une couture à travers ces triangles.</div>';
+    return '<div style="margin-top:6px;padding:6px 10px;background:#eef4ea;border-left:3px solid #5c8a4a">Ces morceaux sont tous dans la <b>rangée du bas</b>. Cochez « Rangée du bas : marges propres » (ligne « Rangée du bas ») avec par exemple : ' + opts.join(' ; ') + '. Les autres rangées gardent leurs marges.</div>';
+  }
+  function render2DLaizeBlocked(bad){
+    selectedPiece = null;
+    document.getElementById('btnBackOverview').style.display = 'none';
+    document.getElementById('peelTypeBox').style.display = 'none';
+    const rect = canvas2d.getBoundingClientRect();
+    canvas2d.width = rect.width * devicePixelRatio; canvas2d.height = rect.height * devicePixelRatio;
+    const W = canvas2d.width, H = canvas2d.height, dpr = devicePixelRatio;
+    ctx2d.clearRect(0,0,W,H);
+    ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+    ctx2d.fillStyle = '#b23a2f'; ctx2d.font = 'bold ' + (14*dpr) + 'px monospace';
+    ctx2d.fillText('⛔ Laize trop étroite — plan de coupe refusé', W/2, H/2 - 22*dpr);
+    ctx2d.fillStyle = '#1c1f22'; ctx2d.font = (11*dpr) + 'px monospace';
+    const maxW = Math.max(...bad.map(sh => sh.cutWidth));
+    ctx2d.fillText(bad.length + ' morceau(x) plus large(s) que la largeur utile (' + mm(USABLE_WIDTH_M) + ' mm)', W/2, H/2 + 4*dpr);
+    ctx2d.fillText('laize minimale nécessaire : ' + mm(maxW + 2*SELVAGE_M) + ' mm', W/2, H/2 + 24*dpr);
+    ctx2d.textAlign = 'left';
+    const hint = document.getElementById('hint2d');
+    hint.textContent = 'Aucun patron ni export tant qu\'un morceau ne tient pas dans la laize : on ne coupe pas une toile qu\'on ne peut pas réaliser.';
+    hint.style.color = '#b23a2f';
+    document.getElementById('dev2dInfo').textContent = 'refusé : laize trop étroite';
+    const el = document.getElementById('panelsReadout');
+    el.style.display = '';
+    let h = '<div class="bad" style="font-weight:700">⛔ Plan de coupe refusé : ' + bad.length + ' morceau(x) ne tiennent pas dans la laize, même seuls.</div>' +
+      '<div style="margin:6px 0">Largeur utile actuelle : <b>' + mm(USABLE_WIDTH_M) + ' mm</b> (laize ' + mm(FABRIC_W_M) + ' − 2 × lisière ' + mm(SELVAGE_M) + '). ' +
+      'Laize minimale pour cette découpe : <b>' + mm(maxW + 2*SELVAGE_M) + ' mm</b>.</div>' +
+      '<table><tr><th>Morceau</th><th>Triangles</th><th>Largeur de coupe (mm)</th><th>Dépassement (mm)</th></tr>';
+    bad.slice().sort((a, b) => b.cutWidth - a.cutWidth).forEach(sh => {
+      h += '<tr><td>' + sh.name + '</td><td>' + sh.triangles.length + '</td><td class="bad">' + mm(sh.cutWidth) + '</td><td class="bad">+' + mm(sh.cutWidth - USABLE_WIDTH_M) + '</td></tr>';
+    });
+    h += '</table>' + bottomSuggestion(bad) + '<div class="muted" style="margin-top:6px">Pour débloquer : une laize plus large, des marges plus petites (onglet Cover+, « Coutures » ou « Rangée du bas »), une autre découpe (« Triangle par triangle » donne les morceaux les plus étroits), ou un dôme plus petit / de fréquence plus haute (triangles plus petits). Les fiches, le plan de coupe, l\'impression PDF et le CSV restent bloqués tant qu\'un morceau dépasse.</div>';
+    el.innerHTML = h;
+  }
+  function selectPiece(name){
+    selectedPiece = name;
+    view2d = { zoom: 1, panX: 0, panY: 0 };
+    document.getElementById('btnBackOverview').style.display = name ? '' : 'none';
+    render(); render2D();
+  }
+  // même couleur pour tous les morceaux d'un même gabarit
+  const GAB_COLORS = [[216,145,43],[95,150,200],[120,175,110],[200,110,120],[160,130,200],[90,170,170],[205,180,90],[150,150,150],
+                      [230,120,70],[70,120,180],[170,200,90],[190,90,160],[110,110,200],[60,150,120]];
+  function pieceColor(pc){
+    const sh = sheetCache.get(pc.name);
+    const gi = sh && sh.gabarit ? parseInt(sh.gabarit.slice(1), 10) - 1 : pc.pieceIndex;
+    return GAB_COLORS[gi % GAB_COLORS.length];
+  }
+  function gabLabel(sh){ return sh.gabarit + (sh.gabMirror ? ' ⇋' : ''); }
+  const mm = v => Math.round(v * 1000);
+  const deg = v => v.toFixed(1) + '°';
+  const SIDE_TXT = { A: 'A — recouvrant', B: 'B — recouvert', H: 'ourlet' };
+  function nominalLength(e){
+    if (!dome.offset) return null;
+    return dome.offset.nominalLengthOf.get(Toile.edgeKey(e.nodeIds[0], e.nodeIds[1]));
+  }
+  function polyPath(pts, S){
+    ctx2d.beginPath();
+    pts.forEach((p, i) => { const v = S(p); if (i) ctx2d.lineTo(v.x, v.y); else ctx2d.moveTo(v.x, v.y); });
+    ctx2d.closePath();
+  }
+
+  function render2DEtages(){
+    if (!ensureEtages()) { drawBusy('Recherche du découpage « moins de toile »', optimState ? optimState.progress : 0, optimState ? optimState.text : ''); return; }
+    if (fabricationGate()) return;
+    if (selectedPiece) { render2DPiece(); return; }
+
+    const rect = canvas2d.getBoundingClientRect();
+    canvas2d.width = rect.width * devicePixelRatio;
+    canvas2d.height = rect.height * devicePixelRatio;
+    const W = canvas2d.width, H = canvas2d.height, dpr = devicePixelRatio;
+    ctx2d.clearRect(0,0,W,H);
+    etagesHit = [];
+
+    const hint = document.getElementById('hint2d');
+    const info = document.getElementById('dev2dInfo');
+    const bands = etagesCache;
+
+    const rows = bands.map(b => b.pieces.map(pc => {
+      const sh = sheetOf(pc.name);
+      return { pc, sh, len: sh.cutLength, wid: sh.cutWidth, ok: fitsLaize(sh) };
+    }));
+
+    const gap = 0.25;
+    const rowLen = rows.map(r => r.reduce((a,u) => a + u.len, 0) + gap*(r.length-1));
+    const maxLen = Math.max(...rowLen);
+    const rowH = Math.max(USABLE_WIDTH_M, ...rows.flat().map(u => u.wid));
+    const labelH = 16*dpr;
+    const pad = 10*dpr, bottomPad = 40*dpr;
+    const pxScale = Math.min((W - 2*pad) / maxLen, (H - pad - bottomPad - rows.length*labelH) / (rows.length * rowH * 1.08));
+
+    let y0 = pad;
+    ctx2d.textBaseline = 'middle';
+    rows.forEach((r, ri) => {
+      const b = bands[ri];
+      const rowOk = r.every(u => u.ok);
+      ctx2d.font = (9.5*dpr)+'px monospace';
+      ctx2d.fillStyle = rowOk ? '#1c1f22' : '#b23a2f';
+      ctx2d.textAlign = 'left';
+      const gIds = [...new Set(r.map(u => u.sh.gabarit))];
+      const gTxt = gIds.map(g => g + '×' + r.filter(u => u.sh.gabarit === g).length).join(' ');
+      ctx2d.fillText((b.cap ? 'Sommet' : 'Étage ' + b.level) + ' — ' + b.band.order.length + '△ en ' + r.length + ' morceau' + (r.length>1?'x':'') + ' · gabarits ' + gTxt + (rowOk ? '' : ' ⚠ hors laize'), pad, y0 + labelH/2);
+      y0 += labelH;
+      let x0 = pad;
+      r.forEach(u => {
+        const col = pieceColor(u.pc);
+        ctx2d.fillStyle = 'rgba(28,31,34,0.05)';
+        ctx2d.fillRect(x0, y0, u.len*pxScale, USABLE_WIDTH_M*pxScale);
+        ctx2d.setLineDash([3*dpr, 3*dpr]);
+        ctx2d.strokeStyle = 'rgba(28,31,34,0.25)'; ctx2d.lineWidth = 1*dpr;
+        ctx2d.strokeRect(x0, y0, u.len*pxScale, USABLE_WIDTH_M*pxScale);
+        ctx2d.setLineDash([]);
+        const S = p => ({ x: x0 + p.x*pxScale, y: y0 + (USABLE_WIDTH_M - p.y)*pxScale });
+        // contour de coupe
+        polyPath(u.sh.cut, S);
+        ctx2d.fillStyle = u.ok ? 'rgba(' + col.join(',') + ',0.18)' : 'rgba(178,58,47,0.25)'; ctx2d.fill();
+        ctx2d.strokeStyle = u.ok ? '#1c1f22' : '#b23a2f'; ctx2d.lineWidth = 1.3*dpr; ctx2d.stroke();
+        const hitTris = [];
+        u.sh.triangles.forEach(t => {
+          const q = t.pts.map(S); hitTris.push(q);
+          ctx2d.beginPath(); ctx2d.moveTo(q[0].x,q[0].y); ctx2d.lineTo(q[1].x,q[1].y); ctx2d.lineTo(q[2].x,q[2].y); ctx2d.closePath();
+          ctx2d.fillStyle = 'rgba(' + col.join(',') + ',0.40)'; ctx2d.fill();
+          ctx2d.strokeStyle = 'rgba(28,31,34,0.30)'; ctx2d.lineWidth = 0.6*dpr; ctx2d.stroke();
+        });
+        hitTris.push([S(u.sh.cut[0]), ...u.sh.cut.slice(1, 3).map(S)]);
+        ctx2d.font = (8.5*dpr)+'px monospace'; ctx2d.fillStyle = '#1c1f22'; ctx2d.textAlign = 'center';
+        const c = S({ x: u.len/2, y: u.wid/2 });
+        ctx2d.fillText(u.pc.name, c.x, c.y - 6*dpr);
+        ctx2d.font = 'bold ' + (8.5*dpr)+'px monospace'; ctx2d.fillText(gabLabel(u.sh), c.x, c.y + 6*dpr);
+        etagesHit.push({ name: u.pc.name, tris: hitTris });
+        x0 += u.len*pxScale + gap*pxScale;
+      });
+      y0 += rowH*pxScale*1.08;
+    });
+
+    const st = etagesTool.seamStats(etagesCache);
+    const sheets = allPieces().map(pc => sheetOf(pc.name));
+    const nBad = sheets.filter(sh => !fitsLaize(sh)).length;
+    const estLen = sheets.reduce((s, sh) => s + sh.cutLength, 0);
+    const nPieces = allPieces().length;
+    info.textContent = nPieces + ' morceaux · ' + gabGroups.length + ' gabarits (' + dome.faces.length + ' △)';
+    hint.textContent = 'Cliquez un morceau (ici ou sur le dôme) pour sa fiche patron — contours de coupe marges comprises · largeur utile ' + mm(USABLE_WIDTH_M) + ' mm · ' +
+      st.sewn + ' arêtes cousues / ' + st.total + (st.closures ? ' (dont ' + st.closures + ' fermeture d\'anneau)' : '') +
+      ' · ≈ ' + estLen.toFixed(1) + ' m de toile si les morceaux sont mis bout à bout (voir « Plan de coupe » pour le métrage réel)' + (nBad ? ' · ⚠ ' + nBad + ' morceau(x) hors laize' : '');
+    hint.style.color = nBad ? '#b23a2f' : '';
+
+    const el = document.getElementById('panelsReadout');
+    el.style.display = '';
+    let html = '<div class="sheet-head"><b>Découpe par étages — ' + allPieces().length + ' morceaux, ' + gabGroups.length + ' gabarits</b><button id="btnPrintAll">Tout exporter — une fiche par gabarit (imprimer / PDF)</button></div>Cliquez un morceau pour ouvrir sa fiche. Dimensions de <b>coupe</b> (marges et ourlet compris). Toutes les pièces sont contrôlées <i>développables sans vague</i>.' +
+      (nBad ? '<div class="bad" style="margin-top:4px">⚠ ' + nBad + ' morceau(x) ne tiennent pas dans la laize utile, même seuls : il faut une laize plus large, des marges plus petites, ou une couture à travers ces triangles.</div>' : '') +
+      '<table class="clickable"><tr><th>Gabarit</th><th>À couper</th><th>Morceaux (cliquer pour la fiche)</th><th>Triangles</th><th>Coupe (mm)</th><th>m² / morceau</th><th>m² total</th><th>Sans vague</th></tr>';
+    gabGroups.forEach(g => {
+      const sh = g.ref, col = pieceColor(pieceByName(sh.name));
+      const tot = g.members.reduce((a, m) => a + m.sheet.cutArea, 0);
+      html += '<tr><td><span class="gab-dot" style="background:rgb(' + col.join(',') + ')"></span><b>' + g.id + '</b></td><td><b>×' + g.members.length + '</b></td><td>' +
+        g.members.map(m => '<span class="piece-chip" data-piece="' + m.sheet.name + '">' + m.sheet.name + (m.mirrored ? ' ⇋' : '') + (m.sheet.closedRing ? ' (anneau)' : '') + '</span>').join(' ') +
+        '</td><td>' + sh.triangles.length + '</td><td' + (fitsLaize(sh) ? '' : ' class="bad"') + '>' + mm(sh.cutLength) + ' × ' + mm(sh.cutWidth) + '</td><td>' + sh.cutArea.toFixed(2) +
+        '</td><td>' + tot.toFixed(2) + '</td><td>' + (g.members.every(m => m.sheet.check.flat) ? '✓' : '<span class="bad">✗</span>') + '</td></tr>';
+    });
+    html += '<tr><td colspan="8" class="muted">⇋ = même gabarit, retourné (le morceau est le symétrique). ' + gabGroups.length + ' gabarits pour ' + allPieces().length + ' morceaux.</td></tr>';
+    const totArea = sheets.reduce((s, sh) => s + sh.cutArea, 0), netArea = sheets.reduce((s, sh) => s + sh.area, 0);
+    html += '<tr><td colspan="6" class="muted">Total</td><td><b>' + totArea.toFixed(2) + '</b> <span class="muted">(dont ' + netArea.toFixed(2) + ' couvrants)</span></td><td></td></tr>';
+    el.innerHTML = html + '</table>';
+    document.getElementById('btnPrintAll').addEventListener('click', () => printTracing(sheets, true, 'Traçage toile de dôme'));
+  }
+
+  // ---------------------------------------------------------
+  // Étape 9 — Plan de coupe sur le rouleau (nesting.js)
+  // rotation 0/180°, jamais retourné, trait de coupe commun, rouleau continu
+  // ---------------------------------------------------------
+  let nestCache = null;
+  let rollHit = [];
+  function ensureNest(){
+    if (!ensureEtages()) return null;
+    if (laizeFailures().length || fabricationStatus().level === 'red') return null;   // étapes 3 et 5
+    if (!nestCache) {
+      const items = allPieces().map(pc => { const sh = sheetOf(pc.name);
+        return { name: pc.name, poly: sh.cut, L: sh.cutLength, W: sh.cutWidth, area: sh.cutArea }; });
+      nestCache = Nesting.nest(items, USABLE_WIDTH_M, { row: 0.01, tries: 8 });
+      nestCache.naive = items.reduce((a, i) => a + i.L, 0);
+      nestCache.byName = new Map(nestCache.placed.map(p => [p.name, p]));
+    }
+    return nestCache;
+  }
+  // position d'un point de la fiche (repère du morceau) sur le rouleau
+  function rollPoint(pl, p){
+    return { x: pl.x + (pl.rot ? pl.L - p.x : p.x), y: SELVAGE_M + pl.y + (pl.rot ? pl.W - p.y : p.y) };
+  }
+
+  function render2DRoll(){
+    const rect = canvas2d.getBoundingClientRect();
+    canvas2d.width = rect.width * devicePixelRatio;
+    canvas2d.height = rect.height * devicePixelRatio;
+    const W = canvas2d.width, H = canvas2d.height, dpr = devicePixelRatio;
+    ctx2d.clearRect(0,0,W,H);
+    const hint = document.getElementById('hint2d'), info = document.getElementById('dev2dInfo');
+    if (ensureEtages() && fabricationGate()) return;
+    const nr = ensureNest();
+    if (!nr) { drawBusy('Recherche du découpage « moins de toile »', optimState ? optimState.progress : 0, optimState ? optimState.text : ''); return; }
+    rollHit = [];
+
+    // le rouleau est replié en tronçons empilés (comme des lignes de texte)
+    const pad = 34*dpr, gapRow = 26*dpr;
+    let seg = 5;
+    const fitSeg = sg => { const nSeg = Math.ceil(nr.length / sg); const sc = (W - 2*pad) / sg; return { nSeg, sc, h: nSeg * (FABRIC_W_M*sc + gapRow) }; };
+    while (fitSeg(seg).h > H - 50*dpr && seg < 200) seg += 5;
+    const { nSeg, sc } = fitSeg(seg);
+    const rowH = FABRIC_W_M * sc;
+    for (let k = 0; k < nSeg; k++) {
+      const x0 = k * seg, top = 12*dpr + k * (rowH + gapRow);
+      const segLen = Math.min(seg, nr.length - x0);
+      const S = p => ({ x: pad + (p.x - x0) * sc, y: top + (FABRIC_W_M - SELVAGE_M - p.y) * sc });
+      // toile + lisières
+      ctx2d.fillStyle = '#f1ece0'; ctx2d.fillRect(pad, top, segLen*sc, rowH);
+      ctx2d.fillStyle = 'rgba(28,31,34,0.12)';
+      ctx2d.fillRect(pad, top, segLen*sc, SELVAGE_M*sc); ctx2d.fillRect(pad, top + rowH - SELVAGE_M*sc, segLen*sc, SELVAGE_M*sc);
+      ctx2d.strokeStyle = '#8a8f94'; ctx2d.lineWidth = 1*dpr; ctx2d.strokeRect(pad, top, segLen*sc, rowH);
+      ctx2d.save(); ctx2d.beginPath(); ctx2d.rect(pad, top, segLen*sc, rowH); ctx2d.clip();
+      nr.placed.forEach(pl => {
+        const minX = Math.min(...pl.poly.map(q => q.x)), maxX = Math.max(...pl.poly.map(q => q.x));
+        if (maxX < x0 || minX > x0 + seg) return;
+        const pc = pieceByName(pl.name);
+        const col = pieceColor(pc);
+        ctx2d.beginPath(); pl.poly.forEach((q, i) => { const v = S(q); if (i) ctx2d.lineTo(v.x, v.y); else ctx2d.moveTo(v.x, v.y); }); ctx2d.closePath();
+        ctx2d.fillStyle = 'rgba(' + col.join(',') + ',0.55)'; ctx2d.fill();
+        ctx2d.strokeStyle = '#1c1f22'; ctx2d.lineWidth = 1*dpr; ctx2d.stroke();
+        const c = S({ x: (minX + maxX)/2, y: pl.y + pl.W/2 });
+        ctx2d.font = 'bold ' + (9*dpr) + 'px monospace'; ctx2d.fillStyle = '#1c1f22'; ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+        ctx2d.fillText(pl.name + (pl.rot ? ' ↻' : ''), Math.max(pad + 20*dpr, Math.min(pad + segLen*sc - 20*dpr, c.x)), c.y);
+        rollHit.push({ name: pl.name, poly: pl.poly.map(S) });
+      });
+      ctx2d.restore();
+      // graduation en mètres
+      ctx2d.font = (8.5*dpr) + 'px monospace'; ctx2d.fillStyle = '#6b7278'; ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'top';
+      const step = seg <= 10 ? 1 : (seg <= 30 ? 5 : 10);
+      for (let m = 0; m <= segLen + 1e-9; m += step) {
+        const x = pad + m * sc;
+        ctx2d.fillRect(x, top + rowH, 1*dpr, 4*dpr);
+        ctx2d.fillText((x0 + m).toFixed(0) + ' m', x, top + rowH + 5*dpr);
+      }
+    }
+    const gain = 1 - nr.length / nr.naive;
+    info.textContent = 'Rouleau ' + nr.length.toFixed(2) + ' m';
+    hint.textContent = 'Plan de coupe — laize ' + mm(FABRIC_W_M) + ' mm (lisières grisées) · ' + nr.length.toFixed(2) + ' m de toile (au lieu de ' + nr.naive.toFixed(1) +
+      ' m sans placement, −' + Math.round(gain*100) + ' %) · utilisation ' + Math.round(nr.utilisation*100) + ' % · ↻ = tourné 180° · cliquez un morceau pour sa fiche' +
+      (nr.check.overlaps || nr.check.outside ? ' · ⚠ contrôle : ' + nr.check.overlaps + ' chevauchement(s)' : '');
+    hint.style.color = (nr.check.overlaps || nr.check.outside || nr.tooWide.length) ? '#b23a2f' : '';
+
+    const el = document.getElementById('panelsReadout');
+    el.style.display = '';
+    let h = '<div class="sheet-head"><b>Plan de coupe sur le rouleau</b><button id="btnPrintAll2">Tout exporter — plan + fiches de traçage (imprimer / PDF)</button></div>';
+    h += '<div class="sheet-kpis"><span>Métrage <b>' + nr.length.toFixed(2) + ' m</b></span><span>Sans placement <b>' + nr.naive.toFixed(1) + ' m</b> (−' + Math.round(gain*100) + ' %)</span>' +
+      '<span>Utilisation de la toile <b>' + Math.round(nr.utilisation*100) + ' %</b></span><span>Contrôle chevauchements <b>' + (nr.check.overlaps + nr.check.outside === 0 ? '✓ aucun' : '✗ ' + nr.check.overlaps) + '</b></span></div>';
+    if (nr.tooWide.length) h += '<div class="bad">⚠ Hors laize, non placés : ' + nr.tooWide.join(', ') + '</div>';
+    h += '<div class="muted">Règles : rotation 0° ou 180° seulement (droit-fil), jamais retourné (endroit), trait de coupe commun autorisé. X = distance depuis le début du rouleau, Y = distance depuis le bord de référence de la toile (lisière comprise), au coin bas-gauche du rectangle de coupe du morceau.</div>';
+    h += '<table class="clickable"><tr><th>Morceau</th><th>De X (m)</th><th>À X (m)</th><th>Y (mm)</th><th>Rotation</th><th>Coupe (mm)</th></tr>';
+    nr.placed.slice().sort((a, b) => a.x - b.x).forEach(pl => {
+      h += '<tr data-piece="' + pl.name + '"><td><b>' + pl.name + '</b></td><td>' + pl.x.toFixed(3) + '</td><td>' + (pl.x + pl.L).toFixed(3) + '</td><td>' + mm(SELVAGE_M + pl.y) +
+        '</td><td>' + (pl.rot ? '180° ↻' : '0°') + '</td><td>' + mm(pl.L) + ' × ' + mm(pl.W) + '</td></tr>';
+    });
+    el.innerHTML = h + '</table>';
+    document.getElementById('btnPrintAll2').addEventListener('click', () => printTracing(allPieces().map(pc => sheetOf(pc.name)), true, 'Traçage toile de dôme'));
+  }
+
+  function pointInPoly(pt, poly){
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i], b = poly[j];
+      if ((a.y > pt.y) !== (b.y > pt.y) && pt.x < (b.x - a.x) * (pt.y - a.y) / (b.y - a.y) + a.x) c = !c;
+    }
+    return c;
+  }
+
+  // ---------- Étape 8 : fiches de traçage à la main (impression / PDF) ----------
+  function tracingMeta(title){
+    const V = document.getElementById('paramDetail').value;
+    const D = parseFloat(document.getElementById('paramDiameter').value).toFixed(2).replace('.', ',');
+    const preset = Toile.SEAM_PRESETS[SEAM.type];
+    return {
+      title,
+      dome: domeLabel() + ' · statut ' + STATUS_ICON[geometryStatus().level] + ' géométrie ' + STATUS_WORD[geometryStatus().level] + ', ' + STATUS_ICON[fabricationStatus().level] + ' toile ' + STATUS_WORD[fabricationStatus().level],
+      structure: dome.offset ? 'sans connecteur GoodKarma, toile sur montants (appui ' + mm(dome.offset.h) + ' mm)' : 'avec connecteur (nœud à nœud)',
+      seams: preset.label + ' A' + mm(SEAM.A) + '/B' + mm(SEAM.B) + ', ourlet ' + mm(SEAM.hem) +
+        (SEAM.bottom ? ' · rangée du bas : A' + mm(SEAM.bottom.A) + '/B' + mm(SEAM.bottom.B) + ', ourlet ' + mm(SEAM.bottom.hem) : ''),
+      laize: mm(FABRIC_W_M) + ' mm (utile ' + mm(USABLE_WIDTH_M) + ')',
+      date: new Date().toLocaleDateString('fr-BE')
+    };
+  }
+  function printTracing(sheets, withSummary, title){
+    if (laizeFailures().length || fabricationStatus().level === 'red') { render2D(); return; }   // étapes 3 et 5 : export refusé
+    const meta = tracingMeta(title);
+    const nr = ensureNest();
+    if (!nr) return;
+    meta.selvage = SELVAGE_M;
+    meta.fabricW = FABRIC_W_M;
+    meta.roll = nr;
+    meta.placements = new Map(nr.placed.map(p => [p.name, p]));
+    if (withSummary) meta.gabarits = gabGroups;
+    const html = CoverExport.tracingDocument(sheets, meta, withSummary);
+    const w = window.open('', '_blank');
+    if (w) {
+      w.document.open(); w.document.write(html); w.document.close();
+      setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 400);
+    } else {
+      // fenêtre bloquée : on télécharge la page, à ouvrir puis imprimer
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+      a.download = title.replace(/\s+/g, '_') + '.html';
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+  }
+
+  // ---------- vue détaillée d'une pièce (cotes, angles, plis, coupe) ----------
+  const EDGE_STYLE = { ourlet: '#2b5a8a', fermeture: '#8a4fb0', montante: '#b23a2f', etage: '#1c1f22' };
+
+  function render2DPiece(){
+    const sh = sheetOf(selectedPiece);
+    const pc = pieceByName(selectedPiece);
+    const rect = canvas2d.getBoundingClientRect();
+    canvas2d.width = rect.width * devicePixelRatio;
+    canvas2d.height = rect.height * devicePixelRatio;
+    const W = canvas2d.width, H = canvas2d.height, dpr = devicePixelRatio;
+    ctx2d.clearRect(0,0,W,H);
+
+    const pad = 60*dpr;
+    const spanY = Math.max(sh.cutWidth, USABLE_WIDTH_M);
+    const base = Math.min((W - 2*pad) / sh.cutLength, (H - 2*pad - 30*dpr) / spanY);
+    const sc = base * view2d.zoom;
+    const ox = W/2 - (sh.cutLength/2)*sc + view2d.panX, oy = H/2 + (spanY/2)*sc + view2d.panY - 10*dpr;
+    const S = p => ({ x: ox + p.x*sc, y: oy - p.y*sc });
+
+    // laize utile derrière la pièce
+    const l0 = S({x: -0.1, y: 0}), l1 = S({x: sh.cutLength + 0.1, y: USABLE_WIDTH_M});
+    ctx2d.fillStyle = 'rgba(43,90,138,0.06)';
+    ctx2d.fillRect(l0.x, l1.y, l1.x - l0.x, l0.y - l1.y);
+    ctx2d.setLineDash([5*dpr, 4*dpr]); ctx2d.strokeStyle = 'rgba(43,90,138,0.5)'; ctx2d.lineWidth = 1*dpr;
+    ctx2d.strokeRect(l0.x, l1.y, l1.x - l0.x, l0.y - l1.y); ctx2d.setLineDash([]);
+
+    // contour de coupe (trait de coupe) + zone de marge
+    const ok = fitsLaize(sh);
+    polyPath(sh.cut, S);
+    ctx2d.fillStyle = 'rgba(255,255,255,0.9)'; ctx2d.fill();
+    ctx2d.strokeStyle = ok ? '#1c1f22' : '#b23a2f'; ctx2d.lineWidth = 1.6*dpr; ctx2d.stroke();
+
+    const col = pieceColor(pc);
+    sh.triangles.forEach(t => {
+      const q = t.pts.map(S);
+      ctx2d.beginPath(); ctx2d.moveTo(q[0].x,q[0].y); ctx2d.lineTo(q[1].x,q[1].y); ctx2d.lineTo(q[2].x,q[2].y); ctx2d.closePath();
+      ctx2d.fillStyle = 'rgba(' + col.join(',') + ',0.30)'; ctx2d.fill();
+      const c = { x: (q[0].x+q[1].x+q[2].x)/3, y: (q[0].y+q[1].y+q[2].y)/3 };
+      ctx2d.font = (8.5*dpr)+'px monospace'; ctx2d.fillStyle = 'rgba(28,31,34,0.55)'; ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+      ctx2d.fillText('#' + t.idx, c.x, c.y);
+    });
+
+    sh.folds.forEach(f => {
+      const A = S(f.A), B = S(f.B);
+      ctx2d.beginPath(); ctx2d.moveTo(A.x, A.y); ctx2d.lineTo(B.x, B.y);
+      ctx2d.setLineDash([4*dpr, 3*dpr]); ctx2d.strokeStyle = 'rgba(28,31,34,0.5)'; ctx2d.lineWidth = 1*dpr; ctx2d.stroke(); ctx2d.setLineDash([]);
+      if (sc * f.length > 55*dpr) {
+        const m = { x: (A.x+B.x)/2, y: (A.y+B.y)/2 };
+        let ang = Math.atan2(B.y - A.y, B.x - A.x); if (ang > Math.PI/2) ang -= Math.PI; if (ang < -Math.PI/2) ang += Math.PI;
+        ctx2d.save(); ctx2d.translate(m.x, m.y); ctx2d.rotate(ang);
+        ctx2d.font = (8*dpr)+'px monospace'; ctx2d.fillStyle = '#6b7278'; ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'bottom';
+        ctx2d.fillText('pli ' + f.fold.toFixed(1) + '°', 0, -2*dpr);
+        ctx2d.restore();
+      }
+    });
+
+    // ligne de couture (contour net), couleur par type de bord + cote
+    sh.edges.forEach((e, i) => {
+      const A = S(sh.points[i]), B = S(sh.points[(i+1) % sh.points.length]);
+      ctx2d.beginPath(); ctx2d.moveTo(A.x, A.y); ctx2d.lineTo(B.x, B.y);
+      ctx2d.strokeStyle = EDGE_STYLE[e.kind]; ctx2d.lineWidth = 2*dpr; ctx2d.stroke();
+      const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1;
+      if (L < 70*dpr) return;
+      const nx = -dy / L, ny = dx / L; // vers l'extérieur (repère écran)
+      const off = e.allowance * sc + 11*dpr;
+      const m = { x: (A.x+B.x)/2 + nx*off, y: (A.y+B.y)/2 + ny*off };
+      let ang = Math.atan2(dy, dx); if (ang > Math.PI/2) ang -= Math.PI; if (ang < -Math.PI/2) ang += Math.PI;
+      ctx2d.save(); ctx2d.translate(m.x, m.y); ctx2d.rotate(ang);
+      ctx2d.font = 'bold ' + (9*dpr)+'px monospace'; ctx2d.fillStyle = EDGE_STYLE[e.kind]; ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+      ctx2d.fillText(e.cls + ' ' + mm(e.length) + (e.other ? ' ↔' + e.other : '') + (e.side === 'H' ? ' (ourlet)' : ' (' + e.side + ')'), 0, 0);
+      ctx2d.restore();
+    });
+
+    sh.points.forEach((p, i) => {
+      const v = S(p);
+      const prev = S(sh.points[(i - 1 + sh.points.length) % sh.points.length]), next = S(sh.points[(i + 1) % sh.points.length]);
+      let bx = (prev.x - v.x) / (Math.hypot(prev.x - v.x, prev.y - v.y) || 1) + (next.x - v.x) / (Math.hypot(next.x - v.x, next.y - v.y) || 1);
+      let by = (prev.y - v.y) / (Math.hypot(prev.x - v.x, prev.y - v.y) || 1) + (next.y - v.y) / (Math.hypot(next.x - v.x, next.y - v.y) || 1);
+      let bl = Math.hypot(bx, by);
+      if (bl < 1e-6) { bx = -(next.y - v.y); by = next.x - v.x; bl = Math.hypot(bx, by) || 1; }
+      bx /= bl; by /= bl;
+      if (p.angle > 180) { bx = -bx; by = -by; }
+      ctx2d.beginPath(); ctx2d.arc(v.x, v.y, 3*dpr, 0, Math.PI*2); ctx2d.fillStyle = '#1c1f22'; ctx2d.fill();
+      ctx2d.font = 'bold ' + (9.5*dpr)+'px monospace'; ctx2d.fillStyle = '#1c1f22'; ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+      ctx2d.fillText(p.label, v.x - bx*16*dpr, v.y - by*16*dpr);
+      ctx2d.font = (8.5*dpr)+'px monospace'; ctx2d.fillStyle = '#6b7278';
+      ctx2d.fillText(deg(p.angle), v.x + bx*24*dpr, v.y + by*24*dpr);
+    });
+
+    const b0 = S({x:0, y:0}), b1 = S({x: sh.cutLength, y: 0});
+    ctx2d.strokeStyle = '#6b7278'; ctx2d.lineWidth = 1*dpr;
+    ctx2d.beginPath(); ctx2d.moveTo(b0.x, b0.y + 26*dpr); ctx2d.lineTo(b1.x, b1.y + 26*dpr); ctx2d.stroke();
+    ctx2d.font = (9*dpr)+'px monospace'; ctx2d.fillStyle = ok ? '#6b7278' : '#b23a2f'; ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'top';
+    ctx2d.fillText('coupe ' + mm(sh.cutLength) + ' × ' + mm(sh.cutWidth) + ' mm' + (ok ? '' : ' ⚠ HORS LAIZE') + '  ·  bande bleue = largeur utile ' + mm(USABLE_WIDTH_M) + ' mm, rouleau →', (b0.x + b1.x)/2, b0.y + 30*dpr);
+
+    const hint = document.getElementById('hint2d');
+    document.getElementById('dev2dInfo').textContent = 'Morceau ' + sh.name + ' — ' + sh.triangles.length + ' triangles';
+    hint.textContent = 'Vu de l\'extérieur · côté sommet en haut · trait noir = coupe · trait coloré = couture · molette = zoom · glisser = déplacer · double-clic = recadrer · Échap = retour';
+    hint.style.color = '';
+    renderPieceSheetTable(sh, pc);
+  }
+
+  function renderPieceSheetTable(sh, pc){
+    const el = document.getElementById('panelsReadout');
+    el.style.display = '';
+    const gk = !!dome.offset;
+    let h = '<div class="sheet-head"><b>Fiche patron — morceau ' + sh.name + '</b>' + (sh.closedRing ? ' (anneau complet : les deux extrémités se recousent)' : '') +
+      ' <button id="btnSheetPrint">Fiche de traçage (imprimer / PDF)</button> <button id="btnSheetCsv" class="ghost">CSV</button></div>';
+    h += '<div class="sheet-kpis">' +
+      '<span>Coupe <b' + (fitsLaize(sh) ? '' : ' class="bad"') + '>' + mm(sh.cutLength) + ' × ' + mm(sh.cutWidth) + ' mm</b> (long. × larg.)</span>' +
+      '<span>Net (couture) <b>' + mm(sh.length) + ' × ' + mm(sh.width) + ' mm</b></span>' +
+      '<span>Toile coupée <b>' + sh.cutArea.toFixed(3) + ' m²</b> <span class="muted">(couvrant ' + sh.area.toFixed(3) + ' m²)</span></span>' +
+      '<span>Chute dans le rectangle <b>' + Math.round(100 * (1 - sh.cutArea / sh.bboxArea)) + ' %</b></span>' +
+      '<span>Sans vague <b>' + (sh.check.flat ? '✓ oui' : '✗ non') + '</b></span>' +
+      '</div>';
+    if (sh.gabGroup) {
+      const g = sh.gabGroup, others = g.members.filter(m => m.sheet !== sh);
+      h += '<div class="gab-info"><span class="gab-dot" style="background:rgb(' + pieceColor(pc).join(',') + ')"></span><b>Gabarit ' + g.id + '</b> — ' +
+        (g.members.length > 1 ? 'même gabarit pour <b>' + g.members.length + ' morceaux</b> : ' + g.members.map(m => '<span class="piece-chip' + (m.sheet === sh ? ' cur' : '') + '" data-piece="' + m.sheet.name + '">' + m.sheet.name + (m.mirrored ? ' ⇋' : '') + '</span>').join(' ') +
+          (sh.gabMirror ? '. <b>Ce morceau se trace avec le gabarit retourné.</b>' : (g.members.some(m => m.mirrored) ? '. ⇋ = gabarit retourné.' : ''))
+          : 'gabarit unique (1 seul morceau).') + '</div>';
+    }
+    { const nr = ensureNest(), pl = nr.byName.get(sh.name);
+      if (pl) h += '<div class="roll-pos">Sur le rouleau : de <b>' + pl.x.toFixed(3) + ' m</b> à <b>' + (pl.x + pl.L).toFixed(3) + ' m</b>, à ' + mm(SELVAGE_M + pl.y) + ' mm du bord, ' +
+        (pl.rot ? '<b>tourné 180°</b> : côté sommet du dôme vers le bord de référence' : 'non tourné : côté sommet du dôme vers le bord opposé au bord de référence') + '.</div>'; }
+    h += '<div class="muted">Repère : X le long du rouleau, Y à travers la laize, origine en bas à gauche du contour de coupe. Pièce vue de l\'extérieur (endroit), côté sommet en haut. ' +
+      'Les points P sont sur la <b>ligne de couture</b> (' + (gk ? 'surface de toile GoodKarma, appui ' + mm(dome.offset.h) + ' mm' : 'centres des nœuds') + '). ' +
+      'Assemblage : ' + Toile.SEAM_PRESETS[SEAM.type].label + ' — A ' + mm(SEAM.A) + ' mm (recouvrant), B ' + mm(SEAM.B) + ' mm, ourlet ' + mm(SEAM.hem) + ' mm.</div>';
+
+    h += '<div class="sheet-grid"><div><h4>Ligne de couture (points P)</h4><table><tr><th>Point</th><th>Nœud</th><th>X (mm)</th><th>Y (mm)</th><th>Angle</th></tr>';
+    sh.points.forEach(p => { h += '<tr><td><b>' + p.label + '</b></td><td>' + p.node + '</td><td>' + mm(p.x) + '</td><td>' + mm(p.y) + '</td><td>' + deg(p.angle) + '</td></tr>'; });
+    h += '</table><h4>Contour de coupe (points C)</h4><table><tr><th>Point</th><th>X (mm)</th><th>Y (mm)</th></tr>';
+    sh.cut.forEach((p, i) => { h += '<tr><td>C' + (i + 1) + '</td><td>' + mm(p.x) + '</td><td>' + mm(p.y) + '</td></tr>'; });
+    h += '</table></div>';
+
+    h += '<div><h4>Bords</h4><table><tr><th>Bord</th><th>Longueur (mm)</th>' + (gk ? '<th>Nœud à nœud</th>' : '') + '<th>Classe</th><th>Type</th><th>Côté</th><th>Marge</th></tr>';
+    sh.edges.forEach(e => {
+      const nl = nominalLength(e);
+      h += '<tr><td>' + e.from + '→' + e.to + '</td><td>' + mm(e.length) + '</td>' + (gk ? '<td class="muted">' + mm(nl) + ' (+' + mm(e.length - nl) + ')</td>' : '') +
+        '<td>' + e.cls + '</td><td><span class="k-' + e.kind + '">■</span> ' + e.type + '</td><td>' + SIDE_TXT[e.side] + '</td><td>' + mm(e.allowance) + '</td></tr>';
+    });
+    h += '</table>';
+
+    h += '<h4>Plis internes (au droit des montants)</h4>';
+    if (sh.folds.length) {
+      h += '<table><tr><th>Pli</th><th>Longueur (mm)</th><th>Classe</th><th>Angle de pli</th><th>Entre △</th></tr>';
+      sh.folds.forEach(f => { h += '<tr><td>' + f.from + '–' + f.to + '</td><td>' + mm(f.length) + '</td><td>' + f.cls + '</td><td>' + f.fold.toFixed(2) + '°</td><td>#' + f.tris.join(' / #') + '</td></tr>'; });
+      h += '</table>';
+    } else h += '<div class="muted">Aucun (triangle seul).</div>';
+    h += '</div></div>';
+
+    h += '<h4>Triangles (cotes nettes)</h4><table><tr><th>△</th><th>Nœuds</th><th>Côté 1 (mm)</th><th>Côté 2 (mm)</th><th>Côté 3 (mm)</th><th>Angles</th><th>Surface (m²)</th></tr>';
+    sh.triangles.forEach(t => {
+      h += '<tr><td>#' + t.idx + '</td><td>' + t.nodes.join('-') + '</td>' +
+        t.sides.map(sd => '<td>' + sd.cls + ' ' + mm(sd.len) + '</td>').join('') +
+        '<td>' + t.angles.map(deg).join(' / ') + '</td><td>' + t.area.toFixed(3) + '</td></tr>';
+    });
+    h += '</table>';
+    el.innerHTML = h;
+    document.getElementById('btnSheetCsv').addEventListener('click', () => downloadSheetCsv(sh));
+    document.getElementById('btnSheetPrint').addEventListener('click', () => printTracing([sh], false, 'Traçage ' + sh.name));
+  }
+
+  function downloadSheetCsv(sh){
+    if (laizeFailures().length || fabricationStatus().level === 'red') { render2D(); return; }   // étapes 3 et 5 : export refusé
+    const r = [];
+    const q = v => '"' + String(v).replace(/"/g, '""') + '"';
+    const gk = !!dome.offset;
+    r.push(['Morceau', sh.name],
+           ['Structure', gk ? 'sans connecteur GoodKarma, hauteur d\'appui ' + mm(dome.offset.h) + ' mm' : 'avec connecteur (noeud a noeud)'],
+           ['Assemblage', Toile.SEAM_PRESETS[SEAM.type].label + ' : A ' + mm(SEAM.A) + ' mm, B ' + mm(SEAM.B) + ' mm, ourlet ' + mm(SEAM.hem) + ' mm'],
+           ['Coupe longueur (mm)', mm(sh.cutLength)], ['Coupe largeur (mm)', mm(sh.cutWidth)],
+           ['Toile coupee (m2)', sh.cutArea.toFixed(4)], ['Sans vague', sh.check.flat ? 'oui' : 'non'],
+           ['Repere', 'X le long du rouleau, Y a travers la laize, origine en bas a gauche du contour de coupe, vue exterieure'], []);
+    r.push(['LIGNE DE COUTURE'], ['Point', 'Noeud', 'X (mm)', 'Y (mm)', 'Angle (deg)']);
+    sh.points.forEach(p => r.push([p.label, p.node, (p.x*1000).toFixed(1), (p.y*1000).toFixed(1), p.angle.toFixed(2)]));
+    r.push([], ['CONTOUR DE COUPE'], ['Point', 'X (mm)', 'Y (mm)']);
+    sh.cut.forEach((p, i) => r.push(['C' + (i + 1), (p.x*1000).toFixed(1), (p.y*1000).toFixed(1)]));
+    r.push([], ['BORDS'], ['De', 'A', 'Longueur (mm)'].concat(gk ? ['Noeud a noeud (mm)'] : [], ['Classe', 'Type', 'Cote', 'Marge (mm)']));
+    sh.edges.forEach(e => r.push([e.from, e.to, (e.length*1000).toFixed(1)].concat(gk ? [(nominalLength(e)*1000).toFixed(1)] : [], [e.cls, e.type, SIDE_TXT[e.side], mm(e.allowance)])));
+    r.push([], ['PLIS'], ['De', 'A', 'Longueur (mm)', 'Classe', 'Angle de pli (deg)']);
+    sh.folds.forEach(f => r.push([f.from, f.to, (f.length*1000).toFixed(1), f.cls, f.fold.toFixed(2)]));
+    r.push([], ['TRIANGLES'], ['Triangle', 'Noeuds', 'Cote 1 (mm)', 'Cote 2 (mm)', 'Cote 3 (mm)', 'Angle 1', 'Angle 2', 'Angle 3']);
+    sh.triangles.forEach(t => r.push(['#' + t.idx, t.nodes.join('-')].concat(t.sides.map(sd => (sd.len*1000).toFixed(1)), t.angles.map(a => a.toFixed(2)))));
+    const csv = '﻿' + r.map(row => row.map(q).join(';')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'nomadom_' + sh.name + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // ---------- encart « agrandissement » du mode GoodKarma ----------
+  function renderOffsetInfo(){
+    const el = document.getElementById('offsetInfo');
+    if (!dome.offset) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.innerHTML = offsetInfoHtml();
+  }
+  function offsetInfoHtml(){
+    const o = dome.offset;
+    const baseR = d => { const ys = d.points.map(p => p.y), yb = Math.min(...ys);
+      return Math.max(...d.points.filter(p => Math.abs(p.y - yb) < 1e-6).map(p => Math.hypot(p.x, p.z))); };
+    const topH = d => Math.max(...d.points.map(p => p.y)) - Math.min(...d.points.map(p => p.y));
+    let h = '<b>Mode sans connecteur (GoodKarma) — patron agrandi</b> : la toile repose sur la face extérieure des montants, à ' + mm(o.h) +
+      ' mm du plan des nœuds calculés. Chaque face est décalée de cette distance ; les nœuds de base restent au sol.' +
+      '<table><tr><th>Classe</th><th>Montant nœud à nœud</th><th>Toile (ligne de couture)</th><th>Agrandissement</th><th>Écart dans la classe</th></tr>';
+    dome.edgeClasses.forEach(g => {
+      h += '<tr><td><b>' + g.name + '</b> ×' + g.count + '</td><td>' + (g.nominal*1000).toFixed(1) + ' mm</td><td>' + (g.length*1000).toFixed(1) + ' mm</td><td>+' +
+        ((g.length - g.nominal)*1000).toFixed(1) + ' mm (+' + ((g.length/g.nominal - 1)*100).toFixed(2) + ' %)</td><td>' +
+        ((g.max - g.min)*1000 < 0.5 ? '—' : (g.min*1000).toFixed(1) + ' à ' + (g.max*1000).toFixed(1) + ' mm') + '</td></tr>';
+    });
+    h += '<tr><td>Ø au sol</td><td>' + (2*baseR(domeNominal)*1000).toFixed(0) + ' mm</td><td>' + (2*baseR(dome)*1000).toFixed(0) + ' mm</td><td>+' + (2*(baseR(dome)-baseR(domeNominal))*1000).toFixed(0) + ' mm</td><td></td></tr>';
+    h += '<tr><td>Hauteur</td><td>' + (topH(domeNominal)*1000).toFixed(0) + ' mm</td><td>' + (topH(dome)*1000).toFixed(0) + ' mm</td><td>+' + ((topH(dome)-topH(domeNominal))*1000).toFixed(0) + ' mm</td><td></td></tr>';
+    h += '</table><div class="warn" style="margin-top:6px">Les classes ne restent pas parfaitement égales près de la base (la toile descend jusqu\'au sol) : chaque morceau utilise ses longueurs exactes. ' +
+      'Planéité des triangles de toile : écart max ' + (o.maxPlaneDev*1000).toFixed(1) + ' mm par rapport au plan des montants. ' +
+      'Vérifiez la hauteur d\'appui : c\'est la distance, perpendiculaire à la face, entre le plan passant par les nœuds calculés et le dessus des montants.</div>';
+    return h;
+  }
+
+  // ---------------------------------------------------------
+  // Image plaquée sur le dôme 3D (repris de l'onglet « Tent » d'ACIDOME)
+  //  - « ciel »     : vue du ciel, centre de l'image au sommet, bord de
+  //                   l'image au bas du dôme (distance angulaire depuis le
+  //                   sommet, comme ACIDOME : stratoUV) ;
+  //  - « panorama » : l'image fait le tour du dôme, haut de l'image au
+  //                   sommet, bas de l'image au sol.
+  // Chaque face reçoit sa portion d'image par une transformation affine.
+  // ---------------------------------------------------------
+  let domeImage = null, imageUV = null;
+  function imageProj(){ return document.getElementById('paramImageProj').value; }
+  function computeImageUV(){
+    const proj = imageProj();
+    if (imageUV && imageUV.dome === dome && imageUV.proj === proj) return imageUV.map;
+    const map = new Map();
+    const ys = dome.points.map(p => p.y), yTop = Math.max(...ys), yBot = Math.min(...ys);
+    const ha = p => Math.atan2(Math.hypot(p.x, p.z), p.y);
+    const maxHa = Math.max(...dome.points.map(ha)) || 1;
+    dome.points.forEach(p => {
+      const r = Math.hypot(p.x, p.z);
+      if (proj === 'ciel') {
+        const rho = ha(p) / maxHa;
+        map.set(p._id, r < 1e-12 ? [0.5, 0.5] : [0.5 + rho * p.x / r / 2, 0.5 - rho * p.z / r / 2]);
+      } else {
+        map.set(p._id, [r < 1e-12 ? null : (Math.atan2(p.z, p.x) + Math.PI) / (2 * Math.PI), (yTop - p.y) / ((yTop - yBot) || 1)]);
+      }
+    });
+    imageUV = { dome, proj, map };
+    return map;
+  }
+  function drawTexturedFace(f, pts, shade){
+    const map = computeImageUV(), W = domeImage.naturalWidth, H = domeImage.naturalHeight;
+    const uv = f.pointIds.map(id => map.get(id).slice());
+    if (imageProj() === 'panorama') {
+      const known = uv.filter(q => q[0] !== null);
+      const umin = Math.min(...known.map(q => q[0])), umax = Math.max(...known.map(q => q[0]));
+      if (umax - umin > 0.5) known.forEach(q => { if (q[0] < 0.5) q[0] += 1; });
+      const um = known.reduce((a, q) => a + q[0], 0) / known.length;
+      uv.forEach(q => { if (q[0] === null) q[0] = um; });
+    }
+    const s = uv.map(q => ({ x: q[0] * W, y: q[1] * H })), d = pts.map(p => ({ x: p.sx, y: p.sy }));
+    const den = (s[1].x - s[0].x) * (s[2].y - s[0].y) - (s[2].x - s[0].x) * (s[1].y - s[0].y);
+    ctx.save();
+    // triangle légèrement agrandi : pas de liseré entre faces voisines
+    const cx = (d[0].x + d[1].x + d[2].x) / 3, cy = (d[0].y + d[1].y + d[2].y) / 3;
+    ctx.beginPath();
+    d.forEach((v, i) => { const L = Math.hypot(v.x - cx, v.y - cy) || 1, k = 0.8 / L; const x = v.x + (v.x - cx) * k, y = v.y + (v.y - cy) * k; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+    ctx.closePath(); ctx.clip();
+    if (Math.abs(den) > 1e-9) {
+      const a = ((d[1].x - d[0].x) * (s[2].y - s[0].y) - (d[2].x - d[0].x) * (s[1].y - s[0].y)) / den;
+      const c = ((d[2].x - d[0].x) * (s[1].x - s[0].x) - (d[1].x - d[0].x) * (s[2].x - s[0].x)) / den;
+      const b = ((d[1].y - d[0].y) * (s[2].y - s[0].y) - (d[2].y - d[0].y) * (s[1].y - s[0].y)) / den;
+      const dd = ((d[2].y - d[0].y) * (s[1].x - s[0].x) - (d[1].y - d[0].y) * (s[2].x - s[0].x)) / den;
+      const e = d[0].x - a * s[0].x - c * s[0].y, g = d[0].y - b * s[0].x - dd * s[0].y;
+      ctx.transform(a, b, c, dd, e, g);
+      ctx.drawImage(domeImage, 0, 0);
+      if (imageProj() === 'panorama') ctx.drawImage(domeImage, W, 0);
+    }
+    ctx.restore();
+    // ombrage pour garder le relief
+    ctx.beginPath(); ctx.moveTo(pts[0].sx, pts[0].sy); ctx.lineTo(pts[1].sx, pts[1].sy); ctx.lineTo(pts[2].sx, pts[2].sy); ctx.closePath();
+    ctx.fillStyle = 'rgba(0,0,0,' + Math.max(0, Math.min(0.5, (1 - Math.min(1, shade)) * 0.45)).toFixed(3) + ')';
+    ctx.fill();
+  }
+  function setDomeImage(img){
+    domeImage = img; imageUV = null;
+    document.getElementById('btnImageOff').style.display = img ? '' : 'none';
+    document.querySelector('.img-btn').classList.toggle('on', !!img);
+    render();
+  }
+
+  // ---------------------------------------------------------
+  // Vue aplatie (cotes) — morceaux EXACTS de la découpe choisie, posés à
+  // plat étage par étage (sommet en haut), dans l'ordre du tour du dôme.
+  // Toutes les cotes : longueur et classe de chaque bord, plis, angles aux
+  // points, nœuds. Plus on zoome, plus les détails apparaissent.
+  // ---------------------------------------------------------
+  let flatHit = [], flatLayout = null;
+  function buildFlatLayout(){
+    if (flatLayout && flatLayout.plan === etagesCache && flatLayout.sheets === sheetCache) return flatLayout;
+    const gapX = 0.35, gapY = 0.45, labelH = 0.35;
+    const rows = []; let y = 0, maxW = 0;
+    etagesCache.forEach(b => {
+      const items = []; let x = 0, h = 0;
+      b.pieces.forEach(pc => { const sh = sheetOf(pc.name); items.push({ pc, sh, x }); x += sh.cutLength + gapX; h = Math.max(h, sh.cutWidth); });
+      const w = x - gapX; maxW = Math.max(maxW, w);
+      rows.push({ band: b, items, y: y + labelH, h, w }); y += labelH + h + gapY;
+    });
+    flatLayout = { plan: etagesCache, sheets: sheetCache, rows, W: maxW, H: y - gapY };
+    return flatLayout;
+  }
+  function render2DFlatRows(){
+    if (!ensureEtages()) { drawBusy('Recherche du découpage « moins de toile »', optimState ? optimState.progress : 0, optimState ? optimState.text : ''); return; }
+    const rect = canvas2d.getBoundingClientRect();
+    canvas2d.width = rect.width * devicePixelRatio; canvas2d.height = rect.height * devicePixelRatio;
+    const W = canvas2d.width, H = canvas2d.height, dpr = devicePixelRatio;
+    ctx2d.clearRect(0, 0, W, H);
+    const L = buildFlatLayout();
+    const pad = 16 * dpr;
+    const base = Math.min((W - 2 * pad) / L.W, (H - 2 * pad - 20 * dpr) / L.H);
+    const sc = base * view2d.zoom;
+    const ox = W / 2 - (L.W / 2) * sc + view2d.panX, oy = H / 2 - (L.H / 2) * sc + view2d.panY;
+    flatHit = [];
+    const txt = (t, x, y, ang, font, color, base_) => {
+      ctx2d.save(); ctx2d.translate(x, y); if (ang) ctx2d.rotate(ang);
+      ctx2d.font = font; ctx2d.fillStyle = color; ctx2d.textAlign = 'center'; ctx2d.textBaseline = base_ || 'middle';
+      ctx2d.lineWidth = 3 * dpr; ctx2d.strokeStyle = 'rgba(255,255,255,0.85)'; ctx2d.strokeText(t, 0, 0); ctx2d.fillText(t, 0, 0); ctx2d.restore();
+    };
+    const upright = a => { if (a > Math.PI / 2) a -= Math.PI; if (a < -Math.PI / 2) a += Math.PI; return a; };
+    L.rows.forEach(row => {
+      const b = row.band;
+      // titre de l'étage
+      const tl = { x: ox, y: oy + (row.y - 0.18) * sc };
+      if (tl.y > -20 * dpr && tl.y < H + 20 * dpr) {
+        ctx2d.font = 'bold ' + (10 * dpr) + 'px monospace'; ctx2d.fillStyle = '#2b5a8a'; ctx2d.textAlign = 'left'; ctx2d.textBaseline = 'middle';
+        ctx2d.fillText((b.cap ? 'Sommet' : 'Étage ' + b.level) + ' — ' + b.pieces.length + ' morceau' + (b.pieces.length > 1 ? 'x' : '') + ' · ' + b.band.order.length + ' △', Math.max(4 * dpr, tl.x), tl.y);
+      }
+      row.items.forEach(it => {
+        const sh = it.sh, col = pieceColor(it.pc);
+        // repère du morceau : y vers le haut, bas du morceau aligné en bas de la rangée
+        const S = p => ({ x: ox + (it.x + p.x) * sc, y: oy + (row.y + row.h - p.y) * sc });
+        const cutS = sh.cut.map(S);
+        const minX = Math.min(...cutS.map(v => v.x)), maxX = Math.max(...cutS.map(v => v.x)), minY = Math.min(...cutS.map(v => v.y)), maxY = Math.max(...cutS.map(v => v.y));
+        if (maxX < 0 || minX > W || maxY < 0 || minY > H) return;
+        flatHit.push({ name: sh.name, poly: cutS });
+        // contour de coupe
+        ctx2d.beginPath(); cutS.forEach((v, i) => i ? ctx2d.lineTo(v.x, v.y) : ctx2d.moveTo(v.x, v.y)); ctx2d.closePath();
+        ctx2d.fillStyle = '#fff'; ctx2d.fill(); ctx2d.strokeStyle = 'rgba(28,31,34,0.45)'; ctx2d.lineWidth = 1 * dpr; ctx2d.stroke();
+        // triangles
+        sh.triangles.forEach(t => { const q = t.pts.map(S);
+          ctx2d.beginPath(); ctx2d.moveTo(q[0].x, q[0].y); ctx2d.lineTo(q[1].x, q[1].y); ctx2d.lineTo(q[2].x, q[2].y); ctx2d.closePath();
+          ctx2d.fillStyle = 'rgba(' + col.join(',') + ',0.28)'; ctx2d.fill(); });
+        // plis + cotes
+        sh.folds.forEach(fl => {
+          const A = S(fl.A), B = S(fl.B), Lp = Math.hypot(B.x - A.x, B.y - A.y);
+          ctx2d.beginPath(); ctx2d.moveTo(A.x, A.y); ctx2d.lineTo(B.x, B.y); ctx2d.setLineDash([4 * dpr, 3 * dpr]);
+          ctx2d.strokeStyle = 'rgba(28,31,34,0.55)'; ctx2d.lineWidth = 1 * dpr; ctx2d.stroke(); ctx2d.setLineDash([]);
+          if (Lp > 70 * dpr) txt(fl.cls + ' ' + mm(fl.length) + (Lp > 150 * dpr ? ' · pli ' + fl.fold.toFixed(1) + '°' : ''), (A.x + B.x) / 2, (A.y + B.y) / 2, upright(Math.atan2(B.y - A.y, B.x - A.x)), (8.5 * dpr) + 'px monospace', '#555');
+        });
+        // ligne de couture + cotes des bords
+        const n = sh.points.length;
+        sh.edges.forEach((e, i) => {
+          const A = S(sh.points[i]), B = S(sh.points[(i + 1) % n]);
+          ctx2d.beginPath(); ctx2d.moveTo(A.x, A.y); ctx2d.lineTo(B.x, B.y); ctx2d.strokeStyle = EDGE_STYLE[e.kind]; ctx2d.lineWidth = 1.8 * dpr; ctx2d.stroke();
+          const dx = B.x - A.x, dy = B.y - A.y, Le = Math.hypot(dx, dy) || 1;
+          if (Le < 55 * dpr) return;
+          const nx = dy / Le, ny = -dx / Le; // vers l'intérieur (contour trigonométrique, y écran inversé)
+          const m = { x: (A.x + B.x) / 2 + nx * 9 * dpr, y: (A.y + B.y) / 2 + ny * 9 * dpr };
+          const extra = Le > 170 * dpr ? (e.other ? ' ↔' + e.other : (e.kind === 'ourlet' ? ' ourlet' : e.kind === 'fermeture' ? ' ferm.' : '')) : '';
+          txt(e.cls + ' ' + mm(e.length) + extra, m.x, m.y, upright(Math.atan2(dy, dx)), 'bold ' + (9 * dpr) + 'px monospace', EDGE_STYLE[e.kind]);
+        });
+        // points : étiquette, nœud, angle
+        const big = Math.min(maxX - minX, maxY - minY) > 160 * dpr;
+        sh.points.forEach((p, i) => {
+          const v = S(p), prev = S(sh.points[(i - 1 + n) % n]), next = S(sh.points[(i + 1) % n]);
+          ctx2d.beginPath(); ctx2d.arc(v.x, v.y, 2.2 * dpr, 0, Math.PI * 2); ctx2d.fillStyle = '#1c1f22'; ctx2d.fill();
+          if (!big) return;
+          let bx = (prev.x - v.x) / (Math.hypot(prev.x - v.x, prev.y - v.y) || 1) + (next.x - v.x) / (Math.hypot(next.x - v.x, next.y - v.y) || 1);
+          let by = (prev.y - v.y) / (Math.hypot(prev.x - v.x, prev.y - v.y) || 1) + (next.y - v.y) / (Math.hypot(next.x - v.x, next.y - v.y) || 1);
+          let bl = Math.hypot(bx, by); if (bl < 1e-6) { bx = -(next.y - v.y); by = next.x - v.x; bl = Math.hypot(bx, by) || 1; }
+          bx /= bl; by /= bl; if (p.angle > 180) { bx = -bx; by = -by; }
+          txt(p.label + ' ' + p.node, v.x - bx * 16 * dpr, v.y - by * 16 * dpr, 0, 'bold ' + (8.5 * dpr) + 'px monospace', '#1c1f22');
+          txt(p.angle.toFixed(1) + '°', v.x + bx * 22 * dpr, v.y + by * 22 * dpr, 0, (8 * dpr) + 'px monospace', '#6b7278');
+        });
+        // nom du morceau
+        const cxp = (minX + maxX) / 2, cyp = (minY + maxY) / 2;
+        txt(sh.name + ' · ' + gabLabel(sh), cxp, cyp - 6 * dpr, 0, 'bold ' + (10 * dpr) + 'px monospace', '#1c1f22');
+        if (maxX - minX > 260 * dpr && maxY - minY > 70 * dpr) txt(mm(sh.length) + ' × ' + mm(sh.width) + ' net · coupe ' + mm(sh.cutLength) + ' × ' + mm(sh.cutWidth), cxp, cyp + 8 * dpr, 0, (8.5 * dpr) + 'px monospace', '#6b7278');
+      });
+    });
+    const nP = allPieces().length;
+    document.getElementById('dev2dInfo').textContent = 'Vue aplatie — ' + nP + ' morceaux exacts';
+    const hint = document.getElementById('hint2d');
+    hint.textContent = 'Morceaux exacts (sans vague) de la découpe choisie, sommet en haut · cotes nettes en mm, de nœud à nœud · molette = zoom (plus de détails en zoomant) · glisser = déplacer · double-clic = recadrer · clic sur un morceau = sa fiche';
+    hint.style.color = '';
+    const el = document.getElementById('panelsReadout');
+    el.style.display = '';
+    el.innerHTML = '<div class="sheet-head"><b>Vue aplatie — ' + nP + ' morceaux, ' + gabGroups.length + ' gabarits</b></div>' +
+      '<div class="muted">Chaque morceau est posé à plat tel qu\'il sera coupé (vu de l\'extérieur, côté sommet en haut), rangée par rangée, dans l\'ordre du tour du dôme. ' +
+      'Bords : <span class="k-etage">■</span> couture d\'étage · <span class="k-montante">■</span> coupe montante · <span class="k-fermeture">■</span> fermeture d\'anneau · <span class="k-ourlet">■</span> ourlet. ' +
+      'Pointillés = plis au droit des montants. Les cotes sont celles de la ligne de couture (sans marge) ; le trait gris extérieur est le contour de coupe. ' +
+      'Zoomer pour voir les angles, les nœuds et les voisins à coudre. La présentation en <b>pelure d\'orange</b> (étages attachés depuis le sommet) est disponible avec les découpes « Moins de gabarits » et « Triangle par triangle ».</div>';
+  }
+
+  // ---------------------------------------------------------
+  // Pelure d'orange (vue aplatie des découpes « Moins de gabarits » et
+  // « Triangle par triangle ») — choix de Nathan du 29/10 :
+  //  - chaque étage reste d'un seul tenant : ses morceaux sont posés côte à
+  //    côte comme sur le dôme (bande dépliée) ;
+  //  - chaque étage s'accroche à celui du dessus par UNE seule arête
+  //    (charnière), toutes les charnières sur le même méridien φ0 ;
+  //  - tous les étages sont ouverts (fente) sur le méridien opposé φ0 + 180°,
+  //    toujours entre deux morceaux (jamais au milieu d'un morceau) ;
+  //  - le reste de chaque couture d'étage s'ouvre en éventail à plat et se
+  //    referme quand on pose la toile sur le dôme.
+  // Chaque morceau garde sa fiche (marges, gabarit) : on le replace par une
+  // rotation + translation (jamais retourné) sur sa position dans la pelure.
+  // ---------------------------------------------------------
+  let peelLayout = null;
+  function peelStrategy(){ const s = document.getElementById('paramCutStrategy').value; return s === 'gabarits' || s === 'triangles'; }
+  function rigid(a0, a1, b0, b1){
+    const ang = Math.atan2(b1.y - b0.y, b1.x - b0.x) - Math.atan2(a1.y - a0.y, a1.x - a0.x), c = Math.cos(ang), s = Math.sin(ang);
+    return p => ({ x: b0.x + c * (p.x - a0.x) - s * (p.y - a0.y), y: b0.y + s * (p.x - a0.x) + c * (p.y - a0.y) });
+  }
+  function peelType(){ return document.getElementById('paramPeelType').value || 'one'; }
+  // menu « Type d'ouverture » : seuls les types possibles pour ce dôme et cette découpe
+  function syncPeelMenu(){
+    const sel = document.getElementById('paramPeelType');
+    const av = Peel.availableTypes(dome, etagesTool, etagesCache);
+    const cur = sel.value || 'one';
+    sel.innerHTML = av.map(t => '<option value="' + t.id + '"' + (t.ok ? '' : ' disabled') + ' title="' + (t.reason || '').replace(/"/g, '&quot;') + '">' +
+      t.label + (t.ok ? '' : ' — impossible ici') + '</option>').join('');
+    sel.value = av.some(t => t.id === cur && t.ok) ? cur : 'one';
+  }
+  function buildPeelLayout(){
+    const type = peelType();
+    if (peelLayout && peelLayout.plan === etagesCache && peelLayout.sheets === sheetCache && peelLayout.req === type) return peelLayout;
+    peelLayout = Peel.build(dome, etagesTool, etagesCache, sheetOf, type);
+    peelLayout.plan = etagesCache; peelLayout.sheets = sheetCache; peelLayout.req = type;
+    return peelLayout;
+  }
+
+  function render2DPeel(){
+    const rect = canvas2d.getBoundingClientRect();
+    canvas2d.width = rect.width * devicePixelRatio; canvas2d.height = rect.height * devicePixelRatio;
+    const W = canvas2d.width, H = canvas2d.height, dpr = devicePixelRatio;
+    ctx2d.clearRect(0, 0, W, H);
+    const L = buildPeelLayout();
+    const pad = 16 * dpr, LW = L.maxX - L.minX, LH = L.maxY - L.minY;
+    const base = Math.min((W - 2 * pad) / LW, (H - 2 * pad - 24 * dpr) / LH);
+    const sc = base * view2d.zoom;
+    const ox = W / 2 - ((L.minX + L.maxX) / 2) * sc + view2d.panX, oy = H / 2 + ((L.minY + L.maxY) / 2) * sc + view2d.panY - 8 * dpr;
+    const toS = v => ({ x: ox + v.x * sc, y: oy - v.y * sc });
+    const txt = (t, x, y, ang, font, color) => {
+      ctx2d.save(); ctx2d.translate(x, y); if (ang) ctx2d.rotate(ang);
+      ctx2d.font = font; ctx2d.fillStyle = color; ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+      ctx2d.lineWidth = 3 * dpr; ctx2d.strokeStyle = 'rgba(255,255,255,0.85)'; ctx2d.strokeText(t, 0, 0); ctx2d.fillText(t, 0, 0); ctx2d.restore();
+    };
+    const upright = a => { if (a > Math.PI / 2) a -= Math.PI; if (a < -Math.PI / 2) a += Math.PI; return a; };
+    flatHit = [];
+    // a) morceaux avec leurs marges : du bas vers le haut, puis dans le sens de la bande,
+    //    pour que le côté A (recouvrant) soit dessiné par-dessus le côté B (recouvert)
+    const order = L.pieces.slice().sort((a, b) => b.level - a.level);
+    order.forEach(p => {
+      const S = q => toS(p.T(q)), col = pieceColor(p.pc);
+      const cutS = p.sh.cut.map(S);
+      ctx2d.beginPath(); cutS.forEach((v, i) => i ? ctx2d.lineTo(v.x, v.y) : ctx2d.moveTo(v.x, v.y)); ctx2d.closePath();
+      ctx2d.fillStyle = 'rgba(255,255,255,0.80)'; ctx2d.fill();
+      ctx2d.fillStyle = 'rgba(' + col.join(',') + ',0.18)'; ctx2d.fill();
+      ctx2d.strokeStyle = 'rgba(28,31,34,0.55)'; ctx2d.lineWidth = 1 * dpr; ctx2d.stroke();
+      p.sh.triangles.forEach(t => { const q = t.pts.map(S);
+        ctx2d.beginPath(); ctx2d.moveTo(q[0].x, q[0].y); ctx2d.lineTo(q[1].x, q[1].y); ctx2d.lineTo(q[2].x, q[2].y); ctx2d.closePath();
+        ctx2d.fillStyle = 'rgba(' + col.join(',') + ',0.30)'; ctx2d.fill(); });
+      flatHit.push({ name: p.sh.name, poly: cutS });
+    });
+    // b) repères : montants sous la toile (toutes les arêtes des triangles)
+    L.pieces.forEach(p => p.sh.folds.forEach(fl => {
+      const A = toS(p.T(fl.A)), B = toS(p.T(fl.B)), Lp = Math.hypot(B.x - A.x, B.y - A.y);
+      ctx2d.beginPath(); ctx2d.moveTo(A.x, A.y); ctx2d.lineTo(B.x, B.y); ctx2d.setLineDash([4 * dpr, 3 * dpr]);
+      ctx2d.strokeStyle = 'rgba(28,31,34,0.6)'; ctx2d.lineWidth = 1 * dpr; ctx2d.stroke(); ctx2d.setLineDash([]);
+      if (Lp > 70 * dpr) txt(fl.cls + ' ' + mm(fl.length) + (Lp > 150 * dpr ? ' · pli ' + fl.fold.toFixed(1) + '°' : ''), (A.x + B.x) / 2, (A.y + B.y) / 2, upright(Math.atan2(B.y - A.y, B.x - A.x)), (8.5 * dpr) + 'px monospace', '#555');
+    }));
+    // c) lignes de couture et cotes de chaque bord (côté intérieur du morceau)
+    L.pieces.forEach(p => {
+      const n = p.sh.points.length, ptsS = p.sh.points.map(q => toS(p.T(q)));
+      let a2 = 0; ptsS.forEach((v, i) => { const w = ptsS[(i + 1) % n]; a2 += v.x * w.y - w.x * v.y; });
+      const sgn = a2 > 0 ? 1 : -1;
+      p.sh.edges.forEach((e, i) => {
+        const A = ptsS[i], B = ptsS[(i + 1) % n];
+        ctx2d.beginPath(); ctx2d.moveTo(A.x, A.y); ctx2d.lineTo(B.x, B.y); ctx2d.strokeStyle = EDGE_STYLE[e.kind]; ctx2d.lineWidth = 1.8 * dpr; ctx2d.stroke();
+        const dx = B.x - A.x, dy = B.y - A.y, Le = Math.hypot(dx, dy) || 1;
+        if (Le < 55 * dpr) return;
+        const nx = -sgn * dy / Le, ny = sgn * dx / Le;
+        const m = { x: (A.x + B.x) / 2 + nx * 9 * dpr, y: (A.y + B.y) / 2 + ny * 9 * dpr };
+        const extra = Le > 150 * dpr ? (e.side !== 'H' ? ' ' + e.side : '') + (e.other ? ' ↔' + e.other : (e.kind === 'ourlet' ? ' ourlet' : e.kind === 'fermeture' ? ' ferm.' : '')) : '';
+        txt(e.cls + ' ' + mm(e.length) + extra, m.x, m.y, upright(Math.atan2(dy, dx)), 'bold ' + (9 * dpr) + 'px monospace', EDGE_STYLE[e.kind]);
+      });
+    });
+    // c bis) morceaux traversés par une fente : en ROUGE, posés triangle par
+    //        triangle, avec la ligne où il faudrait les couper
+    L.broken.forEach(bp => {
+      const polys = [];
+      bp.parts.forEach(part => {
+        part.forEach(t => { const q = t.pts.map(toS); polys.push(q);
+          ctx2d.beginPath(); ctx2d.moveTo(q[0].x, q[0].y); ctx2d.lineTo(q[1].x, q[1].y); ctx2d.lineTo(q[2].x, q[2].y); ctx2d.closePath();
+          ctx2d.fillStyle = 'rgba(178,58,47,0.32)'; ctx2d.fill(); ctx2d.strokeStyle = 'rgba(178,58,47,0.9)'; ctx2d.lineWidth = 1.2 * dpr; ctx2d.stroke(); });
+        // contour de la partie (arêtes non partagées entre triangles voisins de la partie)
+        const cnt = new Map(), key = (a, b) => a < b ? a + '-' + b : b + '-' + a;
+        part.forEach(t => [[0,1],[1,2],[2,0]].forEach(([u, v]) => { const k = key(t.pointIds[u], t.pointIds[v]); cnt.set(k, (cnt.get(k) || 0) + 1); }));
+        part.forEach(t => [[0,1],[1,2],[2,0]].forEach(([u, v]) => {
+          const k = key(t.pointIds[u], t.pointIds[v]); const A = toS(t.pts[u]), B = toS(t.pts[v]);
+          ctx2d.beginPath(); ctx2d.moveTo(A.x, A.y); ctx2d.lineTo(B.x, B.y);
+          if (cnt.get(k) > 1) { ctx2d.setLineDash([4 * dpr, 3 * dpr]); ctx2d.strokeStyle = 'rgba(120,30,25,0.6)'; ctx2d.lineWidth = 1 * dpr; }
+          else { ctx2d.strokeStyle = '#b23a2f'; ctx2d.lineWidth = 2 * dpr; }
+          ctx2d.stroke(); ctx2d.setLineDash([]);
+          const Le = Math.hypot(B.x - A.x, B.y - A.y);
+          if (Le > 70 * dpr) { const c = t.pts.map(toS), g = { x: (c[0].x + c[1].x + c[2].x) / 3, y: (c[0].y + c[1].y + c[2].y) / 3 };
+            const m = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }, d = Math.hypot(g.x - m.x, g.y - m.y) || 1;
+            const P = dome.pointById.get(t.pointIds[u]), Q = dome.pointById.get(t.pointIds[v]);
+            txt(mm(Math.hypot(P.x - Q.x, P.y - Q.y, P.z - Q.z)) + '', m.x + (g.x - m.x) / d * 9 * dpr, m.y + (g.y - m.y) / d * 9 * dpr, upright(Math.atan2(B.y - A.y, B.x - A.x)), (8.5 * dpr) + 'px monospace', '#7a2620'); }
+        }));
+        const c = part.flatMap(t => t.pts).map(toS);
+        txt('⚠ ' + bp.pc.name + ' · ' + gabLabel(bp.sh), c.reduce((a, v) => a + v.x, 0) / c.length, c.reduce((a, v) => a + v.y, 0) / c.length, 0, 'bold ' + (9.5 * dpr) + 'px monospace', '#b23a2f');
+      });
+      // ligne de coupe, des deux côtés de la fente
+      bp.cutLines.forEach(cl => cl.sides.forEach(sd => {
+        const A = toS(sd.A), B = toS(sd.B);
+        ctx2d.beginPath(); ctx2d.moveTo(A.x, A.y); ctx2d.lineTo(B.x, B.y); ctx2d.setLineDash([7 * dpr, 4 * dpr]);
+        ctx2d.strokeStyle = '#d4140a'; ctx2d.lineWidth = 3.5 * dpr; ctx2d.stroke(); ctx2d.setLineDash([]);
+        if (Math.hypot(B.x - A.x, B.y - A.y) > 50 * dpr) txt('✂ ' + mm(cl.length), (A.x + B.x) / 2, (A.y + B.y) / 2, upright(Math.atan2(B.y - A.y, B.x - A.x)), 'bold ' + (9 * dpr) + 'px monospace', '#d4140a');
+      }));
+      polys.forEach(q => flatHit.push({ name: bp.pc.name, poly: q }));
+    });
+    // d) charnières entre étages (là où la toile reste attachée)
+    L.hinges.forEach(h => { const A = toS(h.A), B = toS(h.B);
+      ctx2d.beginPath(); ctx2d.moveTo(A.x, A.y); ctx2d.lineTo(B.x, B.y); ctx2d.strokeStyle = '#2c8a3c'; ctx2d.lineWidth = 4 * dpr; ctx2d.stroke(); });
+    // e) nœuds N (repères d'alignement sur la structure)
+    const seen = new Set();
+    const nodeLabels = etagesTool.nodeLabels();
+    const big = sc * 0.25 > 25 * dpr;
+    L.arcs.forEach(s => s.pl.forEach(t => t.pointIds.forEach((id, k) => {
+      const v = toS(t.pts[k]), key = id + ':' + Math.round(v.x) + ':' + Math.round(v.y);
+      if (seen.has(key)) return; seen.add(key);
+      ctx2d.beginPath(); ctx2d.arc(v.x, v.y, 3 * dpr, 0, Math.PI * 2); ctx2d.fillStyle = '#1c1f22'; ctx2d.fill();
+      ctx2d.beginPath(); ctx2d.arc(v.x, v.y, 6 * dpr, 0, Math.PI * 2); ctx2d.strokeStyle = 'rgba(28,31,34,0.6)'; ctx2d.lineWidth = 1 * dpr; ctx2d.stroke();
+      if (big) txt(nodeLabels.get(id), v.x + 12 * dpr, v.y - 10 * dpr, 0, 'bold ' + (8.5 * dpr) + 'px monospace', '#1c1f22');
+    })));
+    // f) noms des morceaux
+    L.pieces.forEach(p => {
+      const c = p.sh.triangles.flatMap(t => t.pts).map(q => toS(p.T(q)));
+      const cx = c.reduce((a, v) => a + v.x, 0) / c.length, cy = c.reduce((a, v) => a + v.y, 0) / c.length;
+      txt(p.sh.name + ' · ' + gabLabel(p.sh), cx, cy, 0, 'bold ' + (9.5 * dpr) + 'px monospace', '#1c1f22');
+    });
+    const nP = allPieces().length;
+    const tlabel = Peel.TYPES.find(t => t.id === L.type).label;
+    const nl = etagesTool.nodeLabels();
+    document.getElementById('dev2dInfo').textContent = 'Pelure d\'orange — ' + tlabel;
+    const hint = document.getElementById('hint2d');
+    hint.textContent = 'Pelure d\'orange depuis le sommet · vert = charnière · rouge = morceau traversé par une fente (✂ = où le couper) · molette = zoom (cotes, nœuds N, côtés A/B) · glisser = déplacer · double-clic = recadrer · clic = fiche' +
+      (L.overlap > 1e-6 ? ' · ⚠ recouvrement à plat ' + mm(L.overlap) + ' mm' : '');
+    hint.style.color = (L.overlap > 1e-6 || L.broken.length) ? '#b23a2f' : '';
+    const el = document.getElementById('panelsReadout');
+    el.style.display = '';
+    const slitTxt = L.slitsPerBand.slice(1).map((n, k) => 'étage ' + (k + 1) + ' : ' + n).join(' · ');
+    el.innerHTML = '<div class="sheet-head"><b>Pelure d\'orange — ' + tlabel + ' — ' + nP + ' morceaux, ' + gabGroups.length + ' gabarits</b> <a class="help-q" data-help="aide-modes" title="Explication">?</a></div>' +
+      '<div class="muted">Comme une peau d\'orange qu\'on déroule depuis le haut : le sommet reste au centre ; chaque étage est fendu aux <b>fentes</b>, et chaque arc pend sous l\'étage du dessus, accroché par <b>une seule arête</b> (trait vert). ' +
+      'À plat, le reste de chaque couture d\'étage s\'ouvre en éventail ; il se referme quand on pose la toile sur le dôme. Fentes par étage — ' + slitTxt + '.</div>' +
+      (L.broken.length ? '<div class="bad" style="margin-top:4px">⚠ ' + L.broken.length + ' morceau(x) traversé(s) par une fente : ' +
+        L.broken.map(bp => '<span class="piece-chip" data-piece="' + bp.pc.name + '">' + bp.pc.name + '</span> (' + bp.cutLines.map(c => '✂ ' + nl.get(c.ids[0]) + '–' + nl.get(c.ids[1]) + ', ' + mm(c.length) + ' mm').join(' ; ') + ')').join(' ') +
+        '. La découpe n\'est pas changée : pour utiliser cette ouverture, il faudrait couper ces morceaux le long de la ligne rouge ✂ (une couture de plus chacune). Leurs marges ne sont pas dessinées ici.</div>'
+        : '<div class="muted" style="margin-top:4px">✓ Toutes les fentes passent entre deux morceaux : aucun gabarit à casser.</div>') +
+      '<div class="muted" style="margin-top:4px"><b>Pour poser</b> : présenter le sommet, caler chaque point noir sur son nœud N, puis descendre étage par étage depuis les charnières vertes en refermant chaque éventail. ' +
+      '<b>Recouvrement</b> : là où deux contours de coupe se superposent (zone plus foncée), le côté <b>A</b> passe sur le côté <b>B</b>, comme des tuiles. ' +
+      'Pointillés = montants sous la toile (plis). Bords : <span class="k-etage">■</span> couture d\'étage · <span class="k-montante">■</span> coupe montante · <span class="k-fermeture">■</span> fermeture · <span class="k-ourlet">■</span> ourlet. Cotes nettes en mm.</div>' +
+      '<div class="muted" style="margin-top:4px">Contrôles : triangles sans recouvrement à plat ' + (L.overlap > 1e-6 ? '<span class="bad">✗ ' + mm(L.overlap) + ' mm</span>' : '✓') + ' · morceaux entiers replacés exactement ' + (L.maxFit < 1e-6 ? '✓' : '<span class="bad">✗ ' + (L.maxFit * 1000).toFixed(3) + ' mm</span>') + '.</div>';
+    el.querySelectorAll('.help-q[data-help]').forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); showView('info'); const d = document.getElementById('aide-modes'); if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }));
+  }
+  function render2DFlat(){
+    if (!ensureEtages()) { drawBusy('Recherche du découpage « moins de toile »', optimState ? optimState.progress : 0, optimState ? optimState.text : ''); return; }
+    if (fabricationGate()) return;
+    const peel = peelStrategy();
+    document.getElementById('peelTypeBox').style.display = peel ? '' : 'none';
+    let peelOk = peel;
+    if (peel) { syncPeelMenu(); const L = buildPeelLayout(); if (L.overlap > 0.001) peelOk = false; }
+    document.getElementById('peelTypeBox').style.display = peelOk ? '' : 'none';
+    if (peelOk) render2DPeel();
+    else { render2DFlatRows(); if (peel) document.getElementById('panelsReadout').insertAdjacentHTML('afterbegin', '<div class="ds-warn" style="color:#b23a2f;margin-bottom:6px">Pour ce dôme, la pelure d\'orange se recouvrirait à plat (étages trop refermés sous l\'équateur) : affichage par rangée.</div>'); }
+  }
+
+  function render2D(){
+    readFabricParams();
+    if (mode2D === 'group') { render2DGroup(); return; }
+    if (mode2D === 'etages') { render2DEtages(); return; }
+    if (mode2D === 'rouleau') { render2DRoll(); return; }
+    if (mode2D === 'flat') { render2DFlat(); return; }
+    if (!dome) return;
+    const rect = canvas2d.getBoundingClientRect();
+    canvas2d.width = rect.width * devicePixelRatio;
+    canvas2d.height = rect.height * devicePixelRatio;
+    const W = canvas2d.width, H = canvas2d.height;
+    ctx2d.clearRect(0, 0, W, H);
+
+    const ids = [...selection].sort((a,b)=>a-b);
+    const hint = document.getElementById('hint2d');
+    const info = document.getElementById('dev2dInfo');
+    hint.style.color = '';
+
+    if (ids.length === 0) { renderBaseTriangles(W, H); return; }
+    if (!panels.length) document.getElementById('panelsReadout').style.display = 'none';
+
+    hint.textContent = 'Mode Triangle : chaque face est développée séparément (longueurs réelles conservées)';
+    info.textContent = ids.length + ' triangle' + (ids.length>1?'s':'');
+
+    const developed = ids.map(idx => {
+      const f = dome.faces[idx];
+      const P = f.pointIds.map(id => dome.pointById.get(id));
+      return { idx, flat: flattenTriangle(P[0], P[1], P[2]) };
+    });
+
+    const maxSpan = Math.max(...developed.map(d => {
+      const xs = d.flat.pts.map(p=>p.x), ys = d.flat.pts.map(p=>p.y);
+      return Math.max(Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys));
+    }));
+    const cellSize = maxSpan * 1.9 + 1e-6;
+    const nCols = Math.min(ids.length, Math.max(1, Math.round(Math.sqrt(ids.length * (W/Math.max(H,1))))));
+    const nRows = Math.ceil(ids.length / nCols);
+    const pxScale = Math.min(W / nCols, H / nRows) / cellSize * 0.86;
+
+    ctx2d.lineWidth = 1.4 * devicePixelRatio;
+    ctx2d.textAlign = 'center';
+    ctx2d.textBaseline = 'middle';
+
+    developed.forEach((d, i) => {
+      const col = i % nCols, row = Math.floor(i / nCols);
+      const originX = (col + 0.5) * (W / nCols);
+      const originY = (row + 0.5) * (H / nRows);
+      const xs = d.flat.pts.map(p=>p.x), ys = d.flat.pts.map(p=>p.y);
+      const bboxCx = (Math.max(...xs)+Math.min(...xs))/2;
+      const bboxCy = (Math.max(...ys)+Math.min(...ys))/2;
+      const S = (pt) => ({ x: originX + (pt.x - bboxCx) * pxScale, y: originY - (pt.y - bboxCy) * pxScale });
+      const S0 = S(d.flat.pts[0]), S1 = S(d.flat.pts[1]), S2 = S(d.flat.pts[2]);
+
+      ctx2d.beginPath();
+      ctx2d.moveTo(S0.x, S0.y); ctx2d.lineTo(S1.x, S1.y); ctx2d.lineTo(S2.x, S2.y); ctx2d.closePath();
+      ctx2d.fillStyle = 'rgba(150,180,205,0.35)';
+      ctx2d.fill();
+      ctx2d.strokeStyle = '#1c1f22';
+      ctx2d.stroke();
+
+      [S0,S1,S2].forEach(p => {
+        ctx2d.beginPath();
+        ctx2d.arc(p.x, p.y, 2*devicePixelRatio, 0, Math.PI*2);
+        ctx2d.fillStyle = '#1c1f22';
+        ctx2d.fill();
+      });
+
+      const edgePairs = [[S0,S1,d.flat.edges[0]], [S1,S2,d.flat.edges[1]], [S2,S0,d.flat.edges[2]]];
+      ctx2d.font = (9.5*devicePixelRatio) + 'px monospace';
+      edgePairs.forEach(([pa,pb,len]) => {
+        const mx = (pa.x+pb.x)/2, my = (pa.y+pb.y)/2;
+        const cls = classifyLength(len);
+        ctx2d.fillStyle = '#2b5a8a';
+        ctx2d.fillText((cls?cls.name+' ':'') + (len*1000).toFixed(1)+'mm', mx, my - 6*devicePixelRatio);
+      });
+
+      d.flat.angles.forEach((ang, k) => {
+        const p = [S0,S1,S2][k];
+        ctx2d.fillStyle = '#6b7278';
+        ctx2d.font = (8.5*devicePixelRatio) + 'px monospace';
+        const dx = (originX - p.x) * 0.12, dy = (originY - p.y) * 0.12;
+        ctx2d.fillText((ang*180/Math.PI).toFixed(1)+'°', p.x + dx, p.y + dy);
+      });
+
+      ctx2d.font = (10.5*devicePixelRatio) + 'px monospace';
+      ctx2d.fillStyle = '#1c1f22';
+      ctx2d.fillText('#' + d.idx, originX, originY + (H/nRows)*0.42);
+    });
+  }
+
+  // ---------------------------------------------------------
+  // Interaction souris : rotation / zoom / sélection
+  // ---------------------------------------------------------
+  function pointInTriangle(px, py, pts){
+    function sign(ax,ay,bx,by,cx,cy){ return (ax-cx)*(by-cy)-(bx-cx)*(ay-cy); }
+    const d1 = sign(px,py, pts[0].sx,pts[0].sy, pts[1].sx,pts[1].sy);
+    const d2 = sign(px,py, pts[1].sx,pts[1].sy, pts[2].sx,pts[2].sy);
+    const d3 = sign(px,py, pts[2].sx,pts[2].sy, pts[0].sx,pts[0].sy);
+    const hasNeg = (d1<0)||(d2<0)||(d3<0);
+    const hasPos = (d1>0)||(d2>0)||(d3>0);
+    return !(hasNeg && hasPos);
+  }
+
+  function pickFace(evtX, evtY){
+    const rect = canvas.getBoundingClientRect();
+    const px = (evtX - rect.left) * devicePixelRatio;
+    const py = (evtY - rect.top) * devicePixelRatio;
+    const list = canvas._faceDepth;
+    if (!list) return -1;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (pointInTriangle(px, py, list[i].pts)) return list[i].f.index;
+    }
+    return -1;
+  }
+
+  canvas.addEventListener('mousedown', e => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+    dragStartX = e.clientX; dragStartY = e.clientY; dragMoved = false;
+    canvas.classList.add('dragging');
+  });
+  window.addEventListener('mouseup', () => { dragging = false; canvas.classList.remove('dragging'); });
+  window.addEventListener('mousemove', e => {
+    if (dragging) {
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      if (Math.hypot(e.clientX - dragStartX, e.clientY - dragStartY) > 3) dragMoved = true;
+      rotY += dx * 0.008;
+      rotX = Math.max(-1.5, Math.min(1.5, rotX + dy * 0.008));
+      render();
+    } else {
+      const idx = pickFace(e.clientX, e.clientY);
+      if (idx !== hoverIndex) {
+        hoverIndex = idx;
+        document.getElementById('hoverInfo').textContent = idx >= 0 ? ('triangle #' + idx) : '';
+        render();
+      }
+    }
+  });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    zoom *= (e.deltaY < 0) ? 1.08 : 0.93;
+    zoom = Math.max(0.2, Math.min(6, zoom));
+    render();
+  }, { passive: false });
+
+  canvas.addEventListener('click', e => {
+    if (dragMoved) { dragMoved = false; return; }
+    const idx = pickFace(e.clientX, e.clientY);
+    if (idx < 0) {
+      // clic dans le vide : on vide la sélection (retour aux triangles de base)
+      if (mode2D === 'triangle' && selection.size) { selection.clear(); updateSelectionReadout(); render(); render2D(); }
+      return;
+    }
+    if ((mode2D === 'etages' || mode2D === 'flat') && etagesCache) {
+      const pc = allPieces().find(p => p.chain.includes(idx));
+      if (pc && mode2D === 'flat') { setMode('etages'); selectPiece(pc.name); return; }
+      if (pc) selectPiece(pc.name === selectedPiece ? null : pc.name);
+      return;
+    }
+    if (e.shiftKey) {
+      if (selection.has(idx)) selection.delete(idx); else selection.add(idx);
+    } else {
+      selection.clear();
+      selection.add(idx);
+    }
+    updateSelectionReadout();
+    render();
+    render2D();
+  });
+
+  function updateSelectionReadout(){
+    const el = document.getElementById('selectionReadout');
+    if (selection.size === 0) {
+      el.innerHTML = '<span class="muted">Aucun triangle sélectionné — cliquez sur une face du dôme. (Clic dans le vide ou Échap pour vider la sélection.)</span>';
+      return;
+    }
+    const ids = [...selection].sort((a,b)=>a-b);
+    el.innerHTML = 'Sélection (' + ids.length + ') : ' + ids.join(', ');
+  }
+
+  window.addEventListener('resize', () => { render(); render2D(); });
+
+  document.getElementById('btnRegenerate').addEventListener('click', regenerate);
+  ['paramDetail', 'paramMethod', 'paramSymmetry', 'paramPartial', 'paramAlign'].forEach(id => $id(id).addEventListener('change', regenerate));
+  $id('paramDiameter').addEventListener('change', regenerate);
+  document.getElementById('modeTriangle').addEventListener('click', function(){ setMode('triangle'); render(); render2D(); });
+  document.getElementById('btnDevelop').addEventListener('click', function(){
+    if (selection.size === 0) return;
+    setMode('group'); render(); render2D();
+  });
+  document.getElementById('btnCreatePanel').addEventListener('click', function(){
+    if (selection.size === 0) return;
+    panelCounter++;
+    panels.push({ id: panelCounter, faceIndices: [...selection].sort((a,b)=>a-b) });
+    updatePanelsReadout();
+  });
+  document.getElementById('btnDevelopEtages').addEventListener('click', function(){
+    readFabricParams();
+    etagesCache = null;
+    selection.clear(); updateSelectionReadout();
+    setMode('etages'); selectPiece(null);
+  });
+
+  document.getElementById('btnRoll').addEventListener('click', function(){
+    readFabricParams();
+    selection.clear(); updateSelectionReadout();
+    setMode('rouleau');
+    document.getElementById('hint2d').textContent = 'Calcul du placement…';
+    setTimeout(() => { render2D(); render(); }, 30);
+  });
+  canvas2d.addEventListener('click', e => {
+    if (mode2D !== 'rouleau') return;
+    const r = canvas2d.getBoundingClientRect();
+    const pt = { x: (e.clientX - r.left) * devicePixelRatio, y: (e.clientY - r.top) * devicePixelRatio };
+    const hit = rollHit.find(hh => pointInPoly(pt, hh.poly));
+    if (hit) { setMode('etages'); selectPiece(hit.name); }
+  });
+
+  // ----- interactions de la vue 2D (mode Étages) -----
+  document.getElementById('btnBackOverview').addEventListener('click', () => selectPiece(null));
+  window.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (openTrace) { setOpenTrace(false); return; }
+    if (mode2D === 'etages' && selectedPiece) selectPiece(null);
+    else if (mode2D === 'triangle' && selection.size) { selection.clear(); updateSelectionReadout(); render(); render2D(); }
+  });
+  document.getElementById('panelsReadout').addEventListener('click', e => {
+    const trT = e.target.closest('tr[data-type]');
+    if (trT && mode2D === 'triangle') { const id = trT.getAttribute('data-type'); hlType = hlType === id ? null : id; render(); render2D(); return; }
+    const tr = e.target.closest('[data-piece]');
+    if (tr && (mode2D === 'etages' || mode2D === 'rouleau' || mode2D === 'flat')) { if (mode2D !== 'etages') setMode('etages'); selectPiece(tr.getAttribute('data-piece')); }
+  });
+  let drag2d = null;
+  canvas2d.addEventListener('mousedown', e => {
+    if (panZoomActive()) drag2d = { x: e.clientX, y: e.clientY, moved: false };
+  });
+  window.addEventListener('mousemove', e => {
+    if (!drag2d) return;
+    const dx = e.clientX - drag2d.x, dy = e.clientY - drag2d.y;
+    if (Math.abs(dx) + Math.abs(dy) > 2) drag2d.moved = true;
+    view2d.panX += dx * devicePixelRatio; view2d.panY += dy * devicePixelRatio;
+    drag2d.x = e.clientX; drag2d.y = e.clientY;
+    render2D();
+  });
+  let drag2dLast = null;
+  window.addEventListener('mouseup', () => { drag2dLast = drag2d; drag2d = null; });
+  canvas2d.addEventListener('wheel', e => {
+    if (!panZoomActive()) return;
+    e.preventDefault();
+    const r = canvas2d.getBoundingClientRect();
+    const mx = (e.clientX - r.left) * devicePixelRatio, my = (e.clientY - r.top) * devicePixelRatio;
+    const k = e.deltaY < 0 ? 1.15 : 1/1.15;
+    const nz = Math.max(0.3, Math.min(40, view2d.zoom * k)), kk = nz / view2d.zoom;
+    const cx = canvas2d.width/2, cy = canvas2d.height/2;
+    view2d.panX = (mx - cx) - ((mx - cx) - view2d.panX) * kk;
+    view2d.panY = (my - cy) - ((my - cy) - view2d.panY) * kk;
+    view2d.zoom = nz;
+    render2D();
+  }, { passive: false });
+  function panZoomActive(){ return (mode2D === 'etages' && selectedPiece) || mode2D === 'flat'; }
+  canvas2d.addEventListener('click', e => {
+    if (mode2D !== 'flat' || (drag2dLast && drag2dLast.moved)) return;
+    const r = canvas2d.getBoundingClientRect();
+    const pt = { x: (e.clientX - r.left) * devicePixelRatio, y: (e.clientY - r.top) * devicePixelRatio };
+    const hit = flatHit.find(hh => pointInPoly(pt, hh.poly));
+    if (hit) { setMode('etages'); selectPiece(hit.name); }
+  });
+  canvas2d.addEventListener('dblclick', () => { if (panZoomActive()) { view2d = { zoom: 1, panX: 0, panY: 0 }; render2D(); } });
+  canvas2d.addEventListener('click', e => {
+    if (mode2D !== 'etages' || selectedPiece) return;
+    const r = canvas2d.getBoundingClientRect();
+    const px = (e.clientX - r.left) * devicePixelRatio, py = (e.clientY - r.top) * devicePixelRatio;
+    const hit = etagesHit.find(h => h.tris.some(q => pointInTriangle(px, py, q.map(v => ({ sx: v.x, sy: v.y })))));
+    if (hit) selectPiece(hit.name);
+  });
+  canvas2d.addEventListener('mousemove', e => {
+    if (mode2D === 'rouleau') { const r = canvas2d.getBoundingClientRect(); const pt = { x: (e.clientX - r.left) * devicePixelRatio, y: (e.clientY - r.top) * devicePixelRatio };
+      canvas2d.style.cursor = rollHit.some(hh => pointInPoly(pt, hh.poly)) ? 'pointer' : 'default'; return; }
+    if (mode2D === 'flat') { const r = canvas2d.getBoundingClientRect(); const pt = { x: (e.clientX - r.left) * devicePixelRatio, y: (e.clientY - r.top) * devicePixelRatio };
+      canvas2d.style.cursor = flatHit.some(hh => pointInPoly(pt, hh.poly)) ? 'pointer' : 'grab'; return; }
+    if (mode2D !== 'etages' || selectedPiece) { canvas2d.style.cursor = (mode2D === 'etages' && selectedPiece) ? 'grab' : 'default'; return; }
+    const r = canvas2d.getBoundingClientRect();
+    const px = (e.clientX - r.left) * devicePixelRatio, py = (e.clientY - r.top) * devicePixelRatio;
+    canvas2d.style.cursor = etagesHit.some(h => h.tris.some(q => pointInTriangle(px, py, q.map(v => ({ sx: v.x, sy: v.y }))))) ? 'pointer' : 'default';
+  });
+  document.getElementById('btnBaseOpen').addEventListener('click', function(){ setOpenTrace(!openTrace); });
+  initBaseTrace();
+  document.getElementById('btnFlat').addEventListener('click', function(){
+    readFabricParams();
+    selection.clear(); updateSelectionReadout();
+    view2d = { zoom: 1, panX: 0, panY: 0 };
+    setMode('flat'); render(); render2D();
+  });
+  document.getElementById('paramDomeImage').addEventListener('change', function(e){
+    const file = e.target.files[0]; e.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => { const img = new Image(); img.onload = () => setDomeImage(img); img.src = ev.target.result; };
+    reader.readAsDataURL(file);
+  });
+  document.getElementById('paramImageProj').addEventListener('change', function(){ imageUV = null; render(); });
+  document.getElementById('btnImageOff').addEventListener('click', function(){ setDomeImage(null); });
+  document.getElementById('paramPeelType').addEventListener('change', function(){ peelLayout = null; view2d = { zoom: 1, panX: 0, panY: 0 }; render2D(); });
+  function fabricChanged(){
+    etagesCache = null;
+    nestCache = null;
+    readFabricParams();
+    if (infoVisible()) renderInfo(); else { render2D(); render(); }
+  }
+  ['paramFabricW','paramSelvage','paramOverlapTol','paramHem','paramCutStrategy','paramBaseRow','paramSeamWeight','paramBottomOn','paramBotA','paramBotB','paramBotHem'].forEach(id => document.getElementById(id).addEventListener('change', fabricChanged));
+  function syncCutControls(){
+    const st = document.getElementById('paramCutStrategy').value;
+    document.getElementById('lblSeamWeight').style.display = st === 'toile' ? '' : 'none';
+    document.getElementById('lblBaseRow').style.display = (st === 'pieces' || st === 'gabarits') ? '' : 'none';
+  }
+  document.getElementById('paramCutStrategy').addEventListener('change', syncCutControls);
+  syncCutControls();
+  ['paramSeamA','paramSeamB'].forEach(id => document.getElementById(id).addEventListener('change', function(){
+    const p = Toile.SEAM_PRESETS[document.getElementById('paramSeamType').value];
+    if (p && p.A !== null && (mm(p.A/1000) !== +document.getElementById('paramSeamA').value || mm(p.B/1000) !== +document.getElementById('paramSeamB').value))
+      document.getElementById('paramSeamType').value = 'perso';
+    fabricChanged();
+  }));
+  document.getElementById('paramSeamType').addEventListener('change', function(){
+    const p = Toile.SEAM_PRESETS[this.value];
+    if (p && p.A !== null) { document.getElementById('paramSeamA').value = p.A; document.getElementById('paramSeamB').value = p.B; }
+    fabricChanged();
+  });
+  ['paramStructure','paramSupportH'].forEach(id => document.getElementById(id).addEventListener('change', regenerate));
+
+  function updatePanelsReadout(){
+    const el = document.getElementById('panelsReadout');
+    if (panels.length === 0) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.innerHTML = panels.map(p =>
+      'Panneau #' + p.id + ' — ' + p.faceIndices.length + ' triangle(s) : ' + p.faceIndices.join(', ')
+    ).join('<br>');
+  }
+
+
+  // ---------------------------------------------------------
+  // Onglet « Informations » : comparatif des découpes + tableaux +
+  // explications de chaque option et réglage (info.js)
+  // ---------------------------------------------------------
+  let compareState = null;   // { key, rows: Map(strategy -> mesures), running }
+  const STRATS = [
+    { id: 'pieces', label: 'Moins de morceaux', note: 'le moins de coutures' },
+    { id: 'gabarits', label: 'Moins de gabarits', note: 'morceaux identiques répétés' },
+    { id: 'toile', label: 'Moins de toile', note: 'compromis toile / coutures' },
+    { id: 'triangles', label: 'Triangle par triangle', note: 'chaque triangle séparé' }
+  ];
+  function infoVisible(){ return document.getElementById('viewInfo').style.display !== 'none'; }
+  // ---------------------------------------------------------
+  // Onglet Base : dôme 3D, chiffres clés, montants, triangles de base
+  // ---------------------------------------------------------
+  let baseEng = null, baseCam = null, baseDirty = true, baseFor = null;
+  function initBase3D(){
+    if (baseEng !== null) return;
+    try { baseEng = (window.Design3DThree && Design3DThree.create($id('base3d'))) || (window.Design3D && Design3D.create($id('base3d'))) || false; } catch (e) { baseEng = false; }
+    if (!baseEng) return;
+    const cv = $id('base3d'); let d = null;
+    cv.addEventListener('mousedown', e => { d = { x: e.clientX, y: e.clientY }; });
+    window.addEventListener('mousemove', e => { if (!d) return; baseCam.yaw -= (e.clientX - d.x) * 0.008; baseCam.pitch = Math.max(-0.4, Math.min(1.5, baseCam.pitch + (e.clientY - d.y) * 0.008)); d = { x: e.clientX, y: e.clientY }; baseEng.render(baseCam, false); });
+    window.addEventListener('mouseup', () => { d = null; });
+    cv.addEventListener('wheel', e => { e.preventDefault(); baseCam.dist = Math.max(1.5, Math.min(60, baseCam.dist * (e.deltaY < 0 ? 0.92 : 1.08))); baseEng.render(baseCam, false); }, { passive: false });
+    cv.addEventListener('dblclick', () => { baseCam = null; draw3DBase(); });
+  }
+  function draw3DBase(){
+    initBase3D(); if (!baseEng) { $id('baseInfo3d').textContent = 'rendu 3D indisponible sur cet appareil'; return; }
+    const SD = domeStruct || domeNominal, model = Design.domeModel(SD);
+    if (!baseCam) baseCam = { yaw: 0.7, pitch: 0.38, dist: model.radius * 3.8, target: [0, model.height * 0.45, 0] };
+    if (baseFor !== SD) {
+      const st = Design.defaultState();
+      if (baseEng.isThree) baseEng.update(Design, model, st, { style: 'real', toile: 'verre', openings: [] }, () => baseEng.render(baseCam, false));
+      else baseEng.setScene(Design3D.buildScene(Design, model, st, { style: 'real', toile: 'verre', openings: [] }));
+      baseFor = SD;
+    }
+    baseEng.render(baseCam, false);
+  }
+  function renderBase(){
+    if (!domeNominal) return;
+    if (openTrace) renderBaseTrace(); else draw3DBase();
+    updateOpeningsReadout();
+    const D = domeStruct || domeNominal, model = Design.domeModel(D), stt = Design.stats(model, Design.defaultState());
+    const R = D.params.radius, fr = (v, n) => v.toFixed(n === undefined ? 2 : n).replace('.', ',');
+    const d3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+    let toile = 0; D.faces.forEach(f => { const [a, b, c] = f.pointIds.map(id => D.pointById.get(id)); const u = [b.x - a.x, b.y - a.y, b.z - a.z], v = [c.x - a.x, c.y - a.y, c.z - a.z];
+      toile += Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]) / 2; });
+    const strutLen = D.lines.reduce((a, l) => a + l.length, 0);
+    const deg = new Map(); D.lines.forEach(l => l.pointIds.forEach(id => deg.set(id, (deg.get(id) || 0) + 1)));
+    const hist = {}; deg.forEach(n => { hist[n] = (hist[n] || 0) + 1; });
+    const sel = new Set(); D.lines.forEach(l => { if (l.selvage) l.pointIds.forEach(id => sel.add(id)); });
+    const ys = [...sel].map(id => D.pointById.get(id).y), flatErr = ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
+    const flat = flatErr < 0.0005;
+    const kp = [['Diamètre de la sphère', fr(2 * R) + ' m'], ['Hauteur', fr(stt.height) + ' m'], ['Rapport hauteur / diamètre', fr(stt.height / (2 * R), 3)],
+      ['Ø au sol', fr(stt.diameter) + ' m'], ['Surface au sol', fr(stt.ground, 1) + ' m²'], ['Surface debout (≥ 1,80 m)', fr(stt.stand, 1) + ' m²'], ['Volume intérieur', fr(stt.volume, 1) + ' m³'],
+      ['Surface de toile (nette)', fr(toile, 1) + ' m²'], ['Nœuds', D.stats.pointCount], ['Montants', D.stats.lineCount + ' (' + fr(strutLen, 1) + ' m au total)'], ['Faces (triangles)', D.stats.faceCount],
+      ['Classes de montants', D.edgeClasses.length], ['Connecteurs', Object.keys(hist).sort((a, b) => a - b).map(n => hist[n] + ' × ' + n + ' branches').join(', ')],
+      ['Base plate', flat ? '✓ oui' : '✗ non — écart ' + Math.round(flatErr * 1000) + ' mm entre nœuds du bord']];
+    $id('baseKpis').innerHTML = '<div class="kpi-grid">' + kp.map(r => '<span>' + r[0] + '</span><b>' + r[1] + '</b>').join('') + '</div>' +
+      '<div class="muted" style="margin-top:10px">Calculé sur la géométrie réelle (facettes), centres des nœuds. ' + (dome.offset ? 'Structure GoodKarma : la toile est ' + mm(dome.offset.h) + ' mm au-dessus (voir Cover+).' : '') + '</div>';
+    $id('baseInfo3d').textContent = domeLabel();
+    // montants
+    const gk = !!dome.offset;
+    let h = '<div class="sheet-head"><b>Montants — ' + D.stats.lineCount + ' en ' + D.edgeClasses.length + ' longueurs</b><span class="muted">longueur de centre de nœud à centre de nœud (liste de débit simple)</span></div>';
+    h += '<table><tr><th>Classe</th><th>Nombre</th><th>Longueur (mm)</th><th>Facteur de corde</th>' + (gk ? '<th>Toile GoodKarma (mm)</th>' : '') + '<th>Total (m)</th></tr>' +
+      D.edgeClasses.map(g => { const t = gk ? dome.edgeClasses.find(c => c.name === g.name) : null;
+        return '<tr><td><b>' + g.name + '</b></td><td>×' + g.count + '</td><td>' + (g.length * 1000).toFixed(2) + '</td><td>' + (g.length / R).toFixed(6) + '</td>' + (t ? '<td>' + (t.length * 1000).toFixed(1) + '</td>' : '') + '<td>' + fr(g.length * g.count, 2) + '</td></tr>'; }).join('') +
+      '<tr><td class="muted">Total</td><td><b>' + D.stats.lineCount + '</b></td><td colspan="' + (gk ? 3 : 2) + '"></td><td><b>' + fr(strutLen, 2) + '</b></td></tr></table>';
+    if (D !== domeNominal) h += '<div class="muted" style="margin-top:4px">Avec ouvertures. Dôme plein : ' + domeNominal.stats.lineCount + ' montants (' +
+      domeNominal.edgeClasses.map(g => g.count + '×' + g.name).join(' · ') + ').</div>';
+    $id('baseStruts').innerHTML = h;
+    $id('baseTris').innerHTML = baseTrianglesHtml(baseTriangleTypes());
+    // avertissements d'usage
+    const bp = baseParams(), w = [];
+    if (!flat) w.push('La base n\'est pas plate : cochez « Aligner la base » (sauf Kruschke) ou choisissez un autre découpage.');
+    if (bp.symmetry !== 'Pentad') w.push('Symétrie ' + bp.symmetry + ' : les découpes par étage de Cover+ suivent les anneaux de nœuds depuis le sommet ; la pelure d\'orange n\'est proposée qu\'avec 1 fente (ses ouvertures en étoile supposent la symétrie d\'ordre 5).');
+    $id('baseWarn').innerHTML = w.length ? '<div class="offset-info"><span class="warn">' + w.join('<br>') + '</span></div>' : '';
+  }
+  // ---------------------------------------------------------
+  // Étape 5 (audit 30/10/2026) : statut de confiance affiché
+  //  🟢 confirmé par une source indépendante (Domerama)
+  //  🟡 calculé, confirmé seulement par Acidome (ou sans référence)
+  //  🟠 géométrie correcte mais patrons de toile jamais vérifiés sur une toile cousue
+  //  🔴 refusé : pas de patron ni d'export
+  // ---------------------------------------------------------
+  const STATUS_ICON = { green: '🟢', yellow: '🟡', orange: '🟠', red: '🔴' };
+  const STATUS_WORD = { green: 'vérifié', yellow: 'calculé', orange: 'non vérifié en atelier', red: 'refusé' };
+  // coupes Chords Pentad dont les comptages de montants ont été comparés à Domerama (audit)
+  const DOMERAMA_COUNTS = { 1: ['3/4'], 2: ['1/2'], 3: ['5/12', '7/12'], 4: ['1/2'], 5: ['9/20'], 6: ['1/2'] };
+  function baseFlatError(d){
+    const ys = d.lines.filter(l => l.selvage).flatMap(l => l.pointIds.map(i => d.pointById.get(i).y));
+    return ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
+  }
+  function geometryStatus(){
+    if (!domeNominal) return { level: 'yellow', reasons: [] };
+    const p = domeNominal.params, V = p.detail, m = p.subdivMethod, sym = p.symmetry, part = p.partial;
+    const askedM = baseParams().subdivMethod, full = part === '1' || part === '1/1';
+    const reasons = []; let level;
+    if (V === 1 && sym !== 'Pentad' && part === '3/4')
+      return { level: 'red', reasons: ['1V ' + sym + ' 3/4 : la coupe ne laisse pas de bord (sphère fermée déguisée) — choisir une autre coupe.'] };
+    if (askedM !== m) reasons.push(askedM + ' n\'existe pas en ' + V + 'V : le calcul utilise ' + m + '.');
+    if (m === 'Chords') {
+      if (V <= 6) { level = 'green'; reasons.push('Longueurs : facteurs de corde identiques à Domerama (1V–8V, écart < 0,00001).'); }
+      else { level = 'yellow'; reasons.push('7V–8V : facteurs de corde identiques à Domerama, mais le moteur sépare une famille de montants de plus (deux longueurs à 0,25 mm près sur Ø 10 m).'); }
+      if (level === 'green' && sym === 'Pentad' && !full) reasons.push((DOMERAMA_COUNTS[V] || []).includes(part)
+        ? 'Comptage des montants de cette coupe identique à Domerama.' : 'Comptage des montants de cette coupe non comparé à Domerama (longueurs vérifiées).');
+    } else if (m === 'Kruschke') {
+      if (V === 3 && sym === 'Pentad' && part === '7/12') { level = 'green'; reasons.push('Dôme de référence Domerama « 3V 5/9 » : 30 A, 35 B, 80 C, 20 D, mêmes longueurs.'); }
+      else if (V === 3 && sym === 'Pentad' && part === '5/12') { level = 'green'; reasons.push('Dôme Domerama « 3V 4/9 Kruschke » : 30 A, 30 B, 50 C, 10 D, mêmes angles (vérifié le 30/10/2026).'); }
+      else if (V === 3) { level = 'yellow'; reasons.push('Kruschke 3V hors coupes 5/12 et 7/12 Pentad : calculé avec le coefficient validé, coupe sans référence indépendante.'); }
+      else { level = 'yellow'; reasons.push('Kruschke 4V : coefficient d\'Acidome tiré d\'une seule valeur Domerama plus une retouche empirique (0,99840).'); }
+    } else if (m === 'Arcs' && V === 3) {
+      level = 'green'; reasons.push('Arcs 3V : longueurs et comptages identiques à Antiprism (logiciel indépendant), sphère entière.');
+    } else if (m === 'Arcs') {
+      level = 'yellow'; reasons.push('Arcs ' + V + 'V : même découpage et mêmes comptages qu\'Antiprism (logiciel indépendant), mais longueurs à 0,03 % près (≤ 0,7 mm sur Ø 5 m) : les nœuds intérieurs ne sont pas placés tout à fait de la même façon.');
+    } else {
+      level = 'yellow'; reasons.push(m + ' : aucune référence indépendante trouvée (confirmé par Acidome seulement).');
+    }
+    if (sym !== 'Pentad') { if (level === 'green') level = 'yellow'; reasons.push('Symétrie ' + sym + ' : découpe par plan horizontal, sans référence indépendante.'); }
+    if (p.alignTheBase && p.alignMoved > 0) { if (level === 'green') level = 'yellow'; reasons.push('Base alignée : ' + p.alignMoved + ' nœuds du bord déplacés, nouvelles longueurs sans référence.'); }
+    else if (p.alignTheBase) reasons.push('Base alignée : la base était déjà plate, aucun nœud déplacé.');
+    if (!full) { const e = baseFlatError(domeNominal); if (e > 0.0005) reasons.push('Base non plate (écart ' + Math.round(e * 1000) + ' mm entre nœuds du bord)' + (p.canAlignTheBase && !p.alignTheBase ? ' : cocher « Aligner la base » si besoin.' : '.')); }
+    return { level, reasons };
+  }
+  // fabrication : 🔴 si la géométrie est refusée ou si des morceaux ont des vagues ; sinon 🟠 (aucune toile cousue avec ces patrons)
+  function nonFlatSheets(){
+    if (!etagesCache) return [];
+    return allPieces().map(pc => sheetOf(pc.name)).filter(sh => sh && !sh.check.flat);
+  }
+  function fabricationStatus(){
+    const g = geometryStatus();
+    if (g.level === 'red') return { level: 'red', reasons: ['Géométrie refusée : pas de patron.'] };
+    // décision de Nathan (30/10/2026) : Triad, Cross et sphère entière restent refusés pour la toile
+    // jusqu'à l'étape 9 (découpe depuis l'axe, pôle bas), reportée à un audit ultérieur
+    const pp = domeNominal && domeNominal.params;
+    if (pp && pp.symmetry !== 'Pentad') return { level: 'red', reasons: ['Toile en symétrie ' + pp.symmetry + ' : découpe par étages pas encore juste (étape 9, reportée). Patrons refusés.'] };
+    if (pp && (pp.partial === '1/1' || pp.partial === '1')) return { level: 'red', reasons: ['Toile de sphère entière : pôle bas pas encore découpé (étape 9, reportée). Patrons refusés.'] };
+    const nf = nonFlatSheets();
+    if (nf.length) return { level: 'red', reasons: [nf.length + ' morceau(x) ne se posent pas à plat (vague) : ' + nf.slice(0, 6).map(s => s.name).join(', ') + (nf.length > 6 ? '…' : '') + '.'] };
+    return { level: 'orange', reasons: ['Patrons calculés et contrôlés (sans vague, coutures A/B, laize), mais jamais vérifiés sur une toile cousue.'] };
+  }
+  function statusBadge(st, what){ return '<span class="st-badge st-' + st.level + '" title="' + st.reasons.join(' ').replace(/"/g, '&quot;') + '">' + STATUS_ICON[st.level] + ' ' + what + ' ' + STATUS_WORD[st.level] + '</span>'; }
+  function renderStatus(){
+    const g = geometryStatus(), f = fabricationStatus();
+    const hs = $id('headStatus'); if (hs) hs.innerHTML = statusBadge(g, 'géométrie') + ' ' + statusBadge(f, 'toile');
+    const el = $id('domeStatus'); if (!el) return;
+    el.innerHTML = '<div class="st-card"><div><b>Statut de ce dôme</b> — ' + statusBadge(g, 'géométrie') + ' · ' + statusBadge(f, 'toile') + '</div><ul>' +
+      g.reasons.concat(f.reasons).map(r => '<li>' + r + '</li>').join('') + '</ul>' +
+      '<div class="muted">🟢 confirmé par une source indépendante (Domerama) · 🟡 calculé, sans référence indépendante · 🟠 patrons jamais vérifiés sur une toile cousue · 🔴 refusé (pas de patron ni d\'export).</div></div>';
+  }
+  function render2DGeoBlocked(reasons){
+    selectedPiece = null;
+    document.getElementById('btnBackOverview').style.display = 'none';
+    document.getElementById('peelTypeBox').style.display = 'none';
+    const rect = canvas2d.getBoundingClientRect();
+    canvas2d.width = rect.width * devicePixelRatio; canvas2d.height = rect.height * devicePixelRatio;
+    const W = canvas2d.width, H = canvas2d.height, dpr = devicePixelRatio;
+    ctx2d.clearRect(0,0,W,H); ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+    ctx2d.fillStyle = '#b23a2f'; ctx2d.font = 'bold ' + (14*dpr) + 'px monospace';
+    ctx2d.fillText('⛔ Patrons refusés pour ce dôme (statut 🔴)', W/2, H/2); ctx2d.textAlign = 'left';
+    const hint = document.getElementById('hint2d'); hint.textContent = reasons.join(' '); hint.style.color = '#b23a2f';
+    document.getElementById('dev2dInfo').textContent = 'refusé : statut 🔴';
+    const el = document.getElementById('panelsReadout'); el.style.display = '';
+    el.innerHTML = '<div class="bad" style="font-weight:700">⛔ Patrons refusés (statut 🔴) : aucune fiche, plan de coupe ni export.</div><ul>' + reasons.map(r => '<li>' + r + '</li>').join('') + '</ul>';
+    renderStatus();
+  }
+  // contrôle commun avant d'afficher ou d'exporter des patrons : renvoie true si bloqué (et affiche pourquoi)
+  function fabricationGate(){
+    const g = geometryStatus();
+    if (g.level === 'red') { render2DGeoBlocked(g.reasons); return true; }
+    const fs = fabricationStatus();
+    if (fs.level === 'red' && !nonFlatSheets().length) { render2DGeoBlocked(fs.reasons); return true; }
+    const nf = nonFlatSheets();
+    if (nf.length) { render2DGeoBlocked(fabricationStatus().reasons.concat(['Ce cas (sphère entière en haute fréquence) sera traité à l\'étape 9 du plan.'])); return true; }
+    const bad = laizeFailures(); if (bad.length) { render2DLaizeBlocked(bad); renderStatus(); return true; }
+    renderStatus();
+    return false;
+  }
+  function domeLabel(){
+    const bp = baseParams();
+    const dn = domeramaName(bp.detail, domeNominal ? domeNominal.params.subdivMethod : bp.subdivMethod, bp.partial, bp.symmetry);
+    return bp.detail + 'V ' + bp.subdivMethod + (bp.symmetry !== 'Pentad' ? ' ' + bp.symmetry : '') + ' ' + bp.partial + (dn ? ' (Domerama ' + dn + ')' : '') + (bp.alignTheBase ? ' (base alignée)' : '') + ' Ø' + parseFloat($id('paramDiameter').value).toFixed(2).replace('.', ',') + ' m';
+  }
+  function showView(which){
+    const info = which === 'info', design = which === 'design', base = which === 'base';
+    document.getElementById('viewBase').style.display = base ? '' : 'none';
+    document.getElementById('tabBase').classList.toggle('active', base);
+    if (base) { document.getElementById('viewCover').style.display = 'none'; document.getElementById('viewInfo').style.display = 'none'; document.getElementById('viewDesign').style.display = 'none';
+      document.getElementById('tabCover').classList.remove('active'); document.getElementById('tabInfo').classList.remove('active'); document.getElementById('tabDesign').classList.remove('active');
+      renderBase(); return; }
+    document.getElementById('viewCover').style.display = (info || design) ? 'none' : '';
+    document.getElementById('viewInfo').style.display = info ? '' : 'none';
+    document.getElementById('viewDesign').style.display = design ? '' : 'none';
+    document.getElementById('tabCover').classList.toggle('active', !info && !design);
+    document.getElementById('tabInfo').classList.toggle('active', info);
+    document.getElementById('tabDesign').classList.toggle('active', design);
+    if (info) renderInfo(); else if (design) { if (window.CoverDesign) window.CoverDesign.show(); } else { render(); render2D(); }
+  }
+  function measurePlan(tool, res){
+    const sheets = [...res.sheets.values()];
+    const groups = Toile.groupGabarits(sheets, true);
+    const st = tool.seamStats(res.plan);
+    const nr = Nesting.nest(sheets.map(sh => ({ name: sh.name, poly: sh.cut, L: sh.cutLength, W: sh.cutWidth, area: sh.cutArea })), USABLE_WIDTH_M, { row: 0.01, tries: 8 });
+    return {
+      pieces: sheets.length, gabarits: groups.length, sewn: st.sewn, total: st.total,
+      cutArea: sheets.reduce((a, x) => a + x.cutArea, 0), roll: nr.length, rollArea: nr.length * FABRIC_W_M,
+      util: nr.utilisation, maxLen: Math.max(...sheets.map(x => x.cutLength)),
+      over: sheets.filter(x => x.cutWidth > USABLE_WIDTH_M + 1e-9).length, flat: sheets.every(x => x.check.flat)
+    };
+  }
+  async function runComparison(){
+    const key = cutKey() + '|' + document.getElementById('paramBaseRow').value;
+    if (compareState && compareState.key === key && (compareState.running || compareState.rows.size === STRATS.length)) return;
+    const st = { key, rows: new Map(), running: true };
+    compareState = st;
+    const tick = () => new Promise(r => setTimeout(r, 20));
+    for (const sg of STRATS) {
+      if (compareState !== st) return;
+      renderInfo();
+      await tick();
+      let tool, res;
+      if (sg.id === 'toile') {
+        if (!optimState || optimState.key !== cutKey()) startOptim();
+        const os = optimState;
+        while (!os.result) { await new Promise(r => setTimeout(r, 150)); if (compareState !== st || optimState !== os) return; renderInfo(); }
+        tool = os.tool; res = os.result;
+      } else {
+        tool = makeEtages(dome);
+        res = Toile.planFabric(tool, USABLE_WIDTH_M, SEAM, OVERLAP_TOL_M, { strategy: sg.id, base: document.getElementById('paramBaseRow').value });
+      }
+      st.rows.set(sg.id, measurePlan(tool, res));
+    }
+    st.running = false;
+    if (infoVisible()) renderInfo();
+  }
+
+  function comparisonHtml(){
+    const st = compareState, cur = document.getElementById('paramCutStrategy').value;
+    const rows = STRATS.map(sg => ({ sg, m: st ? st.rows.get(sg.id) : null }));
+    const done = rows.filter(r => r.m);
+    const best = (f, dir) => done.length ? (dir < 0 ? Math.min(...done.map(r => f(r.m))) : Math.max(...done.map(r => f(r.m)))) : null;
+    const bPieces = best(m => m.pieces, -1), bGab = best(m => m.gabarits, -1), bSewn = best(m => m.sewn, -1),
+          bCut = best(m => m.cutArea, -1), bRoll = best(m => m.roll, -1), bUtil = best(m => m.util, 1);
+    const cell = (v, b, txt, worse) => '<td class="' + (b !== null && Math.abs(v - b) < 1e-9 ? 'best' : '') + '">' + txt + '</td>';
+    const q = id => '<a class="help-q" data-help="' + id + '" title="Que représente cette colonne ?">?</a>';
+    let h = '<table class="compare"><tr><th>Découpe des étages <a class="help-q" data-help="aide-decoupe" title="Les 4 stratégies">?</a></th><th>Morceaux' + q('aide-col-morceaux') + '</th><th>Gabarits' + q('aide-col-gabarits') +
+      '</th><th>Arêtes cousues' + q('aide-col-aretes') + '</th><th>Toile coupée (m²)' + q('aide-col-coupee') + '</th><th>Rouleau (m)' + q('aide-col-rouleau') +
+      '</th><th>Rouleau (m²)' + q('aide-col-rouleau-m2') + '</th><th>Utilisation' + q('aide-col-utilisation') + '</th><th>Plus long morceau' + q('aide-col-long') +
+      '</th><th>Contrôles' + q('aide-col-controles') + '</th><th></th></tr>';
+    rows.forEach(({ sg, m }) => {
+      h += '<tr' + (sg.id === cur ? ' class="current"' : '') + '><td><b>' + sg.label + '</b><div class="muted">' + sg.note + (sg.id === 'toile' ? ' · poids ' + Math.round(seamWeight()*100) + ' cm' : '') + '</div></td>';
+      if (!m) {
+        const busy = sg.id === 'toile' && optimState && !optimState.result ? 'calcul… ' + Math.round(optimState.progress * 100) + ' %' : (st && st.running ? 'calcul…' : '—');
+        h += '<td colspan="9" class="muted">' + busy + '</td><td></td></tr>'; return;
+      }
+      h += cell(m.pieces, bPieces, m.pieces) + cell(m.gabarits, bGab, m.gabarits) + cell(m.sewn, bSewn, m.sewn + ' / ' + m.total) +
+        cell(m.cutArea, bCut, m.cutArea.toFixed(1)) + cell(m.roll, bRoll, '<b>' + m.roll.toFixed(1) + '</b>') + '<td>' + m.rollArea.toFixed(1) + '</td>' +
+        cell(m.util, bUtil, Math.round(m.util * 100) + ' %') + '<td>' + (m.maxLen).toFixed(1) + ' m</td>' +
+        '<td>' + (m.flat ? '✓ sans vague' : '<span class="bad">✗ vague</span>') + (m.over ? ' · <span class="bad">' + m.over + ' hors laize</span>' : ' · laize ✓') + '</td>' +
+        '<td>' + (sg.id === cur ? '<span class="muted">choisie</span>' : '<button class="use-strat" data-strat="' + sg.id + '">Utiliser</button>') + '</td></tr>';
+    });
+    h += '</table><div class="muted">Calculé avec les réglages actuels (laize ' + mm(FABRIC_W_M) + ' mm, largeur utile ' + mm(USABLE_WIDTH_M) + ' mm, ' +
+      Toile.SEAM_PRESETS[SEAM.type].label.toLowerCase() + ' A' + mm(SEAM.A) + '/B' + mm(SEAM.B) + ', ourlet ' + mm(SEAM.hem) + ', rangée du bas : ' +
+      (document.getElementById('paramBaseRow').value === 'ring' ? 'anneau' : '5 morceaux') + '). En vert : la meilleure valeur de chaque colonne. ' +
+      'Rouleau = longueur de toile à acheter avec le plan de coupe automatique.</div>';
+    const curRow = st && st.rows.get(cur);
+    if (curRow) {
+      const net = baseTriangleTypes().reduce((a, t) => a + t.area * t.faces.length, 0);
+      const usable = curRow.roll * USABLE_WIDTH_M;
+      h += '<div class="explain"><b>Comment lire ces chiffres</b> <a class="help-q" data-help="aide-comparatif" title="Explication détaillée">?</a> — exemple avec la découpe choisie (' + STRATS.find(x => x.id === cur).label + ') :' +
+        '<ul><li>Le dôme lui-même fait <b>' + net.toFixed(1) + ' m²</b>. Avec les marges et l\'ourlet, on découpe <b>' + curRow.cutArea.toFixed(1) + ' m²</b> de toile (<b>toile coupée</b>) : ' + (curRow.cutArea - net).toFixed(1) + ' m² de marges.</li>' +
+        '<li>Pour placer ces morceaux, il faut dérouler <b>' + curRow.roll.toFixed(1) + ' m</b> de rouleau (<b>le métrage à acheter</b>), soit ' + curRow.roll.toFixed(1) + ' m × ' + (FABRIC_W_M).toFixed(2) + ' m = <b>' + curRow.rollArea.toFixed(1) + ' m²</b>.</li>' +
+        '<li>Sur la largeur utile (' + mm(USABLE_WIDTH_M) + ' mm, sans les lisières), cela fait ' + usable.toFixed(1) + ' m², dont ' + curRow.cutArea.toFixed(1) + ' m² servent : <b>utilisation ' + Math.round(curRow.util * 100) + ' %</b>. Les ' + (usable - curRow.cutArea).toFixed(1) + ' m² restants sont de la chute.</li></ul>' +
+        'Image : la toile coupée est la pâte qui finit dans les biscuits, le rouleau est toute la pâte étalée, l\'utilisation est la part qui a servi.</div>';
+    }
+    return h;
+  }
+
+  function renderInfo(){
+    const el = document.getElementById('viewInfo');
+    if (!dome) return;
+    const openIds = [...el.querySelectorAll('details[open]')].map(d => d.id);
+    const types = baseTriangleTypes();
+    let h = '<div class="info-head"><h2>Informations</h2><button id="btnInfoBack">← Retour au patron</button></div>';
+    h += '<section class="info-card"><h3>Comparatif des découpes</h3>' + comparisonHtml() + '</section>';
+    h += '<section class="info-card">' + baseTrianglesHtml(types) + '</section>';
+    h += '<section class="info-card"><h3>Classes de montants</h3><table><tr><th>Classe</th><th>Nombre</th><th>Longueur nœud à nœud (mm)</th>' + (dome.offset ? '<th>Toile GoodKarma (mm)</th>' : '') + '</tr>' +
+      domeNominal.edgeClasses.map(g => { const t = dome.offset ? dome.edgeClasses.find(c => c.name === g.name) : null;
+        return '<tr><td><b>' + g.name + '</b></td><td>×' + g.count + '</td><td>' + (g.length*1000).toFixed(2) + '</td>' + (t ? '<td>' + (t.length*1000).toFixed(1) + '</td>' : '') + '</tr>'; }).join('') +
+      '</table>' + (dome.offset ? '<div class="offset-info" style="margin-top:8px">' + offsetInfoHtml() + '</div>' : '') + '</section>';
+    h += '<section class="info-card"><h3>Comprendre les options et réglages</h3>' + CoverInfo.helpHtml() + '</section>';
+    el.innerHTML = h;
+    openIds.forEach(id => { const d = document.getElementById(id); if (d) d.open = true; });
+    document.getElementById('btnInfoBack').addEventListener('click', () => showView('cover'));
+    el.querySelectorAll('.help-q[data-help]').forEach(a => a.addEventListener('click', ev => {
+      ev.preventDefault();
+      const target = document.getElementById(a.getAttribute('data-help'));
+      if (!target) return;
+      const d = target.tagName === 'DETAILS' ? target : target.closest('details');
+      if (d) d.open = true;
+      target.classList.add('flash'); setTimeout(() => target.classList.remove('flash'), 1600);
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }));
+    el.querySelectorAll('.use-strat').forEach(b => b.addEventListener('click', () => {
+      document.getElementById('paramCutStrategy').value = b.getAttribute('data-strat');
+      syncCutControls(); etagesCache = null; nestCache = null;
+      showView('cover'); setMode('etages'); selectPiece(null);
+    }));
+    runComparison();
+  }
+
+  document.getElementById('tabCover').addEventListener('click', () => showView('cover'));
+  document.getElementById('tabInfo').addEventListener('click', () => showView('info'));
+  document.getElementById('tabDesign').addEventListener('click', () => showView('design'));
+  document.getElementById('tabBase').addEventListener('click', () => showView('base'));
+  // accès du module Design (onglet séparé) au dôme courant
+  window.CoverApp = { dome: () => domeStruct || domeNominal, label: domeLabel, showView };
+  // « ? » à côté de chaque réglage : ouvre l'explication correspondante
+  Object.keys(CoverInfo.HELP_FOR).forEach(id => {
+    const input = document.getElementById(id);
+    const lab = input && input.closest('label');
+    if (!lab) return;
+    const q = document.createElement('a');
+    q.className = 'help-q'; q.textContent = '?'; q.title = 'Explication de ce réglage';
+    q.addEventListener('click', ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      showView('info');
+      const d = document.getElementById(CoverInfo.HELP_FOR[id]);
+      if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    });
+    const head = document.createElement('span');
+    head.className = 'lab-head';
+    head.appendChild(lab.firstChild);
+    head.appendChild(q);
+    lab.insertBefore(head, lab.firstChild);
+  });
+
+  regenerate();
+  showView('base');
+})();
