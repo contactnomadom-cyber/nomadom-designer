@@ -17,6 +17,7 @@
     "design-src":         "src/products/habitat/design.js",
     "design3d-src":       "src/rendering/design3d.js",
     "design3d-three-src": "src/rendering/design3d-three.js",
+    "view2d-src":         "src/rendering/view2d.js",
     "ouvertures-src":     "src/geometry/ouvertures.js",
     "unfold-src":         "src/geometry/unfold.js",
     "designui-src":       "src/products/habitat/designui.js",
