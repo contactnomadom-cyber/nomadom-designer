@@ -7628,7 +7628,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   const LIMITS = Object.freeze({
     jsonBytes: 50 * 1024 * 1024,   // fichier .json importé (modèles 3D compris)
     glbBytes: 15 * 1024 * 1024,    // un fichier .glb
-    items: 2000, models: 100, text: 500, id: 64,
+    items: 2000, models: 100, text: 500, id: 64, kumikoPanels: 500, kumikoDensity: 6,
     size: 1000,       // m : |largeur|, |profondeur|, |hauteur| d'un élément
     position: 10000,  // m : |x|, |z|
     angle: 36000      // degrés
@@ -7712,6 +7712,25 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     }
     if (raw.style !== undefined) { if (STYLES.indexOf(raw.style) < 0) err('style de plan inconnu'); else out.style = raw.style; }
 
+    // panneaux Kumiko (NOMAD-2026-003) : un panneau par triangle, repéré par ses 3 nœuds
+    if (raw.kumiko !== undefined) {
+      if (!isObj(raw.kumiko) || !Array.isArray(raw.kumiko.panels)) err('« kumiko » doit contenir une liste « panels »');
+      else if (raw.kumiko.panels.length > LIMITS.kumikoPanels) err('trop de panneaux Kumiko (' + raw.kumiko.panels.length + ')');
+      else {
+        const byFace = new Map();
+        raw.kumiko.panels.forEach((pn, i) => {
+          const where = 'panneau Kumiko ' + (i + 1);
+          if (!isObj(pn) || typeof pn.face !== 'string' || !/^N\d{1,4}-N\d{1,4}-N\d{1,4}$/.test(pn.face)) { err(where + ' : triangle invalide'); return; }
+          const o = { face: pn.face, pattern: pn.pattern === undefined ? 'asanoha' : pn.pattern, density: pn.density === undefined ? 2 : pn.density, center: pn.center === undefined ? 'centroid' : pn.center };
+          if (typeof o.pattern !== 'string' || !/^[a-z]{1,20}$/.test(o.pattern)) { err(where + ' : motif invalide'); return; }
+          if (!Number.isInteger(o.density) || o.density < 1 || o.density > LIMITS.kumikoDensity) { err(where + ' : densité invalide (1 à ' + LIMITS.kumikoDensity + ')'); return; }
+          if (o.center !== 'centroid' && o.center !== 'incenter') { err(where + ' : centre du motif inconnu'); return; }
+          byFace.set(o.face, o);   // un seul panneau par triangle : le dernier l'emporte
+        });
+        out.kumiko = { panels: [...byFace.values()] };
+      }
+    }
+
     // modèles 3D intégrés (.glb en base64)
     if (raw.models !== undefined) {
       if (!Array.isArray(raw.models)) err('« models » doit être une liste');
@@ -7760,6 +7779,393 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   const DesignImport = { LIMITS, escapeHtml, validateState, parseImport, checkGlb };
   if (typeof module !== 'undefined' && module.exports) module.exports = DesignImport;
   else global.DesignImport = DesignImport;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script id="kumiko-src">// ---------------------------------------------------------
+// kumiko.js — Panneaux décoratifs Kumiko (option de l'aménagement Design)
+// Mission NOMAD-2026-002 : moteur repris du projet Claude « Acidome Cover+ »
+// (kumiko-engine.js, étape K1), logique inchangée, noms passés en anglais.
+// Vocabulaire d'atelier conservé (docs/glossary.md) : kumiko, waku (cadre),
+// jigumi (grille de lattes), tsukeko (pièces du motif).
+//
+// Fonctions pures, sans DOM, sans dépendance à dome-engine.js.
+//  - Un motif est défini UNE FOIS dans un triangle de référence, en
+//    coordonnées barycentriques (u, v, w) avec u + v + w = 1.
+//  - Il est projeté par application affine sur le triangle réel :
+//      P = u·A + v·B + w·C
+//  - Le panneau est subdivisé en density² petits triangles (jigumi) et le
+//    motif (tsukeko) est répété dans chacun.
+// L'application affine conserve les droites, le parallélisme et les rapports
+// de longueur sur une droite, mais PAS les angles : les biseaux sont donc
+// recalculés sur le triangle réel, jamais supposés à 30° / 60°.
+//
+// Unités : mm et degrés (écart avec les mètres du moteur de dôme, ADR-0001
+// §7 — à trancher avant le branchement sur Design, voir le bilan de mission).
+// Pas encore dans le HTML assemblé (absent de build/manifest.json).
+// Testé sous Node : tests/node/kumiko.test.js.
+// ---------------------------------------------------------
+(function (global) {
+  'use strict';
+
+  const EPS = 1e-9;
+  const DEG = 180 / Math.PI;
+
+  // --- Outils 2D ---
+  const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+  const len = (v) => Math.hypot(v.x, v.y);
+  const dist = (a, b) => len(sub(a, b));
+  const angleOf = (v) => Math.atan2(v.y, v.x); // radians
+  // angle (0..2π) en tournant dans le sens trigonométrique de a vers b
+  const ccwGap = (a, b) => { let d = b - a; while (d <= EPS) d += 2 * Math.PI; while (d > 2 * Math.PI + EPS) d -= 2 * Math.PI; return d; };
+
+  // --- Barycentriques ---
+  /** Point barycentrique. Les coordonnées doivent sommer à 1. */
+  function bary(u, v, w) { return [u, v, w]; }
+  const barySum = (b) => b[0] + b[1] + b[2];
+
+  /** Projection affine : barycentrique -> point 2D du triangle [A, B, C]. */
+  function toCartesian(tri, b) {
+    return {
+      x: b[0] * tri[0].x + b[1] * tri[1].x + b[2] * tri[2].x,
+      y: b[0] * tri[0].y + b[1] * tri[1].y + b[2] * tri[2].y
+    };
+  }
+
+  /** Combinaison barycentrique dans un sous-triangle dont les sommets sont
+   *  eux-mêmes donnés en barycentriques du panneau. */
+  function composeBary(subTriBary, b) {
+    return [0, 1, 2].map(k => b[0] * subTriBary[0][k] + b[1] * subTriBary[1][k] + b[2] * subTriBary[2][k]);
+  }
+
+  // --- Centre du motif dans un (sous-)triangle réel ---
+  //  'centroid' : barycentre (1/3, 1/3, 1/3), invariant par application affine
+  //  'incenter' : centre du cercle inscrit, (a, b, c)/(a+b+c), a = côté opposé à A
+  function centerBary(tri2D, mode) {
+    if (mode === 'incenter') {
+      const a = dist(tri2D[1], tri2D[2]), b = dist(tri2D[2], tri2D[0]), c = dist(tri2D[0], tri2D[1]);
+      const s = a + b + c;
+      return [a / s, b / s, c / s];
+    }
+    return [1 / 3, 1 / 3, 1 / 3];
+  }
+
+  // --- Bibliothèque de motifs ---
+  //  Chaque segment relie deux points symboliques : 'A','B','C' = sommets du
+  //  petit triangle, 'O' = centre du motif, ou un tableau [u,v,w] explicite.
+  //  status : 'valid' (géométrie sûre) | 'unconfirmed' (refusé tant que la
+  //  définition n'est pas validée par Nathan). name = libellé d'interface.
+  const PATTERNS = {
+    mitsukude: { name: 'Mitsukude — grille triangulaire seule', status: 'valid', segments: [] },
+    // 3 pièces par triangle, des 3 sommets vers le centre (asanoha traditionnel ;
+    // pas de segments « centre -> milieux des côtés »).
+    asanoha: { name: 'Asa-no-ha — feuille de chanvre', status: 'valid', segments: [['A', 'O'], ['B', 'O'], ['C', 'O']] },
+    goma: { name: 'Goma — sésame', status: 'unconfirmed', segments: null },
+    rindo: { name: 'Rindō — gentiane', status: 'unconfirmed', segments: null },
+    kikko: { name: 'Kikkō — écaille de tortue', status: 'unconfirmed', segments: null }
+  };
+
+  function resolvePoint(sym, center) {
+    if (Array.isArray(sym)) return sym;
+    switch (sym) {
+      case 'A': return [1, 0, 0];
+      case 'B': return [0, 1, 0];
+      case 'C': return [0, 0, 1];
+      case 'O': return center;
+      default: throw new Error('Point de motif inconnu : ' + sym);
+    }
+  }
+
+  // --- Subdivision du panneau en density² petits triangles ---
+  //  P(i,j) = ((n-i-j)/n, i/n, j/n)
+  //  cellule 'up'   : P(i,j), P(i+1,j), P(i,j+1)        -> n(n+1)/2
+  //  cellule 'down' : P(i+1,j), P(i+1,j+1), P(i,j+1)    -> n(n-1)/2
+  //  Les deux sont orientées dans le même sens que le panneau.
+  function subdivide(n) {
+    if (!Number.isInteger(n) || n < 1) throw new Error('densité : entier >= 1 attendu');
+    const P = (i, j) => [(n - i - j) / n, i / n, j / n];
+    const res = [];
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n - i; j++) {
+        res.push({ bary: [P(i, j), P(i + 1, j), P(i, j + 1)], orientation: 'up', ij: [i, j] });
+        if (i + j <= n - 2) res.push({ bary: [P(i + 1, j), P(i + 1, j + 1), P(i, j + 1)], orientation: 'down', ij: [i, j] });
+      }
+    }
+    return res;
+  }
+
+  // --- Lattes du jigumi : 3 familles parallèles aux côtés, bord à bord ---
+  //  famille k : coordonnée k constante = t/n, t = 1..n-1
+  //  (k=0 : parallèle à BC, k=1 : parallèle à CA, k=2 : parallèle à AB)
+  //  Le cadre (waku) = les 3 côtés du panneau.
+  function jigumiLines(n) {
+    const lines = [];
+    for (let k = 0; k < 3; k++) {
+      const k1 = (k + 1) % 3, k2 = (k + 2) % 3;
+      for (let t = 1; t < n; t++) {
+        const c = t / n;
+        const a = [0, 0, 0], b = [0, 0, 0];
+        a[k] = c; a[k1] = 1 - c;  // extrémité sur le côté où k2 = 0
+        b[k] = c; b[k2] = 1 - c;  // extrémité sur le côté où k1 = 0
+        lines.push({ family: k, rank: t, a, b });
+      }
+    }
+    const waku = [
+      { side: 'AB', a: [1, 0, 0], b: [0, 1, 0] },
+      { side: 'BC', a: [0, 1, 0], b: [0, 0, 1] },
+      { side: 'CA', a: [0, 0, 1], b: [1, 0, 0] }
+    ];
+    return { lines, waku };
+  }
+
+  // --- Biseaux d'une extrémité de tsukeko ---
+  //  Au point P, dans SA cellule, on liste les rayons partant de P :
+  //   - côtés de la cellule (lattes du jigumi ou cadre) : continus, la face de
+  //     coupe s'appuie dessus -> biseau = angle entier ;
+  //   - autres tsukeko de la même cellule finissant en P : coupe partagée ->
+  //     biseau = moitié de l'angle (bissectrice).
+  //  leftBevel / rightBevel = angle entre l'axe de la pièce et la face de coupe,
+  //  vus en regardant la pièce vers cette extrémité (gauche = sens trigo dans
+  //  le plan du panneau, face intérieure du dôme vers soi). tipAngle = gauche + droite.
+  function raysAtPoint(P, cell2D, cellPieces, pieceIndex) {
+    const rays = [];
+    const pts = cell2D;
+    let corner = -1;
+    for (let k = 0; k < 3; k++) if (dist(P, pts[k]) < 1e-6) corner = k;
+    if (corner >= 0) {
+      // P est un coin de cellule : 2 côtés
+      [pts[(corner + 1) % 3], pts[(corner + 2) % 3]].forEach(Q =>
+        rays.push({ ang: angleOf(sub(Q, P)), type: 'lath' }));
+    } else {
+      // P sur un côté de la cellule : ce côté dans les deux sens
+      for (let k = 0; k < 3; k++) {
+        const A = pts[k], B = pts[(k + 1) % 3];
+        const onSide = Math.abs(dist(A, P) + dist(P, B) - dist(A, B)) < 1e-6;
+        if (onSide) {
+          rays.push({ ang: angleOf(sub(A, P)), type: 'lath' });
+          rays.push({ ang: angleOf(sub(B, P)), type: 'lath' });
+        }
+      }
+    }
+    cellPieces.forEach((pc, idx) => {
+      if (idx === pieceIndex) return;
+      if (dist(pc.p1, P) < 1e-6) rays.push({ ang: angleOf(sub(pc.p2, P)), type: 'tsukeko' });
+      else if (dist(pc.p2, P) < 1e-6) rays.push({ ang: angleOf(sub(pc.p1, P)), type: 'tsukeko' });
+    });
+    return rays;
+  }
+
+  function endBevels(P, Q, cell2D, cellPieces, pieceIndex) {
+    // P = extrémité étudiée, Q = autre extrémité ; l'axe vu depuis P pointe vers Q.
+    const axis = angleOf(sub(Q, P));
+    const rays = raysAtPoint(P, cell2D, cellPieces, pieceIndex);
+    if (rays.length === 0) return { leftBevel: 90, rightBevel: 90, tipAngle: 180, free: true };
+    let minCcw = Infinity, minCw = Infinity, nCcw = null, nCw = null;
+    rays.forEach(r => {
+      const dT = ccwGap(axis, r.ang), dH = ccwGap(r.ang, axis);
+      if (dT < minCcw) { minCcw = dT; nCcw = r; }
+      if (dH < minCw) { minCw = dH; nCw = r; }
+    });
+    const bevel = (d, r) => (r.type === 'lath' ? d : d / 2) * DEG;
+    // En regardant la pièce depuis Q vers P, le côté trigo autour de P est la droite.
+    const rightBevel = bevel(minCcw, nCcw), leftBevel = bevel(minCw, nCw);
+    return {
+      leftBevel, rightBevel, tipAngle: leftBevel + rightBevel,
+      leftContact: nCw.type, rightContact: nCcw.type
+    };
+  }
+
+  // --- Génération d'un panneau complet (2D) ---
+  //  tri2D   : [A, B, C] points {x,y} en mm (contour du panneau)
+  //  options : { pattern, density, center: 'centroid' | 'incenter' }
+  function generatePanel(tri2D, options) {
+    const opt = Object.assign({ pattern: 'asanoha', density: 2, center: 'centroid' }, options || {});
+    const pattern = PATTERNS[opt.pattern];
+    if (!pattern) throw new Error('Motif inconnu : ' + opt.pattern);
+    if (pattern.status !== 'valid') throw new Error('Motif « ' + opt.pattern + ' » à confirmer : définition non validée');
+    if (area(tri2D) <= EPS) throw new Error('Triangle dégénéré');
+
+    const n = opt.density;
+    const cells = subdivide(n).map((c, idx) => {
+      const pts = c.bary.map(b => toCartesian(tri2D, b));
+      return Object.assign({ index: idx, pts }, c);
+    });
+
+    const tsukeko = [];
+    cells.forEach(cell => {
+      const center = centerBary(cell.pts, opt.center);
+      const pieces = pattern.segments.map(([s1, s2]) => {
+        const b1 = composeBary(cell.bary, resolvePoint(s1, center));
+        const b2 = composeBary(cell.bary, resolvePoint(s2, center));
+        const p1 = toCartesian(tri2D, b1), p2 = toCartesian(tri2D, b2);
+        return { cell: cell.index, orientation: cell.orientation, b1, b2, p1, p2, axisLength: dist(p1, p2) };
+      });
+      pieces.forEach((pc, i) => {
+        pc.end1 = endBevels(pc.p1, pc.p2, cell.pts, pieces, i);
+        pc.end2 = endBevels(pc.p2, pc.p1, cell.pts, pieces, i);
+      });
+      tsukeko.push(...pieces);
+    });
+
+    const jg = jigumiLines(n);
+    const toSegment = l => Object.assign({}, l, { p1: toCartesian(tri2D, l.a), p2: toCartesian(tri2D, l.b), axisLength: dist(toCartesian(tri2D, l.a), toCartesian(tri2D, l.b)) });
+
+    return {
+      options: opt,
+      pattern: pattern.name,
+      triangle: tri2D,
+      cells,
+      jigumi: jg.lines.map(toSegment),
+      waku: jg.waku.map(toSegment),
+      tsukeko
+    };
+  }
+
+  function area(t) {
+    return Math.abs((t[1].x - t[0].x) * (t[2].y - t[0].y) - (t[2].x - t[0].x) * (t[1].y - t[0].y)) / 2;
+  }
+
+  /** Triangle 2D à partir des trois longueurs de côtés.
+   *  a = BC, b = CA, c = AB. A en (0,0), B sur l'axe x. */
+  function triangleFromSides(a, b, c) {
+    const x = (b * b + c * c - a * a) / (2 * c);
+    const y = Math.sqrt(Math.max(0, b * b - x * x));
+    if (!(y > EPS)) throw new Error('Longueurs incompatibles (inégalité triangulaire)');
+    return [{ x: 0, y: 0 }, { x: c, y: 0 }, { x, y }];
+  }
+
+  const Kumiko = {
+    PATTERNS, bary, barySum, toCartesian, composeBary, centerBary,
+    subdivide, jigumiLines, generatePanel, triangleFromSides, area
+  };
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = Kumiko;
+  else global.Kumiko = Kumiko;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script id="kumiko-layout-src">
+// ---------------------------------------------------------
+// kumiko-layout.js — Panneaux Kumiko posés sur les triangles du dôme
+// (mission NOMAD-2026-003, aperçu). Logique pure, sans DOM, testée sous Node
+// (tests/node/kumiko-layout.test.js).
+//
+// Image : on pose un gabarit de vitrail dans chaque triangle choisi. Le
+// moteur Kumiko (kumiko.js) dessine le motif à plat, en millimètres ; ce
+// module le pose dans le plan du triangle, côté intérieur du dôme, en mètres.
+//
+// Identité d'un triangle : ses trois nœuds (« N3-N7-N12 »), comme les
+// ouvertures. Elle ne change pas avec le diamètre ; elle change si la
+// géométrie du dôme change (fréquence, coupe…) : le panneau est alors signalé
+// « absent de ce dôme » et gardé dans l'aménagement.
+//
+// APERÇU 🟠 : les cotes sont d'axe à axe (lattes, cadre et montants sans
+// épaisseur) et le panneau prend le triangle nœud à nœud. Aucune liste de
+// débit n'est produite ici (décision de Nathan, 01/11/2026).
+// ---------------------------------------------------------
+(function (global) {
+  'use strict';
+
+  const DENSITY_MAX = 6;
+  const CENTERS = ['centroid', 'incenter'];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = a => { const L = Math.hypot(a[0], a[1], a[2]); return [a[0] / L, a[1] / L, a[2] / L]; };
+  const v3 = p => [p.x, p.y, p.z];
+
+  // clé d'un triangle : ses 3 étiquettes de nœuds, triées par numéro
+  function faceKey(pointIds, labels) {
+    return pointIds.map(id => labels.get(id)).sort((a, b) => +a.slice(1) - +b.slice(1)).join('-');
+  }
+  // toutes les faces du dôme (y compris celles retirées par une ouverture : un kumiko peut garnir une fenêtre)
+  function faceKeys(dome, labels) {
+    return (dome.allFaces || dome.faces).map(f => faceKey(f.pointIds, labels));
+  }
+
+  // Repère d'un triangle 3D : origine A, axe x vers B, axe y dans le plan, normale vers l'extérieur.
+  // center = un point intérieur du dôme (sur l'axe), pour orienter la normale.
+  function frameOf(P, center) {
+    const A = P[0], ex = norm(sub(P[1], A));
+    let n = norm(cross(sub(P[1], A), sub(P[2], A)));
+    const g = [(P[0][0] + P[1][0] + P[2][0]) / 3, (P[0][1] + P[1][1] + P[2][1]) / 3, (P[0][2] + P[1][2] + P[2][2]) / 3];
+    if (dot(n, sub(g, center)) < 0) n = n.map(x => -x);
+    const ey = cross(n, ex);
+    return { A, ex, ey, n };
+  }
+  const to2D = (F, p) => { const d = sub(p, F.A); return { x: dot(d, F.ex), y: dot(d, F.ey) }; };
+
+  // Panneau posé sur une face. P = 3 points [x, y, z] en m ; opts = { pattern, density, center } ;
+  // inset = distance (m) vers l'intérieur du dôme, sous les montants.
+  // Renvoie { tri2D (mm), panel (sortie de Kumiko.generatePanel, mm), segments3D: [{ kind, a, b }] (m), summary }.
+  function placePanel(Kumiko, P, opts, center, inset) {
+    const F = frameOf(P, center);
+    const tri2D = P.map(p => { const q = to2D(F, p); return { x: q.x * 1000, y: q.y * 1000 }; });
+    const panel = Kumiko.generatePanel(tri2D, opts);
+    const back = q => [0, 1, 2].map(k => F.A[k] + (q.x / 1000) * F.ex[k] + (q.y / 1000) * F.ey[k] - inset * F.n[k]);
+    const seg = kind => s => ({ kind, a: back(s.p1), b: back(s.p2) });
+    const segments3D = [].concat(panel.waku.map(seg('waku')), panel.jigumi.map(seg('jigumi')), panel.tsukeko.map(seg('tsukeko')));
+    return { tri2D, panel, segments3D, summary: summarize(panel) };
+  }
+
+  // chiffres d'un panneau (mm, degrés), arrondis pour l'affichage — cotes indicatives
+  function summarize(panel) {
+    const r1 = v => Math.round(v * 10) / 10;
+    const tL = panel.tsukeko.map(t => t.axisLength), bev = panel.tsukeko.flatMap(t => [t.end1.leftBevel, t.end1.rightBevel, t.end2.leftBevel, t.end2.rightBevel]);
+    return {
+      waku: panel.waku.map(s => r1(s.axisLength)),
+      jigumi: panel.jigumi.length,
+      tsukeko: panel.tsukeko.length,
+      tsukekoMin: tL.length ? r1(Math.min(...tL)) : null, tsukekoMax: tL.length ? r1(Math.max(...tL)) : null,
+      bevelMin: bev.length ? r1(Math.min(...bev)) : null, bevelMax: bev.length ? r1(Math.max(...bev)) : null
+    };
+  }
+
+  // Tous les panneaux d'un aménagement. dome = CoverApp.dome() (structure), labels = étiquettes du dôme nominal,
+  // panels = st.kumiko.panels, yShift = décalage vertical du Design (sol à 0), sphereCenterY = centre de la
+  // sphère dans le repère du Design. Renvoie [{ panel: entrée, key, ok, error?, place? }].
+  function layout(Kumiko, dome, labels, panels, yShift, sphereCenterY, inset) {
+    const faces = dome.allFaces || dome.faces, byKey = new Map();
+    faces.forEach(f => byKey.set(faceKey(f.pointIds, labels), f));
+    const center = [0, sphereCenterY, 0];
+    return (panels || []).map(pn => {
+      const f = byKey.get(pn.face);
+      if (!f) return { panel: pn, key: pn.face, ok: false, error: 'absent de ce dôme' };
+      const P = f.pointIds.map(id => { const p = dome.pointById.get(id); return [p.x, p.y - yShift, p.z]; });
+      try { return { panel: pn, key: pn.face, ok: true, place: placePanel(Kumiko, P, pn, center, inset) }; }
+      catch (e) { return { panel: pn, key: pn.face, ok: false, error: e.message }; }
+    });
+  }
+
+  // Triangle sous un clic dans la vue 3D du Design (même caméra que design3d-three.js / design3d.js).
+  // tris = model.tris (points {x,y,z}, repère du Design) ; cam = { yaw, pitch, dist, target } ;
+  // ndc = position du clic dans [-1, 1]² (y vers le haut) ; aspect = largeur / hauteur ; fovDeg ≈ 40.
+  // cut = vue « toile en coupe » : ce qui est devant le plan de coupe (côté caméra) est ignoré, comme à l'écran.
+  // Renvoie l'index du triangle touché le plus proche, ou -1.
+  function pickFace(tris, cam, ndcX, ndcY, aspect, fovDeg, cut) {
+    const E = [cam.target[0] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw), cam.target[1] + cam.dist * Math.sin(cam.pitch), cam.target[2] + cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw)];
+    const f = norm(sub(cam.target, E)), r = norm(cross(f, [0, 1, 0])), u = cross(r, f), t = Math.tan((fovDeg || 40) * Math.PI / 360);
+    const D = norm([0, 1, 2].map(k => f[k] + ndcX * t * aspect * r[k] + ndcY * t * u[k]));
+    const hx = Math.sin(cam.yaw), hz = Math.cos(cam.yaw);
+    let best = -1, bt = Infinity;
+    tris.forEach((tr, i) => {
+      const P0 = v3(tr[0]), e1 = sub(v3(tr[1]), P0), e2 = sub(v3(tr[2]), P0), p = cross(D, e2), det = dot(e1, p);
+      if (Math.abs(det) < 1e-12) return;
+      const s = sub(E, P0), uu = dot(s, p) / det; if (uu < 0 || uu > 1) return;
+      const q = cross(s, e1), vv = dot(D, q) / det; if (vv < 0 || uu + vv > 1) return;
+      const tt = dot(e2, q) / det; if (tt <= 1e-6 || tt >= bt) return;
+      if (cut) { const H = [0, 1, 2].map(k => E[k] + D[k] * tt); if (hx * H[0] + hz * H[2] > 0.15) return; }
+      bt = tt; best = i;
+    });
+    return best;
+  }
+
+  // motifs proposés dans l'interface : seulement ceux validés
+  function validPatterns(Kumiko) {
+    return Object.keys(Kumiko.PATTERNS).filter(k => Kumiko.PATTERNS[k].status === 'valid').map(k => ({ id: k, name: Kumiko.PATTERNS[k].name }));
+  }
+
+  const KumikoLayout = { DENSITY_MAX, CENTERS, faceKey, faceKeys, frameOf, placePanel, summarize, layout, pickFace, validPatterns };
+  if (typeof module !== 'undefined' && module.exports) module.exports = KumikoLayout;
+  else global.KumikoLayout = KumikoLayout;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="design3d-src">
@@ -8218,6 +8624,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       const off = p => [p.x + n[0] * (strutR + 0.004), p.y + n[1] * (strutR + 0.004), p.z + n[2] * (strutR + 0.004)];
       toileB.tri(off(t[0]), off(t[1]), off(t[2]), C('toile'), 5, opts.toile === 'coupe', n, n, n);
     });
+    // panneaux Kumiko (NOMAD-2026-003, aperçu) : segments déjà posés par KumikoLayout, côté intérieur des montants
+    (opts.kumiko || []).forEach(sg => cyl(opaque, F0, sg.a, sg.b, sg.kind === 'waku' ? 0.010 : (sg.kind === 'jigumi' ? 0.006 : 0.0045),
+      C(sg.kind === 'waku' ? 'woodDark' : 'wood'), 2, 6, true, false));
     // mezzanine : plancher, solives de rive, garde-corps sur les bords libres
     const mp = Z.mezzPolygon(model, st.mezz);
     if (mp) {
@@ -11273,7 +11682,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   document.getElementById('tabDesign').addEventListener('click', () => showView('design'));
   document.getElementById('tabBase').addEventListener('click', () => showView('base'));
   // accès du module Design (onglet séparé) au dôme courant
-  window.CoverApp = { dome: () => ds.struct || ds.nominal, label: domeLabel, showView };
+  window.CoverApp = { dome: () => ds.struct || ds.nominal, labels: () => Ouvertures.nodeLabels(ds.nominal), label: domeLabel, showView };
   // « ? » à côté de chaque réglage : ouvre l'explication correspondante
   Object.keys(CoverInfo.HELP_FOR).forEach(id => {
     const input = document.getElementById(id);
@@ -11310,6 +11719,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   const DI = window.DesignImport, esc = DI.escapeHtml;
   const STORE = 'coverplus-design-v1';
   let asideKey = null;   // clé où une sauvegarde illisible a été mise de côté (jamais effacée)
+  // Kumiko (NOMAD-2026-003, aperçu) : réglages du prochain panneau, mode « poser des panneaux », panneau affiché
+  const KL = window.KumikoLayout, KM = window.Kumiko;
+  let kmSet = { pattern: 'asanoha', density: 2, center: 'centroid' }, kmPick = false, kmSel = null, kmCache = null;
   let st = load(), model = null, level = 0, sel = null, built = false;
   let rotY = 0.7, rotX = 0.55, zoom3 = 1, view = { zoom: 1, panX: 0, panY: 0 };
   let toileMode = 'coupe', showZones = true, style3 = 'real', dirty3 = true, eng = null, saveWarn = false;
@@ -11380,6 +11792,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
         <label id="dsLAngle">Ouverture (°)<input type="number" id="dsMezzA" step="5" min="20" max="350"></label>
         <label>Orientation (°)<input type="number" id="dsMezzO" step="5"></label>
       </div>
+      <div class="toolbar" id="dsKumikoBar">
+        <span class="group-title">Kumiko</span>
+        <label>Motif<select id="dsKmPattern">${KL.validPatterns(KM).map(p => '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>').join('')}</select></label>
+        <label>Densité<select id="dsKmDensity">${[1, 2, 3, 4, 5, 6].map(d => '<option value="' + d + '"' + (d === 2 ? ' selected' : '') + '>' + d + ' (' + d * d + ' triangles)</option>').join('')}</select></label>
+        <label>Centre du motif<select id="dsKmCenter"><option value="centroid">Barycentre</option><option value="incenter">Centre du cercle inscrit</option></select></label>
+        <label>Panneaux<span style="display:flex;gap:4px"><button id="dsKmPick">Poser des panneaux</button><button id="dsKmClear">Tout retirer</button></span></label>
+        <label>Aperçu<span class="muted" style="font-size:11px;max-width:260px">🟠 cotes d'axe à axe (lattes sans épaisseur), aucune liste de débit. Cliquer un triangle dans le rendu 3D pour poser ou retirer un panneau.</span></label>
+      </div>
       <div class="panes">
         <section class="pane"><h2><span>PLAN — VUE DU DESSUS</span><span id="dsPlanInfo"></span></h2>
           <div class="body"><canvas id="dsPlan"></canvas><div class="hint">glisser un élément = le déplacer (pas de 5 cm) · poignée ↻ = le faire pivoter (pas de 15°, libre avec Maj) · lâcher hors du dôme ou Suppr = effacer · molette = zoom · double-clic = recadrer</div></div></section>
@@ -11388,6 +11808,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       </div>
       <div class="selection-readout ds-props" id="dsProps"></div>
       <div class="selection-readout" id="dsList"></div>
+      <div class="selection-readout" id="dsKumiko"></div>
       <div class="btnrow ds-actions">
         <button id="dsPrint">Imprimer les plans (PDF) — un plan par niveau, à l'échelle</button>
         <button id="dsExport">Exporter l'aménagement (.json)</button>
@@ -11397,6 +11818,17 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       </div>`;
     syncInputs();
     $('dsLevel').addEventListener('change', e => { level = +e.target.value; sel = null; drawAll(); });
+    $('dsKmPattern').addEventListener('change', e => { kmSet.pattern = e.target.value; });
+    $('dsKmDensity').addEventListener('change', e => { kmSet.density = +e.target.value; });
+    $('dsKmCenter').addEventListener('change', e => { kmSet.center = e.target.value; });
+    $('dsKmPick').addEventListener('click', () => { kmPick = !kmPick; syncKumikoBar(); });
+    $('dsKmClear').addEventListener('click', () => { const b = $('dsKmClear'); if (!kmPanels().length) return;
+      if (b.dataset.armed) { st.kumiko = { panels: [] }; kmSel = null; delete b.dataset.armed; b.textContent = 'Tout retirer'; changed(); }
+      else { b.dataset.armed = 1; b.textContent = 'Confirmer ?'; setTimeout(() => { if ($('dsKmClear')) { delete b.dataset.armed; b.textContent = 'Tout retirer'; } }, 3000); } });
+    $('dsKumiko').addEventListener('click', e => { const t = e.target.closest('[data-km]'); if (!t) return;
+      const face = t.dataset.km;
+      if (t.dataset.act === 'del') { st.kumiko.panels = kmPanels().filter(p => p.face !== face); if (kmSel === face) kmSel = null; return changed(); }
+      kmSel = face; renderKumiko(); });
     $('dsStyle').addEventListener('change', e => { st.style = e.target.value; changed(); });
     $('dsZones').addEventListener('change', e => { showZones = e.target.checked; drawAll(); });
     $('dsToile').addEventListener('change', e => { toileMode = e.target.value; dirty3 = true; draw3D(); });
@@ -11907,8 +12339,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     if (!eng) return draw3DCanvas();
     if (dirty3) {
       const openings = st.openings.map(op => Object.assign(openingGeom(op), { type: op.type, h: op.h, sill: op.sill || 0 }));
-      if (eng.isThree) eng.update(Z, model, st, { style: style3, toile: toileMode, openings }, () => eng.render(cam, toileMode === 'coupe'));
-      else eng.setScene(Design3D.buildScene(Z, model, st, { style: style3, toile: toileMode, models: glbCache, openings }));
+      const kumiko = kmSegments();
+      if (eng.isThree) eng.update(Z, model, st, { style: style3, toile: toileMode, openings, kumiko }, () => eng.render(cam, toileMode === 'coupe'));
+      else eng.setScene(Design3D.buildScene(Z, model, st, { style: style3, toile: toileMode, models: glbCache, openings, kumiko }));
       cam.target[1] = Math.min(cam.target[1], model.height); dirty3 = false;
     }
     eng.render(cam, toileMode === 'coupe');
@@ -11916,7 +12349,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   function events3DGL() {
     const cv = $('ds3d'); let d = null;
     cv.addEventListener('contextmenu', e => e.preventDefault());
-    cv.addEventListener('mousedown', e => { d = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; });
+    cv.addEventListener('mousedown', e => { d = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, pan: e.button === 2 || e.shiftKey }; });
+    cv.addEventListener('mouseup', e => { if (kmPick && d && !d.pan && e.button === 0 && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 5) kmToggleAt(e); });
     window.addEventListener('mousemove', e => {
       if (!d) return; const dx = e.clientX - d.x, dy = e.clientY - d.y; d.x = e.clientX; d.y = e.clientY;
       if (d.pan) { const k = cam.dist * 0.0016, c = Math.cos(cam.yaw), s = Math.sin(cam.yaw); cam.target[0] -= c * dx * k; cam.target[2] += s * dx * k; cam.target[1] = Math.max(0, Math.min(model.height, cam.target[1] + dy * k)); }
@@ -11994,10 +12428,75 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' })); a.download = 'plans-amenagement.html'; document.body.appendChild(a); a.click(); a.remove(); }
   }
 
+  // ---------------------------------------------------------
+  // Kumiko (NOMAD-2026-003) — aperçu : panneaux posés triangle par triangle
+  // ---------------------------------------------------------
+  function kmPanels() { return (st.kumiko && st.kumiko.panels) || []; }
+  // panneaux posés sur le dôme courant (calcul : kumiko-layout.js), gardés tant que le dôme et les panneaux ne changent pas
+  function kmLayout() {
+    const dome = window.CoverApp.dome(), sig = JSON.stringify(kmPanels());
+    if (kmCache && kmCache.dome === dome && kmCache.sig === sig) return kmCache.res;
+    const yBase = Math.min(...dome.points.map(p => p.y));
+    const res = KL.layout(KM, dome, window.CoverApp.labels(), kmPanels(), yBase, -yBase, 0.03);
+    kmCache = { dome, sig, res };
+    return res;
+  }
+  function kmSegments() { return kmLayout().filter(r => r.ok).flatMap(r => r.place.segments3D); }
+  function syncKumikoBar() {
+    const b = $('dsKmPick'); if (!b) return;
+    b.classList.toggle('primary', kmPick); b.textContent = kmPick ? 'Terminer' : 'Poser des panneaux';
+    const h = $('ds3dHint'); if (h && eng) h.textContent = kmPick ? 'Kumiko : clic sur un triangle = poser ou retirer un panneau (' + esc(KM.PATTERNS[kmSet.pattern].name) + ', densité ' + kmSet.density + ') · glisser = tourner'
+      : 'glisser = tourner · clic droit ou Maj + glisser = déplacer · molette = zoom · double-clic = recadrer';
+  }
+  // clic dans la vue 3D en mode « poser » : on pose le panneau, ou on le retire s'il y en a déjà un
+  function kmToggleAt(ev) {
+    const cv = $('ds3d'), r = cv.getBoundingClientRect();
+    const nx = (ev.clientX - r.left) / r.width * 2 - 1, ny = 1 - (ev.clientY - r.top) / r.height * 2;
+    const i = KL.pickFace(model.tris, cam, nx, ny, r.width / r.height, 40, toileMode === 'coupe');
+    if (i < 0) return;
+    const dome = window.CoverApp.dome(), face = KL.faceKey((dome.allFaces || dome.faces)[i].pointIds, window.CoverApp.labels());
+    const list = kmPanels();
+    if (list.some(p => p.face === face)) { st.kumiko = { panels: list.filter(p => p.face !== face) }; if (kmSel === face) kmSel = null; }
+    else { st.kumiko = { panels: list.concat([Object.assign({ face }, kmSet)]) }; kmSel = face; }
+    changed();
+  }
+  function kmPlanSvg(place) {
+    const t = place.tri2D, xs = t.map(p => p.x), ys = t.map(p => p.y), x0 = Math.min(...xs), y0 = Math.min(...ys), W = Math.max(...xs) - x0, H = Math.max(...ys) - y0;
+    // repère du panneau : normale vers l'extérieur ; on le retourne (miroir gauche-droite) pour le montrer vu de l'intérieur du dôme
+    const pad = 70, sc = 320 / Math.max(W, H), P = q => [(pad + (W - (q.x - x0)) * sc).toFixed(1), (pad + (H - (q.y - y0)) * sc).toFixed(1)];
+    const line = (s, w, c) => { const a = P(s.p1), b = P(s.p2); return '<line x1="' + a[0] + '" y1="' + a[1] + '" x2="' + b[0] + '" y2="' + b[1] + '" stroke="' + c + '" stroke-width="' + w + '" stroke-linecap="round"/>'; };
+    const pn = place.panel, g = { x: (t[0].x + t[1].x + t[2].x) / 3, y: (t[0].y + t[1].y + t[2].y) / 3 };
+    const lab = s => { const m = { x: (s.p1.x + s.p2.x) / 2, y: (s.p1.y + s.p2.y) / 2 }, d = Math.hypot(m.x - g.x, m.y - g.y) || 1, q = P({ x: m.x + (m.x - g.x) / d * 28 / sc, y: m.y + (m.y - g.y) / d * 28 / sc });
+      return '<text x="' + q[0] + '" y="' + q[1] + '" font-size="12" text-anchor="middle" dominant-baseline="middle" fill="#76522f">' + esc((Math.round(s.axisLength * 10) / 10).toFixed(1).replace('.', ',')) + '</text>'; };
+    const size = (2 * pad + Math.max(W, H) * sc).toFixed(0);
+    return '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '" style="max-width:100%;font-family:var(--mono)">' +
+      pn.jigumi.map(s => line(s, 2, '#c49868')).join('') + pn.tsukeko.map(s => line(s, 1.4, '#a37a4c')).join('') + pn.waku.map(s => line(s, 4, '#76522f')).join('') + pn.waku.map(lab).join('') + '</svg>';
+  }
+  function renderKumiko() {
+    const el = $('dsKumiko'); if (!el) return;
+    const res = kmLayout();
+    if (!res.length) { el.innerHTML = '<div class="sheet-head"><b>Kumiko</b><span class="muted">aucun panneau — « Poser des panneaux », puis cliquer les triangles dans le rendu 3D</span></div>'; return; }
+    const okN = res.filter(r => r.ok).length, f1 = v => v === null ? '—' : String(v).replace('.', ',');
+    let h = '<div class="sheet-head"><b>Kumiko — ' + okN + ' panneau' + (okN > 1 ? 'x' : '') + '</b><span class="st-badge st-orange">🟠 aperçu : cotes d\'axe à axe, sans épaisseur des lattes — pas de liste de débit</span></div>';
+    h += '<table class="clickable"><tr><th>Triangle</th><th>Motif</th><th>Densité</th><th>Cadre (mm, axe)</th><th>Lattes</th><th>Tsukeko</th><th>Longueur tsukeko (mm, axe)</th><th>Biseaux</th><th></th></tr>';
+    res.forEach(r => {
+      const pn = r.panel, nm = KM.PATTERNS[pn.pattern] ? KM.PATTERNS[pn.pattern].name.split(' — ')[0] : pn.pattern;
+      if (!r.ok) { h += '<tr data-km="' + esc(r.key) + '"><td>' + esc(r.key) + '</td><td>' + esc(nm) + '</td><td>' + esc(pn.density) + '</td><td colspan="5" class="bad">' + esc(r.error) + '</td><td><button data-km="' + esc(r.key) + '" data-act="del">Retirer</button></td></tr>'; return; }
+      const sm = r.place.summary;
+      h += '<tr data-km="' + esc(r.key) + '"' + (kmSel === r.key ? ' class="on"' : '') + '><td><b>' + esc(r.key) + '</b></td><td>' + esc(nm) + '</td><td>' + esc(pn.density) + '</td><td>' + sm.waku.map(f1).join(' / ') +
+        '</td><td>' + sm.jigumi + '</td><td>' + sm.tsukeko + '</td><td>' + (sm.tsukeko ? f1(sm.tsukekoMin) + ' à ' + f1(sm.tsukekoMax) : '—') + '</td><td>' + (sm.tsukeko ? f1(sm.bevelMin) + '° à ' + f1(sm.bevelMax) + '°' : '—') +
+        '</td><td><button data-km="' + esc(r.key) + '" data-act="del">Retirer</button></td></tr>';
+    });
+    h += '</table>';
+    const cur = res.find(r => r.ok && r.key === kmSel) || res.find(r => r.ok);
+    if (cur) h += '<div class="sheet-head" style="margin-top:8px"><b>Plan du panneau ' + esc(cur.key) + '</b><span class="muted">vu de l\'intérieur · cadre (waku), grille (jigumi), pièces du motif (tsukeko) · cotes du cadre en mm, d\'axe à axe</span></div>' + kmPlanSvg(cur.place);
+    el.innerHTML = h;
+  }
+
   function drawAll() {
     if (!visible() || !model) return;
     $('dsDome').innerHTML = 'Dôme <b>' + esc(window.CoverApp.label()) + '</b> <span class="muted">(se règle dans l\'onglet Base, ouvertures comprises)</span>';
-    drawPlanScreen(); draw3D(); renderProps(); renderList();
+    drawPlanScreen(); draw3D(); renderProps(); renderList(); renderKumiko(); syncKumikoBar();
   }
   window.CoverDesign = {
     show() { const first = !built; model = Z.domeModel(window.CoverApp.dome()); if (first) build(); dirty3 = true; if (first && eng) { cam.dist = model.radius * 3.6; cam.target = [0, model.height * 0.38, 0]; } syncInputs(); drawAll(); },

@@ -753,7 +753,8 @@
   }
   function kmPlanSvg(place) {
     const t = place.tri2D, xs = t.map(p => p.x), ys = t.map(p => p.y), x0 = Math.min(...xs), y0 = Math.min(...ys), W = Math.max(...xs) - x0, H = Math.max(...ys) - y0;
-    const pad = 70, sc = 320 / Math.max(W, H), P = q => [(pad + (q.x - x0) * sc).toFixed(1), (pad + (H - (q.y - y0)) * sc).toFixed(1)];
+    // repère du panneau : normale vers l'extérieur ; on le retourne (miroir gauche-droite) pour le montrer vu de l'intérieur du dôme
+    const pad = 70, sc = 320 / Math.max(W, H), P = q => [(pad + (W - (q.x - x0)) * sc).toFixed(1), (pad + (H - (q.y - y0)) * sc).toFixed(1)];
     const line = (s, w, c) => { const a = P(s.p1), b = P(s.p2); return '<line x1="' + a[0] + '" y1="' + a[1] + '" x2="' + b[0] + '" y2="' + b[1] + '" stroke="' + c + '" stroke-width="' + w + '" stroke-linecap="round"/>'; };
     const pn = place.panel, g = { x: (t[0].x + t[1].x + t[2].x) / 3, y: (t[0].y + t[1].y + t[2].y) / 3 };
     const lab = s => { const m = { x: (s.p1.x + s.p2.x) / 2, y: (s.p1.y + s.p2.y) / 2 }, d = Math.hypot(m.x - g.x, m.y - g.y) || 1, q = P({ x: m.x + (m.x - g.x) / d * 28 / sc, y: m.y + (m.y - g.y) / d * 28 / sc });

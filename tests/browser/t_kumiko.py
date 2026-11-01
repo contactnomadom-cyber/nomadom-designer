@@ -16,7 +16,10 @@ with sync_playwright() as p:
     pg.click('#tabDesign'); pg.wait_for_timeout(3000)
     panels = lambda: pg.evaluate("(window.CoverDesign.state().kumiko || { panels: [] }).panels")
     shot = lambda: pg.eval_on_selector('#ds3d', 'c => c.toDataURL()')
-    box = pg.query_selector('#ds3d').bounding_box(); cx, cy = box['x'] + box['width'] * 0.5, box['y'] + box['height'] * 0.45
+    # clic dans le rendu 3D à une position relative ; la position est relue à chaque fois (la page peut défiler)
+    def click3d(fx, fy):
+        pg.eval_on_selector('#ds3d', 'c => c.scrollIntoView({ block: "center" })'); pg.wait_for_timeout(150)
+        bx = pg.query_selector('#ds3d').bounding_box(); pg.mouse.click(bx['x'] + bx['width'] * fx, bx['y'] + bx['height'] * fy)
 
     opts = pg.eval_on_selector_all('#dsKmPattern option', 'o => o.map(x => x.value)')
     check(opts == ['mitsukude', 'asanoha'], 'motifs proposés : seulement les motifs validés (' + str(opts) + ')')
@@ -24,11 +27,11 @@ with sync_playwright() as p:
     img0 = shot()
 
     # sans le mode « poser », un clic ne pose rien
-    pg.mouse.click(cx, cy); pg.wait_for_timeout(600)
+    click3d(0.5, 0.45); pg.wait_for_timeout(600)
     check(panels() == [], 'clic hors mode « poser » : rien')
     pg.click('#dsKmPick'); pg.wait_for_timeout(300)
     check(pg.inner_text('#dsKmPick').strip() == 'Terminer', 'mode « poser » activé')
-    pg.mouse.click(cx, cy); pg.wait_for_timeout(1500)
+    click3d(0.5, 0.45); pg.wait_for_timeout(1500)
     p1 = panels()
     check(len(p1) == 1 and p1[0]['pattern'] == 'asanoha' and p1[0]['density'] == 2, 'clic : un panneau asa-no-ha densité 2 posé (' + str(p1) + ')')
     check(shot() != img0, 'le panneau apparaît dans le rendu 3D')
@@ -38,11 +41,11 @@ with sync_playwright() as p:
           'plan du panneau : 3 côtés de cadre, 3 lattes, 12 tsukeko')
     check(any(v in txt for v in ['824,3', '955,7', '1053,7', '1102,6']), 'cotes du cadre = longueurs de montants de la référence')
 
-    pg.mouse.click(cx, cy); pg.wait_for_timeout(1200)
+    click3d(0.5, 0.45); pg.wait_for_timeout(1200)
     check(panels() == [], 'second clic au même endroit : panneau retiré')
     pg.select_option('#dsKmPattern', 'mitsukude'); pg.select_option('#dsKmDensity', '3')
-    pg.mouse.click(cx, cy); pg.wait_for_timeout(1200)
-    pg.mouse.click(cx + box['width'] * 0.12, cy - box['height'] * 0.12); pg.wait_for_timeout(1200)
+    click3d(0.5, 0.45); pg.wait_for_timeout(1200)
+    click3d(0.62, 0.33); pg.wait_for_timeout(1200)
     p2 = panels()
     check(len(p2) == 2 and all(x['pattern'] == 'mitsukude' and x['density'] == 3 for x in p2) and p2[0]['face'] != p2[1]['face'],
           'deux triangles différents : 2 panneaux mitsukude densité 3')
