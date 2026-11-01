@@ -6,7 +6,10 @@
 (function () {
   'use strict';
   const Z = window.Design;
+  // M1 : contrôle des données importées ou relues, texte sûr dans le HTML (design-import.js)
+  const DI = window.DesignImport, esc = DI.escapeHtml;
   const STORE = 'coverplus-design-v1';
+  let asideKey = null;   // clé où une sauvegarde illisible a été mise de côté (jamais effacée)
   let st = load(), model = null, level = 0, sel = null, built = false;
   let rotY = 0.7, rotX = 0.55, zoom3 = 1, view = { zoom: 1, panX: 0, panY: 0 };
   let toileMode = 'coupe', showZones = true, style3 = 'real', dirty3 = true, eng = null, saveWarn = false;
@@ -17,9 +20,36 @@
   const $ = id => document.getElementById(id);
 
   function load() {
-    try { const s = JSON.parse(localStorage.getItem(STORE)); if (s && s.version === 1) return Object.assign(Z.defaultState(), s, { openings: [], mezz: Object.assign(Z.defaultState().mezz, s.mezz) }); } catch (e) {}
+    let raw = null;
+    try { raw = localStorage.getItem(STORE); } catch (e) { return Z.defaultState(); }
+    if (raw === null) return Z.defaultState();
+    let s = null;
+    try { s = JSON.parse(raw); } catch (e) {}
+    const r = s && s.version === 1 ? DI.validateState(s, Z.defaultState(), Z.LIBRARY) : null;
+    if (r && r.ok) return r.state;
+    setAside(raw);   // illisible ou non conforme : gardée de côté au lieu d'être écrasée par la prochaine sauvegarde
     return Z.defaultState();
   }
+  function setAside(raw) {
+    try {
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.indexOf(STORE + '.') === 0 && localStorage.getItem(k) === raw) { asideKey = k; return; } }
+      asideKey = STORE + '.mis-de-cote-' + new Date().toISOString().replace(/[:.]/g, '-');
+      localStorage.setItem(asideKey, raw);
+    } catch (e) { asideKey = null; }
+  }
+  // remplace l'aménagement en entier, ou rien : si l'affichage échoue, on revient à l'ancien
+  function applyState(next) {
+    const prev = st, prevSel = sel;
+    try { st = next; sel = null; syncInputs(); dirty3 = true; drawAll(); }
+    catch (err) {
+      st = prev; sel = prevSel;
+      try { syncInputs(); dirty3 = true; drawAll(); } catch (e) {}
+      return refuse(['le fichier ne peut pas être affiché (' + err.message + ')']);
+    }
+    save();
+    (st.models || []).forEach(loadModel);
+  }
+  function refuse(errors) { alertBox('Import refusé — ' + errors.join(' ; ') + '. L\'aménagement en cours n\'a pas changé.'); }
   function save() { try { localStorage.setItem(STORE, JSON.stringify(st)); saveWarn = false; } catch (e) { saveWarn = true; } }
   function changed() { save(); dirty3 = true; drawAll(); }
 
@@ -93,8 +123,14 @@
     });
     $('dsImport').addEventListener('change', e => {
       const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      if (f.size > DI.LIMITS.jsonBytes) return refuse(['fichier trop lourd (plus de ' + Math.round(DI.LIMITS.jsonBytes / 1048576) + ' Mo)']);
       const r = new FileReader();
-      r.onload = ev => { try { const s = JSON.parse(ev.target.result); st = Object.assign(Z.defaultState(), s, { openings: [], mezz: Object.assign(Z.defaultState().mezz, s.mezz) }); sel = null; (st.models || []).forEach(loadModel); syncInputs(); changed(); } catch (err) { alertBox('Fichier illisible : ce n\'est pas un aménagement Nomad\'Om Designer.'); } };
+      r.onerror = () => refuse(['fichier illisible']);
+      r.onload = ev => {
+        const res = DI.parseImport(ev.target.result, Z.defaultState(), Z.LIBRARY);
+        if (!res.ok) return refuse(res.errors);
+        applyState(res.state);
+      };
       r.readAsText(f);
     });
     $('dsClear').addEventListener('click', () => { if ($('dsClear').dataset.armed) { st = Z.defaultState(); sel = null; syncInputs(); changed(); delete $('dsClear').dataset.armed; $('dsClear').textContent = 'Tout effacer'; } else { $('dsClear').dataset.armed = 1; $('dsClear').textContent = 'Confirmer : tout effacer ?'; setTimeout(() => { if ($('dsClear')) { delete $('dsClear').dataset.armed; $('dsClear').textContent = 'Tout effacer'; } }, 3000); } });
@@ -110,7 +146,7 @@
     window.addEventListener('resize', () => { if (visible()) drawAll(); });
     built = true;
   }
-  function alertBox(t) { $('dsProps').innerHTML = '<span class="ds-warn">' + t + '</span>'; }
+  function alertBox(t) { $('dsProps').innerHTML = '<span class="ds-warn">' + esc(t) + '</span>'; }
   function visible() { return $('viewDesign') && $('viewDesign').style.display !== 'none'; }
   function syncInputs() {
     const m = st.mezz;
@@ -411,7 +447,7 @@
     let box = $('dsUndo');
     if (!box) { box = document.createElement('div'); box.id = 'dsUndo'; box.className = 'overlay-sel'; box.style.left = 'auto'; box.style.right = '8px';
       $('dsPlan').parentNode.appendChild(box); }
-    box.innerHTML = '🗑 ' + it.name + ' supprimé <button style="font-family:var(--mono);font-size:11px;padding:3px 8px;margin-left:6px;cursor:pointer">Annuler</button>';
+    box.innerHTML = '🗑 ' + esc(it.name) + ' supprimé <button style="font-family:var(--mono);font-size:11px;padding:3px 8px;margin-left:6px;cursor:pointer">Annuler</button>';
     box.style.display = '';
     box.querySelector('button').onclick = () => {
       Object.assign(it, orig); st.items.splice(Math.min(idx, st.items.length), 0, it); sel = { kind: 'item', id: it.id };
@@ -436,11 +472,11 @@
       const it = st.items.find(i => i.id === sel.id); if (!it) { sel = null; return renderProps(); }
       const L = Z.libOf(it.type), issues = Z.checkItem(model, st, it), access = it.type === 'escalier' || it.type === 'echelle';
       el.innerHTML = `<div class="sheet-head"><b>${L.label}</b>${issues.length ? '<span class="ds-warn">⚠ ' + issues.join(' · ') + '</span>' : '<span class="muted">✓ tient à sa place</span>'}</div>
-        <label>Nom<input type="text" data-k="name" value="${it.name.replace(/"/g, '&quot;')}"></label>
+        <label>Nom<input type="text" data-k="name" value="${esc(it.name)}"></label>
         ${num('w', it.w, 'Largeur (m)')}${num('d', it.d, 'Profondeur (m)')}${num('h', it.h, access ? 'Hauteur à monter (m)' : 'Hauteur (m)')}
         ${num('rot', it.rot || 0, 'Rotation (°)', 15)}${num('x', it.x, 'Position X (m)')}${num('z', it.z, 'Position Z (m)')}
         ${access ? '' : `<label>Niveau<select data-k="level"><option value="0"${it.level ? '' : ' selected'}>Rez</option><option value="1"${it.level ? ' selected' : ''}${st.mezz.on ? '' : ' disabled'}>Mezzanine</option></select></label>`}
-        <label>Modèle 3D<select data-k="model"><option value="">Modélisé (par défaut)</option>${(st.models || []).map(m => '<option value="' + m.id + '"' + (it.model === m.id ? ' selected' : '') + '>' + m.name + (m.error ? ' (illisible)' : '') + '</option>').join('')}</select></label>
+        <label>Modèle 3D<select data-k="model"><option value="">Modélisé (par défaut)</option>${(st.models || []).map(m => '<option value="' + esc(m.id) + '"' + (it.model === m.id ? ' selected' : '') + '>' + esc(m.name) + (m.error ? ' (illisible)' : '') + '</option>').join('')}</select></label>
         <label class="img-btn" style="flex-direction:row;padding:5px 10px;margin-top:12px">Importer un .glb…<input type="file" data-act="glb" accept=".glb,model/gltf-binary"></label>
         ${it.model ? '<div class="muted">Le modèle importé est mis aux dimensions ci-dessus (largeur × hauteur × profondeur). Il est gardé dans l\'aménagement et dans le fichier .json exporté.</div>' : ''}
         <div><button data-act="rot90">↻ Tourner 90°</button><button data-act="dup">Dupliquer</button><button data-act="del" class="danger">Supprimer</button></div>`;
@@ -476,14 +512,15 @@
   }
   function renderList() {
     const s = Z.stats(model, st);
-    let h = '<div class="sheet-head"><b>Surfaces et volume</b><span class="muted">calculés sur les facettes réelles du dôme (' + window.CoverApp.label() + ', surface des nœuds)</span></div>';
+    let h = '<div class="sheet-head"><b>Surfaces et volume</b><span class="muted">calculés sur les facettes réelles du dôme (' + esc(window.CoverApp.label()) + ', surface des nœuds)</span></div>';
     h += '<div class="sheet-kpis"><span>Ø au sol <b>' + fr(s.diameter) + ' m</b></span><span>Hauteur <b>' + fr(s.height) + ' m</b></span><span>Sol <b>' + fr(s.ground, 1) + ' m²</b></span>' +
       '<span>Debout (≥ 1,80 m) <b>' + fr(s.stand, 1) + ' m²</b></span><span>Assis (≥ 1,00 m) <b>' + fr(s.sit, 1) + ' m²</b></span><span>Volume <b>' + fr(s.volume, 1) + ' m³</b></span>' +
       (st.mezz.on ? '<span>Mezzanine <b>' + fr(s.mezz, 1) + ' m²</b> (debout ' + fr(s.mezzStand, 1) + ', assis ' + fr(s.mezzSit, 1) + ')</span><span>Surface totale <b>' + fr(s.ground + s.mezz, 1) + ' m²</b></span>' : '') + '</div>';
+    if (asideKey) h += '<div class="ds-warn">⚠ L\'aménagement enregistré dans ce navigateur était illisible : il n\'a pas été effacé, il est gardé de côté (« ' + esc(asideKey) + ' »).</div>';
     if (saveWarn) h += '<div class="ds-warn">⚠ Les modèles importés sont trop lourds pour la sauvegarde automatique du navigateur : utilisez « Exporter l\'aménagement (.json) » pour les garder.</div>';
     if (st.mezz.on && !Z.mezzPolygon(model, st.mezz)) h += '<div class="ds-warn">⚠ La mezzanine est trop haute : le plancher dépasse le sommet du dôme.</div>';
     else if (st.mezz.on && s.mezzSit < 0.5) h += '<div class="ds-warn">⚠ Sur la mezzanine, il reste moins d\'1 m sous la toile presque partout : baisser le plancher (le dôme fait ' + fr(s.height) + ' m de haut).</div>';
-    const rows = st.items.map(it => { const iss = Z.checkItem(model, st, it); return `<tr data-sel="item:${it.id}"${sel && sel.id === it.id ? ' class="on"' : ''}><td><b>${it.name}</b></td><td>${it.level ? 'Mezzanine' : 'Rez'}</td><td>${cm(it.w)} × ${cm(it.d)} × ${cm(it.h)} cm</td><td>${it.rot || 0}°</td><td>${iss.length ? '<span class="ds-warn">⚠ ' + iss.join(' · ') + '</span>' : '✓'}</td></tr>`; }).join('') +
+    const rows = st.items.map(it => { const iss = Z.checkItem(model, st, it); return `<tr data-sel="item:${esc(it.id)}"${sel && sel.id === it.id ? ' class="on"' : ''}><td><b>${esc(it.name)}</b></td><td>${it.level ? 'Mezzanine' : 'Rez'}</td><td>${cm(it.w)} × ${cm(it.d)} × ${cm(it.h)} cm</td><td>${esc(it.rot || 0)}°</td><td>${iss.length ? '<span class="ds-warn">⚠ ' + iss.join(' · ') + '</span>' : '✓'}</td></tr>`; }).join('') +
       st.openings.map(op => { const g = openingGeom(op); return `<tr data-sel="open:${op.id}"${sel && sel.id === op.id ? ' class="on"' : ''}><td><b>${Z.OPENINGS.find(o => o.type === op.type).label}</b></td><td>Rez, côté ${g.edge + 1}</td><td>${cm(op.w)} × ${cm(op.h)} cm, allège ${cm(op.sill || 0)}</td><td></td><td>${(c => c.length ? '<span style="color:#a8650f">ⓘ ' + c.join(' · ') + '</span>' : '✓')(openingCheck(op))}</td></tr>`; }).join('');
     h += rows ? '<table class="clickable"><tr><th>Élément</th><th>Niveau</th><th>Dimensions</th><th>Rotation</th><th>Place</th></tr>' + rows + '</table>' : '<div class="muted">Aucun élément pour l\'instant.</div>';
     $('dsList').innerHTML = h;
@@ -600,9 +637,15 @@
       .catch(err => { m.error = err.message; renderProps(); });
   }
   function importGLB(file, it) {
+    const fail = m => { const p = $('dsProps'); if (p) p.insertAdjacentHTML('beforeend', '<div class="ds-warn">Import impossible : ' + esc(m) + '</div>'); };
+    const tooBig = DI.checkGlb(file.size, null); if (tooBig) return fail(tooBig);
     const r = new FileReader();
+    r.onerror = () => fail('fichier illisible');
     r.onload = ev => {
-      Design3D.parseGLB(ev.target.result).then(g => {
+      const buf = ev.target.result, bad = DI.checkGlb(buf.byteLength, buf.slice(0, 12)); if (bad) return fail(bad);
+      Design3D.parseGLB(buf).then(g => {
+        if (!g || !g.size || !g.size.every(v => isFinite(v))) throw new Error('dimensions du modèle illisibles');
+        if (st.items.indexOf(it) < 0) return;   // élément supprimé pendant la lecture
         const id = 'm' + Date.now().toString(36);
         st.models = st.models || [];
         st.models.push({ id, name: file.name.replace(/\.glb$/i, ''), data: bufToB64(ev.target.result) });
@@ -612,7 +655,7 @@
         const rc = v => Math.max(0.05, Math.round(v * 100) / 100);
         it.w = rc(g.size[0]); it.h = rc(g.size[1]); it.d = rc(g.size[2]);
         changed();
-      }).catch(err => { $('dsProps').insertAdjacentHTML('beforeend', '<div class="ds-warn">Import impossible : ' + err.message + '</div>'); });
+      }).catch(err => fail(err instanceof RangeError || err instanceof SyntaxError || err instanceof TypeError ? 'fichier .glb abîmé ou tronqué' : (err && err.message) || 'fichier illisible'));
     };
     r.readAsArrayBuffer(file);
   }
@@ -631,9 +674,9 @@
       // échelle + nord
       const sb = [`<g transform="translate(4 ${size - 8})"><rect x="0" y="0" width="${k}" height="1.6" fill="#000"/><rect x="${k}" y="0" width="${k}" height="1.6" fill="#fff" stroke="#000" stroke-width="0.2"/><text x="0" y="5" font-size="2.6" text-anchor="middle">0</text><text x="${k}" y="5" font-size="2.6" text-anchor="middle">1</text><text x="${2 * k}" y="5" font-size="2.6" text-anchor="middle">2 m</text></g>`,
         `<g transform="translate(${size - 8} 10)"><path d="M0,-6 L2.5,2 L0,0.4 L-2.5,2 z" fill="#000"/><text x="0" y="-8.5" font-size="3" font-weight="700" text-anchor="middle">N</text></g>`];
-      const legend = st.items.filter(it => (it.level || 0) === lvl).map(it => `<tr><td>${it.name}</td><td>${cm(it.w)} × ${cm(it.d)} × ${cm(it.h)} cm</td><td>${Z.checkItem(model, st, it).join(', ') || '✓'}</td></tr>`).join('') +
+      const legend = st.items.filter(it => (it.level || 0) === lvl).map(it => `<tr><td>${esc(it.name)}</td><td>${cm(it.w)} × ${cm(it.d)} × ${cm(it.h)} cm</td><td>${Z.checkItem(model, st, it).join(', ') || '✓'}</td></tr>`).join('') +
         (lvl === 0 ? st.openings.map(op => { const g = openingGeom(op); return `<tr><td>${Z.OPENINGS.find(o => o.type === op.type).label}</td><td>${cm(op.w)} × ${cm(op.h)} cm, allège ${cm(op.sill || 0)} cm, côté ${g.edge + 1}</td><td>${openingCheck(op).join(' · ') || '✓'}</td></tr>`; }).join('') : '');
-      return `<section class="page"><header><div><h1>${lvl ? 'Mezzanine' : 'Rez-de-chaussée'}</h1><div class="sub">Dôme ${window.CoverApp.label()} · plan d'aménagement · échelle 1:${scale}</div></div>
+      return `<section class="page"><header><div><h1>${lvl ? 'Mezzanine' : 'Rez-de-chaussée'}</h1><div class="sub">Dôme ${esc(window.CoverApp.label())} · plan d'aménagement · échelle 1:${scale}</div></div>
         <div class="kpi">${lvl ? 'Plancher à ' + fr(st.mezz.h) + ' m · ' + fr(s.mezz, 1) + ' m² (debout ' + fr(s.mezzStand, 1) + ' m²)' : 'Sol ' + fr(s.ground, 1) + ' m² · debout ' + fr(s.stand, 1) + ' m² · assis ' + fr(s.sit, 1) + ' m²'}<br>Ø au sol ${fr(s.diameter)} m · hauteur ${fr(s.height)} m · volume ${fr(s.volume, 1)} m³</div></header>
         <svg xmlns="http://www.w3.org/2000/svg" width="${size}mm" height="${size}mm" viewBox="0 0 ${size} ${size}" style="font-family:'IBM Plex Mono',monospace">${out.join('')}${sb.join('')}</svg>
         <div class="legend-l">Traits fins pointillés : hauteur sous plafond (debout ≥ 1,80 m, assis ≥ 1,00 m) · traits gris : montants vus du dessus · ⚠ = élément qui touche la paroi ou trop haut à sa place.</div>
@@ -653,7 +696,7 @@
 
   function drawAll() {
     if (!visible() || !model) return;
-    $('dsDome').innerHTML = 'Dôme <b>' + window.CoverApp.label() + '</b> <span class="muted">(se règle dans l\'onglet Base, ouvertures comprises)</span>';
+    $('dsDome').innerHTML = 'Dôme <b>' + esc(window.CoverApp.label()) + '</b> <span class="muted">(se règle dans l\'onglet Base, ouvertures comprises)</span>';
     drawPlanScreen(); draw3D(); renderProps(); renderList();
   }
   window.CoverDesign = {

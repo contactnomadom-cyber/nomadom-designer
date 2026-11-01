@@ -67,13 +67,13 @@ nomadom-designer/
 │   │                          # view2d.js (Vue aplatie, pelure d'orange, plan de coupe sur le rouleau)
 │   ├── ui/info.js             # onglet Informations, aide
 │   └── products/
-│       ├── habitat/           # design.js, designui.js (aménagement intérieur)
+│       ├── habitat/           # design.js, designui.js (aménagement intérieur), design-import.js (contrôle des imports)
 │       └── quadrisphere/      # quadri-geom.js, quadri-ui.js
 ├── vendor/three/threekit-r169.js   # Three.js r169 empaqueté (ne pas modifier)
 ├── data/references/           # références de validation figées (antiprism/, domerama/, domes/, workshop/)
 ├── tests/
-│   ├── node/                  # engine, textile, arcs, peel, dome-state, unfold, status, plan-rules, compare-strategies (logique pure)
-│   └── browser/               # Playwright : t_beta, t_status, t_names, t_cleanup, t_laize, t_bottom, t_kruschke_align, t_stale_optim, t_smoke_quadri, t_axes_block, t_openings, t_diameter
+│   ├── node/                  # engine, textile, arcs, peel, dome-state, unfold, status, plan-rules, design-import, compare-strategies (logique pure)
+│   └── browser/               # Playwright : t_beta, t_status, t_names, t_cleanup, t_laize, t_bottom, t_kruschke_align, t_stale_optim, t_smoke_quadri, t_axes_block, t_openings, t_diameter, t_design_import
 ├── docs/                      # architecture (ADR), audits, validation, glossaire
 ├── scripts/                   # build, test-all, release, split
 └── dist/nomadom-designer.html # fichier livré (généré, jamais modifié à la main)
