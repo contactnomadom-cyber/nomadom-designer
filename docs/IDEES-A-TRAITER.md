@@ -43,7 +43,7 @@ Statuts : 💡 idée · ❓ questions ouvertes · ⏸ en suspens · 🛠 en cour
 
 ---
 
-## 3. Panneaux Kumiko dans l'aménagement Design — 🛠 en cours (30/10/2026, mis à jour le 01/11/2026)
+## 3. Panneaux Kumiko dans l'aménagement Design — ✅ aperçu fait en 0.9.15 · 💡 liste de débit à venir (30/10/2026, mis à jour le 01/11/2026)
 
 **Besoin** : intégrer les panneaux décoratifs Kumiko (lattes de bois assemblées en motifs japonais, posées dans les triangles) comme **option de l'aménagement Design** (`src/products/habitat/`), pas comme produit séparé. Vocabulaire conservé : kumiko, waku (cadre), jigumi (grille), tsukeko (pièces du motif).
 
@@ -55,7 +55,8 @@ Statuts : 💡 idée · ❓ questions ouvertes · ⏸ en suspens · 🛠 en cour
 **Décidé (Nathan, 01/11/2026)**
 - Panneaux posés **triangle par triangle** sur le dôme (fenêtres, motifs choisis).
 - Première version (NOMAD-2026-003) : **aperçu seulement** — motif visible sur le dôme et plan de chaque panneau, cotes indicatives (🟠). La liste de débit viendra avec les sections réelles des lattes.
-- Moteur NOMAD-2026-002 fusionné dans `main` (hors HTML assemblé tant que l'interface n'est pas faite).
+- Moteur NOMAD-2026-002 fusionné dans `main`, interface NOMAD-2026-003 publiée en 0.9.15.
+- Revue visuelle Gemini **reportée** à une étape plus avancée du projet ; dossier de revue prêt (captures + questions).
 
 **Bilan du moteur (NOMAD-2026-002, 01/11/2026)**
 - Juste pour ce qu'il fait : motif défini une fois en barycentriques, projeté sur le triangle réel ; biseaux recalculés sur le vrai triangle (sur la référence 3V Ø 5 m, ils vont de 25° à 35°, pas 30° partout). 25 tests sur 25.
@@ -72,6 +73,7 @@ Statuts : 💡 idée · ❓ questions ouvertes · ⏸ en suspens · 🛠 en cour
 ---
 
 ## Fait
+- ✅ 0.9.15 — Kumiko dans le Design, aperçu (NOMAD-2026-002 moteur, NOMAD-2026-003 interface) : pose triangle par triangle dans la 3D, tableau et plan du panneau, statut 🟠.
 - ✅ 0.9.14 — M1 : données sûres dans l'aménagement Design (imports .json et .glb contrôlés, texte échappé, sauvegarde illisible mise de côté).
 - ✅ 0.9.13 — A10 : architecture restructurée (objet dôme unique, calculs dans des modules testés, interface < 2 000 lignes) ; Ø affiché = Ø calculé.
 - ✅ 0.9.12 — Pelure « 5 fentes — suivant les gabarits (zigzag) » ; découpe « axes » gardée avec avertissement et sans document de fabrication ; ADR-0002 étanchéité avant tout.

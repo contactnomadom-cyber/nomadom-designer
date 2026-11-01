@@ -7,6 +7,15 @@
 
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
+## 0.9.15 — 01/11/2026 (NOMAD-2026-002 et 003 : Kumiko dans le Design, aperçu)
+- Onglet Design : nouvelle barre **Kumiko**. On choisit un motif (asa-no-ha ou mitsukude), une densité (1 à 6) et le centre du motif, puis « Poser des panneaux » : un clic sur un triangle du rendu 3D pose un panneau, un second clic le retire.
+- Les lattes apparaissent dans le rendu 3D (côté intérieur, sous les montants). Un tableau liste les panneaux (triangle, motif, cadre, lattes, tsukeko, longueurs, biseaux) et montre le plan du panneau choisi, vu de l'intérieur.
+- **Aperçu 🟠** : cotes d'axe à axe, lattes sans épaisseur, panneau pris nœud à nœud. Aucune liste de débit tant que les sections réelles des lattes et des montants ne sont pas fournies.
+- Les panneaux sont repérés par leurs trois nœuds : ils suivent un changement de diamètre ; si la géométrie change (fréquence, coupe), ils sont gardés et signalés « absent de ce dôme ». Ils sont sauvegardés, exportés et réimportés avec l'aménagement (contrôlés comme le reste, M1).
+- Moteur Kumiko (NOMAD-2026-002) repris du projet Claude, logique inchangée.
+- Revue visuelle Gemini reportée par Nathan à une étape plus avancée du projet (01/11/2026).
+- Contrôles : nouvelles suites `kumiko` (moteur, 25), `kumiko_layout` (pose, 19), `design` étendue (57) et `t_kumiko` (navigateur, 19). 25 suites au total.
+
 ## 0.9.14 — 01/11/2026 (M1 : données sûres dans l'aménagement Design)
 - Import d'un aménagement (.json) : un fichier mal formé, d'une autre version, avec des valeurs impossibles ou de plus de 50 Mo est **refusé en entier**, avec la raison (« Import refusé — … »). L'aménagement en cours et la sauvegarde du navigateur ne changent pas.
 - Un fichier incomplet est complété avec les dimensions de la bibliothèque (comme avant).
