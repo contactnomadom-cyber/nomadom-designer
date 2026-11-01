@@ -6,7 +6,7 @@
 | Demandeur | Nathan |
 | Exécutant | Claude Code |
 | Niveau | Technique (documentaire seulement) |
-| Statut | En revue |
+| Statut | Validée |
 
 > Numéro : Nathan a accepté « NOMAD-2026-002 » le 01/11/2026, mais `docs/IDEES-A-TRAITER.md` réserve déjà 002 et 003 au moteur Kumiko. Pour éviter un doublon, cette mission prend le premier numéro libre, **004** — à confirmer par Nathan (voir `DECISIONS-A-PRENDRE.md`, D1).
 
@@ -53,4 +53,4 @@ Aucun sur l'application (rien de code n'est touché). Risque documentaire : qu'u
 Voir le message de fin de mission et `AUDIT-2026-11-01.md` § 9 (état des tests).
 
 ## Décision finale de Nathan
-À venir.
+Validée — 01/11/2026. Les 12 décisions de `DECISIONS-A-PRENDRE.md` restent ouvertes.
