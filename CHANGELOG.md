@@ -7,6 +7,14 @@
 
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
+## 0.9.14 — 01/11/2026 (M1 : données sûres dans l'aménagement Design)
+- Import d'un aménagement (.json) : un fichier mal formé, d'une autre version, avec des valeurs impossibles ou de plus de 50 Mo est **refusé en entier**, avec la raison (« Import refusé — … »). L'aménagement en cours et la sauvegarde du navigateur ne changent pas.
+- Un fichier incomplet est complété avec les dimensions de la bibliothèque (comme avant).
+- Les noms d'éléments et de modèles 3D sont toujours affichés comme du texte (liste, propriétés, annulation, plans imprimés) : un fichier ne peut plus injecter de code dans la page.
+- Modèle 3D (.glb) : un fichier de plus de 15 Mo, sans signature glTF ou tronqué est refusé (« Import impossible — … ») sans toucher l'élément. Les vrais .glb s'importent comme avant.
+- Sauvegarde du navigateur illisible : gardée de côté (clé `coverplus-design-v1.mis-de-cote-…`) au lieu d'être écrasée, avec un avertissement dans le Design.
+- Contrôles : nouvelles suites `design` (Node, 51 contrôles) et `t_design_import` (navigateur, 43 contrôles ; 20 échouaient sur la 0.9.13). 22 suites au total.
+
 ## 0.9.13 — 30/10/2026 (A10 : architecture restructurée)
 - Aucun changement visible, sauf une correction : quand la case Ø est vide, l'en-tête, les fiches de traçage imprimées et le tableau des triangles de base affichaient « ØNaN m » ; ils affichent maintenant le Ø réellement calculé (5,00 m).
 - Objet dôme unique (`src/core/dome-state.js`) : dômes calculés, toile, découpe et ouvertures au même endroit ; plus de réglages en double.
