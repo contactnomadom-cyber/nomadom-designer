@@ -43,7 +43,7 @@ Statuts : 💡 idée · ❓ questions ouvertes · ⏸ en suspens · 🛠 en cour
 
 ---
 
-## 3. Panneaux Kumiko dans l'aménagement Design — ❓ (30/10/2026)
+## 3. Panneaux Kumiko dans l'aménagement Design — 🛠 en cours (30/10/2026, mis à jour le 01/11/2026)
 
 **Besoin** : intégrer les panneaux décoratifs Kumiko (lattes de bois assemblées en motifs japonais, posées dans les triangles) comme **option de l'aménagement Design** (`src/products/habitat/`), pas comme produit séparé. Vocabulaire conservé : kumiko, waku (cadre), jigumi (grille), tsukeko (pièces du motif).
 
@@ -52,9 +52,22 @@ Statuts : 💡 idée · ❓ questions ouvertes · ⏸ en suspens · 🛠 en cour
 - Point de départ : le moteur et les tests Kumiko du projet Claude « Acidome Cover+ » — ils fonctionnaient ; voir s'ils peuvent être améliorés avant intégration.
 - Mission pilote de la gouvernance multi-IA (ADR-0003), découpée en deux fiches : NOMAD-2026-002 (moteur seul, niveau Technique) puis NOMAD-2026-003 (interface Design, niveau Visuel avec revue Gemini).
 
+**Décidé (Nathan, 01/11/2026)**
+- Panneaux posés **triangle par triangle** sur le dôme (fenêtres, motifs choisis).
+- Première version (NOMAD-2026-003) : **aperçu seulement** — motif visible sur le dôme et plan de chaque panneau, cotes indicatives (🟠). La liste de débit viendra avec les sections réelles des lattes.
+- Moteur NOMAD-2026-002 fusionné dans `main` (hors HTML assemblé tant que l'interface n'est pas faite).
+
+**Bilan du moteur (NOMAD-2026-002, 01/11/2026)**
+- Juste pour ce qu'il fait : motif défini une fois en barycentriques, projeté sur le triangle réel ; biseaux recalculés sur le vrai triangle (sur la référence 3V Ø 5 m, ils vont de 25° à 35°, pas 30° partout). 25 tests sur 25.
+- **Cotes d'axe à axe** : lattes, cadre (waku) et montants sont traités comme des traits sans épaisseur. Les longueurs de coupe réelles seront plus courtes (de l'ordre de la largeur de latte divisée par le sinus de l'angle de rencontre). → À corriger avant toute liste de débit.
+- Le panneau prend le triangle **nœud à nœud** ; le vrai cadre se loge entre les montants (triangle réduit de la demi-section du montant). → Idem.
+- Unités en mm (le reste de l'appli est en mètres, ADR-0001 § 7) : conversion faite à l'entrée et à la sortie du moteur, sans le modifier.
+- Motifs validés : mitsukude (grille seule), asa-no-ha. À définir avec Nathan avant usage : goma, rindō, kikkō.
+- Exemple, référence 3V Ø 5 m, asa-no-ha densité 2 : 12 tsukeko par panneau, de 224 à 314 mm selon le triangle (T1, T2, T3).
+
 **Questions ouvertes ❓**
-1. Quelles améliorations du moteur (justesse des cotes, fabrication des lattes, performance) ? Réponse attendue du bilan de NOMAD-2026-002.
-2. Documents de fabrication Kumiko (liste de débit des lattes, angles) dès la première version, ou seulement l'aperçu ?
+1. Sections réelles : largeur et épaisseur des lattes, section des montants (pour passer de l'aperçu à la liste de débit).
+2. Définition des motifs goma, rindō, kikkō.
 
 ---
 
