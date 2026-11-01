@@ -1920,7 +1920,7 @@
   document.getElementById('tabDesign').addEventListener('click', () => showView('design'));
   document.getElementById('tabBase').addEventListener('click', () => showView('base'));
   // accès du module Design (onglet séparé) au dôme courant
-  window.CoverApp = { dome: () => ds.struct || ds.nominal, label: domeLabel, showView };
+  window.CoverApp = { dome: () => ds.struct || ds.nominal, labels: () => Ouvertures.nodeLabels(ds.nominal), label: domeLabel, showView };
   // « ? » à côté de chaque réglage : ouvre l'explication correspondante
   Object.keys(CoverInfo.HELP_FOR).forEach(id => {
     const input = document.getElementById(id);

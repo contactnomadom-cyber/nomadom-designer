@@ -454,6 +454,9 @@
       const off = p => [p.x + n[0] * (strutR + 0.004), p.y + n[1] * (strutR + 0.004), p.z + n[2] * (strutR + 0.004)];
       toileB.tri(off(t[0]), off(t[1]), off(t[2]), C('toile'), 5, opts.toile === 'coupe', n, n, n);
     });
+    // panneaux Kumiko (NOMAD-2026-003, aperçu) : segments déjà posés par KumikoLayout, côté intérieur des montants
+    (opts.kumiko || []).forEach(sg => cyl(opaque, F0, sg.a, sg.b, sg.kind === 'waku' ? 0.010 : (sg.kind === 'jigumi' ? 0.006 : 0.0045),
+      C(sg.kind === 'waku' ? 'woodDark' : 'wood'), 2, 6, true, false));
     // mezzanine : plancher, solives de rive, garde-corps sur les bords libres
     const mp = Z.mezzPolygon(model, st.mezz);
     if (mp) {

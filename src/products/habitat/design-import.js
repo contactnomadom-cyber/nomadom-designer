@@ -21,7 +21,7 @@
   const LIMITS = Object.freeze({
     jsonBytes: 50 * 1024 * 1024,   // fichier .json importé (modèles 3D compris)
     glbBytes: 15 * 1024 * 1024,    // un fichier .glb
-    items: 2000, models: 100, text: 500, id: 64,
+    items: 2000, models: 100, text: 500, id: 64, kumikoPanels: 500, kumikoDensity: 6,
     size: 1000,       // m : |largeur|, |profondeur|, |hauteur| d'un élément
     position: 10000,  // m : |x|, |z|
     angle: 36000      // degrés
@@ -104,6 +104,25 @@
       }
     }
     if (raw.style !== undefined) { if (STYLES.indexOf(raw.style) < 0) err('style de plan inconnu'); else out.style = raw.style; }
+
+    // panneaux Kumiko (NOMAD-2026-003) : un panneau par triangle, repéré par ses 3 nœuds
+    if (raw.kumiko !== undefined) {
+      if (!isObj(raw.kumiko) || !Array.isArray(raw.kumiko.panels)) err('« kumiko » doit contenir une liste « panels »');
+      else if (raw.kumiko.panels.length > LIMITS.kumikoPanels) err('trop de panneaux Kumiko (' + raw.kumiko.panels.length + ')');
+      else {
+        const byFace = new Map();
+        raw.kumiko.panels.forEach((pn, i) => {
+          const where = 'panneau Kumiko ' + (i + 1);
+          if (!isObj(pn) || typeof pn.face !== 'string' || !/^N\d{1,4}-N\d{1,4}-N\d{1,4}$/.test(pn.face)) { err(where + ' : triangle invalide'); return; }
+          const o = { face: pn.face, pattern: pn.pattern === undefined ? 'asanoha' : pn.pattern, density: pn.density === undefined ? 2 : pn.density, center: pn.center === undefined ? 'centroid' : pn.center };
+          if (typeof o.pattern !== 'string' || !/^[a-z]{1,20}$/.test(o.pattern)) { err(where + ' : motif invalide'); return; }
+          if (!Number.isInteger(o.density) || o.density < 1 || o.density > LIMITS.kumikoDensity) { err(where + ' : densité invalide (1 à ' + LIMITS.kumikoDensity + ')'); return; }
+          if (o.center !== 'centroid' && o.center !== 'incenter') { err(where + ' : centre du motif inconnu'); return; }
+          byFace.set(o.face, o);   // un seul panneau par triangle : le dernier l'emporte
+        });
+        out.kumiko = { panels: [...byFace.values()] };
+      }
+    }
 
     // modèles 3D intégrés (.glb en base64)
     if (raw.models !== undefined) {

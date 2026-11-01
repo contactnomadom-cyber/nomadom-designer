@@ -16,6 +16,8 @@
     "peel-src":           "src/textile/peel.js",
     "design-src":         "src/products/habitat/design.js",
     "design-import-src":  "src/products/habitat/design-import.js",
+    "kumiko-src":         "src/products/habitat/kumiko.js",
+    "kumiko-layout-src":  "src/products/habitat/kumiko-layout.js",
     "design3d-src":       "src/rendering/design3d.js",
     "design3d-three-src": "src/rendering/design3d-three.js",
     "view2d-src":         "src/rendering/view2d.js",

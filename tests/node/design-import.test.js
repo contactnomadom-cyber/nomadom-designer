@@ -89,5 +89,15 @@ check(DI.checkGlb(0, null) && DI.checkGlb(16 * 1024 * 1024, null).includes('trop
 check(DI.checkGlb(1000, hdr(0x12345678)).includes('glTF') && DI.checkGlb(1000, new ArrayBuffer(4)).includes('glTF'), 'GLB sans signature ou trop court : refusé');
 check(DI.checkGlb(1000, hdr(0x46546C67)) === null && DI.checkGlb(15 * 1024 * 1024, null) === null, 'GLB valide de 15 Mo : accepté');
 
+// 9. panneaux Kumiko (NOMAD-2026-003)
+const kk = V(st({ kumiko: { panels: [{ face: 'N1-N2-N3', pattern: 'asanoha', density: 2, center: 'centroid' }, { face: 'N4-N5-N9' }, { face: 'N1-N2-N3', pattern: 'mitsukude', density: 3, center: 'incenter' }] } }));
+check(kk.ok && kk.state.kumiko.panels.length === 2 && kk.state.kumiko.panels[0].pattern === 'mitsukude' && kk.state.kumiko.panels[1].density === 2,
+  'Kumiko : panneaux acceptés, valeurs par défaut, un seul panneau par triangle');
+check(!('kumiko' in V(st()).state), 'sans Kumiko : rien n\'est ajouté (aménagement identique)');
+refused(st({ kumiko: { panels: [{ face: 'N1-N2"><b>' }] } }), 'Kumiko : triangle balisé', 'triangle');
+refused(st({ kumiko: { panels: [{ face: 'N1-N2-N3', density: 9 }] } }), 'Kumiko : densité 9', 'densité');
+refused(st({ kumiko: { panels: [{ face: 'N1-N2-N3', pattern: '<b>' }] } }), 'Kumiko : motif balisé', 'motif');
+refused(st({ kumiko: 'oui' }), 'Kumiko : texte', 'kumiko');
+
 if (fails.length) { console.log('ÉCHEC ' + fails.length + '/' + n); fails.slice(0, 25).forEach(x => console.log('  ' + x)); process.exit(1); }
 console.log('OK ' + n + '/' + n);

@@ -10,6 +10,9 @@
   const DI = window.DesignImport, esc = DI.escapeHtml;
   const STORE = 'coverplus-design-v1';
   let asideKey = null;   // clé où une sauvegarde illisible a été mise de côté (jamais effacée)
+  // Kumiko (NOMAD-2026-003, aperçu) : réglages du prochain panneau, mode « poser des panneaux », panneau affiché
+  const KL = window.KumikoLayout, KM = window.Kumiko;
+  let kmSet = { pattern: 'asanoha', density: 2, center: 'centroid' }, kmPick = false, kmSel = null, kmCache = null;
   let st = load(), model = null, level = 0, sel = null, built = false;
   let rotY = 0.7, rotX = 0.55, zoom3 = 1, view = { zoom: 1, panX: 0, panY: 0 };
   let toileMode = 'coupe', showZones = true, style3 = 'real', dirty3 = true, eng = null, saveWarn = false;
@@ -80,6 +83,14 @@
         <label id="dsLAngle">Ouverture (°)<input type="number" id="dsMezzA" step="5" min="20" max="350"></label>
         <label>Orientation (°)<input type="number" id="dsMezzO" step="5"></label>
       </div>
+      <div class="toolbar" id="dsKumikoBar">
+        <span class="group-title">Kumiko</span>
+        <label>Motif<select id="dsKmPattern">${KL.validPatterns(KM).map(p => '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>').join('')}</select></label>
+        <label>Densité<select id="dsKmDensity">${[1, 2, 3, 4, 5, 6].map(d => '<option value="' + d + '"' + (d === 2 ? ' selected' : '') + '>' + d + ' (' + d * d + ' triangles)</option>').join('')}</select></label>
+        <label>Centre du motif<select id="dsKmCenter"><option value="centroid">Barycentre</option><option value="incenter">Centre du cercle inscrit</option></select></label>
+        <label>Panneaux<span style="display:flex;gap:4px"><button id="dsKmPick">Poser des panneaux</button><button id="dsKmClear">Tout retirer</button></span></label>
+        <label>Aperçu<span class="muted" style="font-size:11px;max-width:260px">🟠 cotes d'axe à axe (lattes sans épaisseur), aucune liste de débit. Cliquer un triangle dans le rendu 3D pour poser ou retirer un panneau.</span></label>
+      </div>
       <div class="panes">
         <section class="pane"><h2><span>PLAN — VUE DU DESSUS</span><span id="dsPlanInfo"></span></h2>
           <div class="body"><canvas id="dsPlan"></canvas><div class="hint">glisser un élément = le déplacer (pas de 5 cm) · poignée ↻ = le faire pivoter (pas de 15°, libre avec Maj) · lâcher hors du dôme ou Suppr = effacer · molette = zoom · double-clic = recadrer</div></div></section>
@@ -88,6 +99,7 @@
       </div>
       <div class="selection-readout ds-props" id="dsProps"></div>
       <div class="selection-readout" id="dsList"></div>
+      <div class="selection-readout" id="dsKumiko"></div>
       <div class="btnrow ds-actions">
         <button id="dsPrint">Imprimer les plans (PDF) — un plan par niveau, à l'échelle</button>
         <button id="dsExport">Exporter l'aménagement (.json)</button>
@@ -97,6 +109,17 @@
       </div>`;
     syncInputs();
     $('dsLevel').addEventListener('change', e => { level = +e.target.value; sel = null; drawAll(); });
+    $('dsKmPattern').addEventListener('change', e => { kmSet.pattern = e.target.value; });
+    $('dsKmDensity').addEventListener('change', e => { kmSet.density = +e.target.value; });
+    $('dsKmCenter').addEventListener('change', e => { kmSet.center = e.target.value; });
+    $('dsKmPick').addEventListener('click', () => { kmPick = !kmPick; syncKumikoBar(); });
+    $('dsKmClear').addEventListener('click', () => { const b = $('dsKmClear'); if (!kmPanels().length) return;
+      if (b.dataset.armed) { st.kumiko = { panels: [] }; kmSel = null; delete b.dataset.armed; b.textContent = 'Tout retirer'; changed(); }
+      else { b.dataset.armed = 1; b.textContent = 'Confirmer ?'; setTimeout(() => { if ($('dsKmClear')) { delete b.dataset.armed; b.textContent = 'Tout retirer'; } }, 3000); } });
+    $('dsKumiko').addEventListener('click', e => { const t = e.target.closest('[data-km]'); if (!t) return;
+      const face = t.dataset.km;
+      if (t.dataset.act === 'del') { st.kumiko.panels = kmPanels().filter(p => p.face !== face); if (kmSel === face) kmSel = null; return changed(); }
+      kmSel = face; renderKumiko(); });
     $('dsStyle').addEventListener('change', e => { st.style = e.target.value; changed(); });
     $('dsZones').addEventListener('change', e => { showZones = e.target.checked; drawAll(); });
     $('dsToile').addEventListener('change', e => { toileMode = e.target.value; dirty3 = true; draw3D(); });
@@ -607,8 +630,9 @@
     if (!eng) return draw3DCanvas();
     if (dirty3) {
       const openings = st.openings.map(op => Object.assign(openingGeom(op), { type: op.type, h: op.h, sill: op.sill || 0 }));
-      if (eng.isThree) eng.update(Z, model, st, { style: style3, toile: toileMode, openings }, () => eng.render(cam, toileMode === 'coupe'));
-      else eng.setScene(Design3D.buildScene(Z, model, st, { style: style3, toile: toileMode, models: glbCache, openings }));
+      const kumiko = kmSegments();
+      if (eng.isThree) eng.update(Z, model, st, { style: style3, toile: toileMode, openings, kumiko }, () => eng.render(cam, toileMode === 'coupe'));
+      else eng.setScene(Design3D.buildScene(Z, model, st, { style: style3, toile: toileMode, models: glbCache, openings, kumiko }));
       cam.target[1] = Math.min(cam.target[1], model.height); dirty3 = false;
     }
     eng.render(cam, toileMode === 'coupe');
@@ -616,7 +640,8 @@
   function events3DGL() {
     const cv = $('ds3d'); let d = null;
     cv.addEventListener('contextmenu', e => e.preventDefault());
-    cv.addEventListener('mousedown', e => { d = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; });
+    cv.addEventListener('mousedown', e => { d = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, pan: e.button === 2 || e.shiftKey }; });
+    cv.addEventListener('mouseup', e => { if (kmPick && d && !d.pan && e.button === 0 && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 5) kmToggleAt(e); });
     window.addEventListener('mousemove', e => {
       if (!d) return; const dx = e.clientX - d.x, dy = e.clientY - d.y; d.x = e.clientX; d.y = e.clientY;
       if (d.pan) { const k = cam.dist * 0.0016, c = Math.cos(cam.yaw), s = Math.sin(cam.yaw); cam.target[0] -= c * dx * k; cam.target[2] += s * dx * k; cam.target[1] = Math.max(0, Math.min(model.height, cam.target[1] + dy * k)); }
@@ -694,10 +719,74 @@
     else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' })); a.download = 'plans-amenagement.html'; document.body.appendChild(a); a.click(); a.remove(); }
   }
 
+  // ---------------------------------------------------------
+  // Kumiko (NOMAD-2026-003) — aperçu : panneaux posés triangle par triangle
+  // ---------------------------------------------------------
+  function kmPanels() { return (st.kumiko && st.kumiko.panels) || []; }
+  // panneaux posés sur le dôme courant (calcul : kumiko-layout.js), gardés tant que le dôme et les panneaux ne changent pas
+  function kmLayout() {
+    const dome = window.CoverApp.dome(), sig = JSON.stringify(kmPanels());
+    if (kmCache && kmCache.dome === dome && kmCache.sig === sig) return kmCache.res;
+    const yBase = Math.min(...dome.points.map(p => p.y));
+    const res = KL.layout(KM, dome, window.CoverApp.labels(), kmPanels(), yBase, -yBase, 0.03);
+    kmCache = { dome, sig, res };
+    return res;
+  }
+  function kmSegments() { return kmLayout().filter(r => r.ok).flatMap(r => r.place.segments3D); }
+  function syncKumikoBar() {
+    const b = $('dsKmPick'); if (!b) return;
+    b.classList.toggle('primary', kmPick); b.textContent = kmPick ? 'Terminer' : 'Poser des panneaux';
+    const h = $('ds3dHint'); if (h && eng) h.textContent = kmPick ? 'Kumiko : clic sur un triangle = poser ou retirer un panneau (' + esc(KM.PATTERNS[kmSet.pattern].name) + ', densité ' + kmSet.density + ') · glisser = tourner'
+      : 'glisser = tourner · clic droit ou Maj + glisser = déplacer · molette = zoom · double-clic = recadrer';
+  }
+  // clic dans la vue 3D en mode « poser » : on pose le panneau, ou on le retire s'il y en a déjà un
+  function kmToggleAt(ev) {
+    const cv = $('ds3d'), r = cv.getBoundingClientRect();
+    const nx = (ev.clientX - r.left) / r.width * 2 - 1, ny = 1 - (ev.clientY - r.top) / r.height * 2;
+    const i = KL.pickFace(model.tris, cam, nx, ny, r.width / r.height, 40, toileMode === 'coupe');
+    if (i < 0) return;
+    const dome = window.CoverApp.dome(), face = KL.faceKey((dome.allFaces || dome.faces)[i].pointIds, window.CoverApp.labels());
+    const list = kmPanels();
+    if (list.some(p => p.face === face)) { st.kumiko = { panels: list.filter(p => p.face !== face) }; if (kmSel === face) kmSel = null; }
+    else { st.kumiko = { panels: list.concat([Object.assign({ face }, kmSet)]) }; kmSel = face; }
+    changed();
+  }
+  function kmPlanSvg(place) {
+    const t = place.tri2D, xs = t.map(p => p.x), ys = t.map(p => p.y), x0 = Math.min(...xs), y0 = Math.min(...ys), W = Math.max(...xs) - x0, H = Math.max(...ys) - y0;
+    const pad = 70, sc = 320 / Math.max(W, H), P = q => [(pad + (q.x - x0) * sc).toFixed(1), (pad + (H - (q.y - y0)) * sc).toFixed(1)];
+    const line = (s, w, c) => { const a = P(s.p1), b = P(s.p2); return '<line x1="' + a[0] + '" y1="' + a[1] + '" x2="' + b[0] + '" y2="' + b[1] + '" stroke="' + c + '" stroke-width="' + w + '" stroke-linecap="round"/>'; };
+    const pn = place.panel, g = { x: (t[0].x + t[1].x + t[2].x) / 3, y: (t[0].y + t[1].y + t[2].y) / 3 };
+    const lab = s => { const m = { x: (s.p1.x + s.p2.x) / 2, y: (s.p1.y + s.p2.y) / 2 }, d = Math.hypot(m.x - g.x, m.y - g.y) || 1, q = P({ x: m.x + (m.x - g.x) / d * 28 / sc, y: m.y + (m.y - g.y) / d * 28 / sc });
+      return '<text x="' + q[0] + '" y="' + q[1] + '" font-size="12" text-anchor="middle" dominant-baseline="middle" fill="#76522f">' + esc((Math.round(s.axisLength * 10) / 10).toFixed(1).replace('.', ',')) + '</text>'; };
+    const size = (2 * pad + Math.max(W, H) * sc).toFixed(0);
+    return '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '" style="max-width:100%;font-family:var(--mono)">' +
+      pn.jigumi.map(s => line(s, 2, '#c49868')).join('') + pn.tsukeko.map(s => line(s, 1.4, '#a37a4c')).join('') + pn.waku.map(s => line(s, 4, '#76522f')).join('') + pn.waku.map(lab).join('') + '</svg>';
+  }
+  function renderKumiko() {
+    const el = $('dsKumiko'); if (!el) return;
+    const res = kmLayout();
+    if (!res.length) { el.innerHTML = '<div class="sheet-head"><b>Kumiko</b><span class="muted">aucun panneau — « Poser des panneaux », puis cliquer les triangles dans le rendu 3D</span></div>'; return; }
+    const okN = res.filter(r => r.ok).length, f1 = v => v === null ? '—' : String(v).replace('.', ',');
+    let h = '<div class="sheet-head"><b>Kumiko — ' + okN + ' panneau' + (okN > 1 ? 'x' : '') + '</b><span class="st-badge st-orange">🟠 aperçu : cotes d\'axe à axe, sans épaisseur des lattes — pas de liste de débit</span></div>';
+    h += '<table class="clickable"><tr><th>Triangle</th><th>Motif</th><th>Densité</th><th>Cadre (mm, axe)</th><th>Lattes</th><th>Tsukeko</th><th>Longueur tsukeko (mm, axe)</th><th>Biseaux</th><th></th></tr>';
+    res.forEach(r => {
+      const pn = r.panel, nm = KM.PATTERNS[pn.pattern] ? KM.PATTERNS[pn.pattern].name.split(' — ')[0] : pn.pattern;
+      if (!r.ok) { h += '<tr data-km="' + esc(r.key) + '"><td>' + esc(r.key) + '</td><td>' + esc(nm) + '</td><td>' + esc(pn.density) + '</td><td colspan="5" class="bad">' + esc(r.error) + '</td><td><button data-km="' + esc(r.key) + '" data-act="del">Retirer</button></td></tr>'; return; }
+      const sm = r.place.summary;
+      h += '<tr data-km="' + esc(r.key) + '"' + (kmSel === r.key ? ' class="on"' : '') + '><td><b>' + esc(r.key) + '</b></td><td>' + esc(nm) + '</td><td>' + esc(pn.density) + '</td><td>' + sm.waku.map(f1).join(' / ') +
+        '</td><td>' + sm.jigumi + '</td><td>' + sm.tsukeko + '</td><td>' + (sm.tsukeko ? f1(sm.tsukekoMin) + ' à ' + f1(sm.tsukekoMax) : '—') + '</td><td>' + (sm.tsukeko ? f1(sm.bevelMin) + '° à ' + f1(sm.bevelMax) + '°' : '—') +
+        '</td><td><button data-km="' + esc(r.key) + '" data-act="del">Retirer</button></td></tr>';
+    });
+    h += '</table>';
+    const cur = res.find(r => r.ok && r.key === kmSel) || res.find(r => r.ok);
+    if (cur) h += '<div class="sheet-head" style="margin-top:8px"><b>Plan du panneau ' + esc(cur.key) + '</b><span class="muted">vu de l\'intérieur · cadre (waku), grille (jigumi), pièces du motif (tsukeko) · cotes du cadre en mm, d\'axe à axe</span></div>' + kmPlanSvg(cur.place);
+    el.innerHTML = h;
+  }
+
   function drawAll() {
     if (!visible() || !model) return;
     $('dsDome').innerHTML = 'Dôme <b>' + esc(window.CoverApp.label()) + '</b> <span class="muted">(se règle dans l\'onglet Base, ouvertures comprises)</span>';
-    drawPlanScreen(); draw3D(); renderProps(); renderList();
+    drawPlanScreen(); draw3D(); renderProps(); renderList(); renderKumiko(); syncKumikoBar();
   }
   window.CoverDesign = {
     show() { const first = !built; model = Z.domeModel(window.CoverApp.dome()); if (first) build(); dirty3 = true; if (first && eng) { cam.dist = model.radius * 3.6; cam.target = [0, model.height * 0.38, 0]; } syncInputs(); drawAll(); },
