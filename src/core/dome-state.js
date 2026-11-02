@@ -59,7 +59,8 @@
       cut: { strategy: 'pieces', baseRow: 'ring' },
       // Le contour est mémorisé en étiquettes de nœuds (N1–N6…) : les identifiants
       // internes changent à chaque calcul, les étiquettes non (même dôme, autre Ø).
-      openings: { labels: [], forKey: null, result: null }
+      // portes d'aplomb (NOMAD-2026-005) : { [seuil en étiquettes] : { width, height, offset, setback } } (m)
+      openings: { labels: [], forKey: null, result: null, doors: {} }
     };
   }
 

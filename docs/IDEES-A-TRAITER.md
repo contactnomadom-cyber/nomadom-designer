@@ -88,8 +88,8 @@ Outil **didactique** : chaque calcul explique ce qu'il fait (retour de connaissa
 - Au-dessus du linteau, le cadre du dôme est **en retrait d'environ 0,90 m** derrière le plan de la porte (la paroi penche) : la fermeture n'est donc pas un simple tympan plat, c'est un petit « toit » de 0,9 m de profondeur — ou bien on recule la porte (sas intérieur).
 
 **Questions ouvertes ❓**
-1. Position par défaut du plan de porte : au droit du seuil (avant-corps) ou reculée (sas intérieur) ?
-2. Où placer « Ajouter une porte » : onglet Base (là où on trace les ouvertures) ?
+1. ✅ Position du plan de porte : réglée porte par porte (curseur de recul) — décision du 02/11/2026.
+2. ✅ « Ajouter une porte » dans l'onglet Base, sous chaque ouverture fermée par le sol — décision du 02/11/2026.
 3. Sections des bois de l'huisserie (dormant, linteau, potelets).
 
 ---
