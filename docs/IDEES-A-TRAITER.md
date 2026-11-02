@@ -70,6 +70,28 @@ Statuts : 💡 idée · ❓ questions ouvertes · ⏸ en suspens · 🛠 en cour
 1. Sections réelles : largeur et épaisseur des lattes, section des montants (pour passer de l'aperçu à la liste de débit).
 2. Définition des motifs goma, rindō, kikkō.
 
+## 4. Ouvertures « intelligentes » : porte d'aplomb, sas, tunnel géodésique, efforts, menuiserie — 🛠 étape 1 en cours (01/11/2026)
+Outil **didactique** : chaque calcul explique ce qu'il fait (retour de connaissances).
+
+**Décidé (Nathan, 01–02/11/2026)**
+- « Ajouter une porte » : porte posée **d'aplomb** (verticale), alignée sur la structure ; calcul de la structure **à l'aplomb du haut de la porte** (linteau → montants du dôme) pour créer sas, raccord ou fermeture.
+- Deux options par porte : **sas vers l'intérieur** du dôme, ou **avant-corps vers l'extérieur** ; l'extérieur peut aller jusqu'à un **sas vestiaire** (ex. 2,50 m).
+- **Tunnel géodésique** : on « tire » la forme de l'ouverture choisie (ex. pentagone) comme le pousser-tirer de SketchUp → prisme droit, longueur réglable, dehors ou dedans.
+- **Efforts** calculés, affichés 🟠 indicatifs (pas une note d'ingénieur).
+- **Bibliothèque de menuiserie** didactique.
+- Le **kit d'essai** n'est pas à faire.
+
+**Plan** : 1) porte d'aplomb + cadre jusqu'aux montants (NOMAD-2026-005) · 2) tirer l'ouverture en tunnel · 3) montants, toile et raccords du tunnel · 4) efforts indicatifs et bibliothèque de menuiserie.
+
+**Étape 1 — premiers résultats (moteur `src/geometry/door.js`, 26 tests)**
+- Sur la référence 3V Ø 5 m, une porte 0,90 × 2,00 m demande une ouverture de 9 triangles (seuil d'un seul montant B, 956 mm). Hauteur maxi pour 0,90 de large : 2,37 m.
+- Au-dessus du linteau, le cadre du dôme est **en retrait d'environ 0,90 m** derrière le plan de la porte (la paroi penche) : la fermeture n'est donc pas un simple tympan plat, c'est un petit « toit » de 0,9 m de profondeur — ou bien on recule la porte (sas intérieur).
+
+**Questions ouvertes ❓**
+1. Position par défaut du plan de porte : au droit du seuil (avant-corps) ou reculée (sas intérieur) ?
+2. Où placer « Ajouter une porte » : onglet Base (là où on trace les ouvertures) ?
+3. Sections des bois de l'huisserie (dormant, linteau, potelets).
+
 ---
 
 ## Fait

@@ -34,7 +34,8 @@ const suites = [
   { key: 'plan', name: 'Règles du plan de coupe (laize, rangée du bas, comparatif, CSV)', cmd: ['node', [N('plan-rules.test.js'), MODS]] },
   { key: 'design', name: 'Aménagement Design : contrôle des imports (M1)', cmd: ['node', [N('design-import.test.js'), MODS]] },
   { key: 'kumiko', name: 'Panneaux Kumiko (moteur)', cmd: ['node', [N('kumiko.test.js'), MODS]] },
-  { key: 'kumiko_layout', name: 'Kumiko posé sur le dôme (NOMAD-2026-003)', cmd: ['node', [N('kumiko-layout.test.js'), MODS]] }
+  { key: 'kumiko_layout', name: 'Kumiko posé sur le dôme (NOMAD-2026-003)', cmd: ['node', [N('kumiko-layout.test.js'), MODS]] },
+  { key: 'door', name: 'Porte d\'aplomb (NOMAD-2026-005)', cmd: ['node', [N('door.test.js'), MODS]] }
 ];
 const browser = quick ? ['t_beta.py', 't_status.py', 't_names.py']
   : ['t_beta.py', 't_status.py', 't_names.py', 't_cleanup.py', 't_laize.py', 't_bottom.py', 't_kruschke_align.py', 't_stale_optim.py', 't_smoke_quadri.py', 't_axes_block.py', 't_openings.py', 't_diameter.py', 't_design_import.py', 't_kumiko.py'];
