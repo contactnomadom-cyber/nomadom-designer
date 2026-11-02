@@ -95,5 +95,27 @@ check(sk.roof.length === sk.totals.rampant.count && sk.roofArea > 1 && sk.roofAr
 check(near(sk.totals.chevron.length - sk5.totals.chevron.length, 0.5 * sk.totals.chevron.count) && near(sk.totals.appui.length - sk5.totals.appui.length, 1)
   && near(sk5.totals.huisserie.length, sk.totals.huisserie.length) && sk5.roofArea < sk.roofArea, 'recul 0,50 m : chaque retour raccourcit de 0,50 m, toit plus petit');
 
+// 8. choix constructifs : jamais de pièce volante (tous les choix, plusieurs reculs, deux diamètres)
+const J = require(path.join(SRC, 'joinery.js'));
+let combos = 0, bad = [];
+[[dome, op, 1], [big, anB.openings[0], 2]].forEach(([dm, opn, k]) => [0, 0.3, 0.6].forEach(sb => D.SUPPORTS.forEach(sup => D.ATTACH.forEach(aa => D.ATTACH.forEach(ac => {
+  const rr0 = D.compute(dm, O.strutIndex(dm), opn, { width: 0.9 * k, height: 2 * k, setback: sb * k }); if (!rr0.fits) return;
+  const st0 = D.structure(rr0, null, { support: sup, attachAppui: aa, attachChevron: ac, joints: J.resolve({}) }); combos++;
+  if (!st0.complete) bad.push([k, sb, sup, aa, ac, st0.floating.map(f => f.kind), st0.unsupported.map(i => st0.pieces[i].kind)].join(' '));
+})))));
+check(combos >= 60 && !bad.length, 'aucune pièce volante ni non portée sur ' + combos + ' combinaisons de choix (' + bad.slice(0, 3).join(' ; ') + ')');
+const sPo = D.structure(r, null, { support: 'poteaux' }), sPa = D.structure(r, null, { support: 'parois' }), sPf = D.structure(r, null, { support: 'porte-a-faux' });
+check(sPo.totals.poteau.count === 2 && sPo.totals.lisse.count === 2 && sPo.advised && !sPo.warnings.length, 'poteaux d\'angle : 2 poteaux, 2 lisses basses jusqu\'au seuil');
+check(sPa.totals.traverse.count === 8 && sPa.areas.paroi > 0.5 && sPa.areas.facade > 0.5, 'parois latérales : 8 traverses, parois et façade');
+check(!sPf.totals.poteau && !sPf.advised && sPf.warnings[0].includes('Déconseillé'), 'porte-à-faux : pas de poteau, déconseillé avec avertissement');
+const lis = sPo.connections.filter(c => c.family === 'dome-noeud' && c.pieces.some(i => sPo.pieces[i].kind === 'lisse'));
+check(lis.length === 2 && sPo.connections.filter(c => c.family === 'sol').length === 4, 'lisses fixées sur les 2 nœuds du seuil ; 4 appuis au sol (montants de porte, poteaux)');
+check(sPo.connections.some(c => c.family === 'pose' && c.pieces.map(i => sPo.pieces[i].kind).sort().join() === 'chevetre,huisserie'), 'chevêtre posé sur le linteau (raccord « posé sur »)');
+const sN = D.structure(r, null, { attachAppui: 'noeud', attachChevron: 'noeud' });
+check(sN.totals.contrefiche.count === 2 && !sN.totals.appui && !sN.connections.some(c => c.family === 'dome-montant'), 'tout sur les nœuds : contrefiches, aucun raccord en milieu de montant');
+const sM = D.structure(r, null, { joints: J.resolve({}) }), nM = sM.connections.filter(c => c.family === 'dome-montant').length;
+check(nM > 0 && sM.extras.length === 2 * nM && sM.connections.every(c => c.joint === J.resolve({})[c.family]), 'moisage par défaut : 2 moises par raccord sur montant, assemblage recopié sur chaque raccord');
+check(D.structure(r, null, { joints: J.resolve({ 'dome-montant': 'sabot' }) }).extras.length === 0, 'sabot choisi : pas de moise dessinée');
+
 if (fails.length) { console.log('ÉCHEC ' + fails.length + '/' + n); fails.forEach(x => console.log('  ' + x)); process.exit(1); }
 console.log('OK ' + n + '/' + n);

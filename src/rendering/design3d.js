@@ -476,7 +476,9 @@
     // structure des portes d'aplomb (NOMAD-2026-005, aperçu) : pièces de Door.structure, y depuis le sol ; toit de l'avant-corps
     (opts.doors || []).forEach(dr => {
       dr.pieces.forEach(p => beam(opaque, p.a, p.b, dr.section.w, dr.section.d, p.up, C(p.kind === 'huisserie' || p.kind === 'chevetre' ? 'woodDark' : 'wood'), 2));
-      dr.roof.forEach(q => { const P = q.map(p => [p.x, p.y + dr.section.d / 2, p.z]); opaque.quad(P[0], P[1], P[2], P[3], C('floorSide'), 1, false); });
+      (dr.extras || []).forEach(p => beam(opaque, p.a, p.b, 0.12, 0.022, p.up, C('woodDark'), 2));   // moises : 22 mm d'épaisseur, 120 mm de large
+      (dr.panels || dr.roof.map(pts => ({ kind: 'toit', pts }))).forEach(pn => { const lift = pn.kind === 'toit' ? dr.section.d / 2 : 0;
+        const P = pn.pts.map(p => [p.x, p.y + lift, p.z]); opaque.quad(P[0], P[1], P[2], P[3], C(pn.kind === 'toit' ? 'floorSide' : 'wood'), pn.kind === 'toit' ? 1 : 2, false); });
     });
     // mezzanine : plancher, solives de rive, garde-corps sur les bords libres
     const mp = Z.mezzPolygon(model, st.mezz);

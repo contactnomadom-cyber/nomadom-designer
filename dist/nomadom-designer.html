@@ -182,6 +182,11 @@
   .door-in{ display:flex; flex-wrap:wrap; gap: 6px 14px; margin: 6px 0; } .door-in input[type=number]{ width: 5em; }
   .door dl{ display:grid; grid-template-columns: auto 1fr; gap: 2px 14px; margin: 4px 0; }
   .door-note{ color: var(--ink-dim); font-size: .92em; margin-top: 4px; }
+  .door-choice{ display:flex; flex-wrap:wrap; gap: 6px 14px; align-items:center; margin: 8px 0 4px; } .door-choice .door-note{ flex-basis:100%; }
+  .door-joints table{ border-collapse: collapse; margin: 4px 0; } .door-joints td, .door-joints th{ padding: 2px 8px; border-bottom: 1px solid var(--line); text-align:left; }
+  .jfiche{ display:flex; gap: 12px; align-items:flex-start; margin: 8px 0; padding: 8px; background: #fbf7f0; border: 1px solid var(--line); }
+  .jfiche-svg{ flex: 0 0 160px; } .jfiche p{ margin: 4px 0; } .jfiche ol{ margin: 4px 0 0 18px; padding: 0; }
+  .door-lib{ margin: 6px 0; } .door-lib div{ margin: 3px 0; }
   .op-legend{ display:flex; flex-wrap:wrap; gap: 4px 14px; color: var(--ink-dim); font-size: 11px; margin-top: 6px; }
   .op-legend i{ display:inline-block; width:18px; height:3px; vertical-align:middle; margin-right:4px; }
   td.down{ color:#b23a2f; font-weight:600; }
@@ -8652,7 +8657,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     // structure des portes d'aplomb (NOMAD-2026-005, aperçu) : pièces de Door.structure, y depuis le sol ; toit de l'avant-corps
     (opts.doors || []).forEach(dr => {
       dr.pieces.forEach(p => beam(opaque, p.a, p.b, dr.section.w, dr.section.d, p.up, C(p.kind === 'huisserie' || p.kind === 'chevetre' ? 'woodDark' : 'wood'), 2));
-      dr.roof.forEach(q => { const P = q.map(p => [p.x, p.y + dr.section.d / 2, p.z]); opaque.quad(P[0], P[1], P[2], P[3], C('floorSide'), 1, false); });
+      (dr.extras || []).forEach(p => beam(opaque, p.a, p.b, 0.12, 0.022, p.up, C('woodDark'), 2));   // moises : 22 mm d'épaisseur, 120 mm de large
+      (dr.panels || dr.roof.map(pts => ({ kind: 'toit', pts }))).forEach(pn => { const lift = pn.kind === 'toit' ? dr.section.d / 2 : 0;
+        const P = pn.pts.map(p => [p.x, p.y + lift, p.z]); opaque.quad(P[0], P[1], P[2], P[3], C(pn.kind === 'toit' ? 'floorSide' : 'wood'), pn.kind === 'toit' ? 1 : 2, false); });
     });
     // mezzanine : plancher, solives de rive, garde-corps sur les bords libres
     const mp = Z.mezzPolygon(model, st.mezz);
@@ -9726,30 +9733,37 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     return res;
   }
 
-  // Structure 3D qui porte la porte (aperçu 🟠, axes des pièces, section affichée sec = { w, d } en m).
+  // Structure 3D qui porte la porte (aperçu 🟠 : axes des pièces, section sec = { w, d } en m, w = côté « à plat »).
   // Entrée : résultat de compute() quand la porte passe. Points { x, y, z } : y = hauteur depuis le sol.
-  //  - huisserie : 2 montants, seuil, linteau (plan de la porte) ;
-  //  - chevêtre : poutre horizontale posée sur le linteau (axe à h + sec.d), d'un bord du contour à l'autre,
-  //    avec ses 2 appuis (retours horizontaux jusqu'aux montants du dôme) ;
-  //  - potelets : du chevêtre jusqu'au bord haut de la fermeture, à l'aplomb des montants de porte et au milieu ;
-  //  - rampants : bord haut de la fermeture, dans le plan de la porte (le contour du dôme ramené sur ce plan) ;
-  //  - chevrons : retours horizontaux, du rampant jusqu'au cadre du dôme (à chaque nœud et en tête de potelet) ;
-  //  - toit : surface entre les rampants et le cadre du dôme (le dessus de l'avant-corps).
-  // Chaque retour finit sur un montant du cadre (nœud, ou point du montant interpolé).
-  function structure(r, sec) {
+  // opts (choix constructifs, tous facultatifs) :
+  //  support : 'poteaux' (défaut : poteaux d'angle sous le chevêtre + lisses basses jusqu'au seuil du dôme)
+  //          | 'parois' (poteaux + parois latérales : traverses et panneaux jusqu'au cadre)
+  //          | 'porte-a-faux' (rien sous les bouts du chevêtre — déconseillé)
+  //  attachAppui / attachChevron : 'montant' (défaut : retour horizontal, posé sur le montant du dôme)
+  //          | 'noeud' (appui → contrefiche jusqu'au nœud le plus proche ; chevrons des potelets supprimés)
+  //  joints : { famille de raccord → id d'assemblage } (voir joinery.js) ; recopié sur chaque raccord.
+  // Pièces : huisserie (montants, seuil, linteau), chevêtre posé SUR le linteau, appuis ou contrefiches,
+  //  potelets, rampants (bord haut, plan de porte), chevrons (jusqu'au cadre), poteaux, lisses, traverses.
+  // Raccords : chaque bout de pièce est classé (sol, nœud du dôme, montant du dôme, autre pièce : angle, T,
+  //  oblique, pose). Un bout qui ne touche rien est « volant » ; une pièce qui ne rejoint ni le sol ni le dôme
+  //  par une chaîne de raccords est « non portée ». La structure est complète quand il n'y a ni l'un ni l'autre.
+  const SUPPORTS = ['poteaux', 'parois', 'porte-a-faux'], ATTACH = ['montant', 'noeud'];
+  function structure(r, sec, opts) {
     if (!r || !r.ok || !r.fits) return null;
-    sec = sec || { w: 0.045, d: 0.07 };
+    sec = sec || { w: 0.045, d: 0.07 }; opts = opts || {};
+    const support = SUPPORTS.includes(opts.support) ? opts.support : 'poteaux';
+    const attA = ATTACH.includes(opts.attachAppui) ? opts.attachAppui : 'montant', attC = ATTACH.includes(opts.attachChevron) ? opts.attachChevron : 'montant';
     const { s0, width: w, height: h, setback: sb } = r.door, L = r.plane.origin, u = r.plane.along, n = r.plane.normal;
     const P = (s, t, d) => ({ x: L.x + u.x * s + n.x * ((d || 0) - sb), y: t, z: L.z + u.z * s + n.z * ((d || 0) - sb) });
-    const len = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
-    const pieces = [], roof = [], MIN = 0.005;
-    const add = (kind, a, b, up) => { const l = len(a, b); if (l > MIN) pieces.push({ kind, a, b, length: l, up }); };
-    const V = { x: 0, y: 1, z: 0 };   // section posée « à plat » sur les retours : 70 mm vertical
-    // huisserie
+    const dist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    const pieces = [], panels = [], MIN = 0.005;
+    const add = (kind, a, b, up) => { const l = dist(a, b); if (l > MIN) pieces.push({ kind, a, b, length: l, up }); };
+    const V = { x: 0, y: 1, z: 0 };   // pièces de retour : posées « de chant », 70 mm à la verticale
+    // huisserie (axes : montants et linteau se croisent aux angles, le linteau a 45 mm de haut)
     add('huisserie', P(s0, 0), P(s0, h), n); add('huisserie', P(s0 + w, 0), P(s0 + w, h), n);
     add('huisserie', P(s0, 0), P(s0 + w, 0), n); add('huisserie', P(s0, h), P(s0 + w, h), n);
-    // bord haut de la fermeture, au-dessus du chevêtre : chaîne gauche → droite
-    const hc = h + sec.d, cl = clipT(r.contour, hc, true);
+    // chevêtre posé sur le linteau : axe à h + sec.w (les deux faces se touchent)
+    const hc = h + sec.w, cl = clipT(r.contour, hc, true);
     let chain = null;
     const flat = cl.map((p, i) => [i, cl[(i + 1) % cl.length]]).filter(([i, q]) => Math.abs(cl[i].t - hc) < 1e-7 && Math.abs(q.t - hc) < 1e-7 && q.s > cl[i].s);
     if (cl.length > 2 && flat.length === 1) {
@@ -9757,32 +9771,353 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       for (let j = 0; j < cl.length; j++) chain.push(cl[(k + j) % cl.length]);   // droite → haut → gauche
       chain.reverse();
     }
+    // nœuds du cadre en 3D, et montants du cadre (contour sans le seuil)
+    const node3 = r.nodes.map(p => ({ id: p.id, s: p.s, t: p.t, d: p.depth, p: P(p.s, p.t, p.depth) }));
+    const loop = r.nodes, struts = [];
+    loop.forEach((p, i) => { const q = loop[(i + 1) % loop.length]; if (p.t < 1e-7 && q.t < 1e-7) return; struts.push([P(p.s, p.t, p.depth), P(q.s, q.t, q.depth)]); });
+    const ground = node3.filter(p => p.t < 1e-7).sort((a, b) => a.s - b.s);
+    // point du cadre à la hauteur t, côté gauche ou droit (null si aucun)
+    const sideAt = (t, left) => {
+      const xs = [];
+      loop.forEach((p, i) => { const q = loop[(i + 1) % loop.length]; if ((p.t - t) * (q.t - t) > 0 || Math.abs(q.t - p.t) < 1e-9) return;
+        const k = (t - p.t) / (q.t - p.t); xs.push({ s: p.s + k * (q.s - p.s), d: p.depth + k * (q.depth - p.depth) }); });
+      if (!xs.length) return null; xs.sort((a, b) => a.s - b.s); return left ? xs[0] : xs[xs.length - 1];
+    };
+    let warnings = [];
     if (chain) {
       const a = chain[0], b = chain[chain.length - 1];
       add('chevetre', P(a.s, hc), P(b.s, hc), n);
-      add('appui', P(a.s, hc), P(a.s, hc, a.d), V); add('appui', P(b.s, hc), P(b.s, hc, b.d), V);
+      // appuis : retour horizontal sur le montant, ou contrefiche jusqu'au nœud le plus proche
+      [a, b].forEach((e, side) => {
+        if (attA === 'montant') { add('appui', P(e.s, hc), P(e.s, hc, e.d), V); return; }
+        const cand = node3.filter(p => p.t > 1e-7 && (side === 0 ? p.s <= (a.s + b.s) / 2 : p.s >= (a.s + b.s) / 2));
+        const tgt = cand.sort((x, y) => dist(x.p, P(e.s, hc)) - dist(y.p, P(e.s, hc)))[0];
+        if (tgt) add('contrefiche', P(e.s, hc), tgt.p, n);
+      });
       for (let j = 0; j + 1 < chain.length; j++) {
         const p = chain[j], q = chain[j + 1];
         add('rampant', P(p.s, p.t), P(q.s, q.t), n);
-        roof.push([P(p.s, p.t), P(q.s, q.t), P(q.s, q.t, q.d), P(p.s, p.t, p.d)]);
+        panels.push({ kind: 'toit', pts: [P(p.s, p.t), P(q.s, q.t), P(q.s, q.t, q.d), P(p.s, p.t, p.d)] });
         if (j > 0) add('chevron', P(p.s, p.t), P(p.s, p.t, p.d), V);
       }
       [s0, s0 + w / 2, s0 + w].forEach(s => {
         const tp = topAt(r.contour, s, hc); if (!tp) return;
         add('potelet', P(s, hc), P(s, tp.t), n);
-        if (!chain.some(p => Math.abs(p.s - s) < MIN)) add('chevron', P(s, tp.t), P(s, tp.t, tp.d), V);   // pas de doublon sous un nœud
+        if (attC === 'montant' && !chain.some(p => Math.abs(p.s - s) < MIN)) add('chevron', P(s, tp.t), P(s, tp.t, tp.d), V);   // pas de doublon sous un nœud
       });
-    }
+      // dessous des bouts du chevêtre : poteaux d'angle et lisses basses jusqu'au seuil du dôme
+      if (support !== 'porte-a-faux') {
+        [[a.s, s0, ground[0]], [b.s, s0 + w, ground[ground.length - 1]]].forEach(([sp, sj, g]) => {
+          if (Math.abs(sp - sj) < 0.05) return;   // le bout du chevêtre tombe sur un montant de porte
+          add('poteau', P(sp, 0), P(sp, hc), n);
+          if (g) add('lisse', P(sp, 0), g.p, n);
+          if (support === 'parois') {
+            const left = sp < sj, lev = [hc / 3, 2 * hc / 3];
+            lev.forEach(t => { add('traverse', P(sp, t), P(sj, t), n); const f = sideAt(t, left); if (f) add('traverse', P(sp, t), P(f.s, t, f.d), V); });
+            panels.push({ kind: 'facade', pts: [P(sp, 0), P(sj, 0), P(sj, hc), P(sp, hc)] });
+            const hs = [0].concat(lev, [hc]), fr = hs.map(t => t < 1e-7 ? (g ? { s: g.s, d: g.d } : null) : sideAt(t, left));
+            for (let k = 0; k + 1 < hs.length; k++) if (fr[k] && fr[k + 1])
+              panels.push({ kind: 'paroi', pts: [P(sp, hs[k]), P(sp, hs[k + 1]), P(fr[k + 1].s, hs[k + 1], fr[k + 1].d), P(fr[k].s, hs[k], fr[k].d)] });
+          }
+        });
+      } else warnings.push('Porte-à-faux : les bouts du chevêtre et le toit ne tiennent que par les appuis sur le dôme. Déconseillé — pas de document de fabrication.');
+    } else warnings.push('Bord haut de l\'ouverture trop découpé : seule l\'huisserie est dessinée.');
+
+    // ---- raccords ----
+    const segDist = (p, a, b) => { const ab = [b.x - a.x, b.y - a.y, b.z - a.z], ap = [p.x - a.x, p.y - a.y, p.z - a.z], L2 = ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2;
+      const k = L2 < 1e-12 ? 0 : Math.max(0, Math.min(1, (ab[0] * ap[0] + ab[1] * ap[1] + ab[2] * ap[2]) / L2));
+      return { d: Math.hypot(ap[0] - k * ab[0], ap[1] - k * ab[1], ap[2] - k * ab[2]), k }; };
+    const dir = p => { const v = [p.b.x - p.a.x, p.b.y - p.a.y, p.b.z - p.a.z], l = Math.hypot(...v); return v.map(x => x / l); };
+    const cosAng = (p, q) => { const a = dir(p), b = dir(q); return Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2]); };
+    const TOL = 1e-6, joints = opts.joints || {}, connections = [], floating = [];
+    const link = new Map(pieces.map((_, i) => [i, new Set()])), anchored = new Set();
+    const pushC = (family, at, list, extra) => connections.push(Object.assign({ family, at, pieces: list, joint: joints[family] || null }, extra || {}));
+    // 1) regrouper les bouts de pièces par point (un raccord = un endroit où des pièces se rencontrent)
+    const clusters = [];
+    pieces.forEach((p, i) => [p.a, p.b].forEach((E, end) => {
+      let c = clusters.find(c => dist(c.at, E) < TOL); if (!c) { c = { at: E, ends: [] }; clusters.push(c); }
+      c.ends.push({ i, end });
+    }));
+    clusters.forEach(c => {
+      const E = c.at, ids = [...new Set(c.ends.map(e => e.i))];
+      // pièces qui passent par ce point sans y finir (assemblage en T)
+      const through = pieces.map((q, j) => j).filter(j => !ids.includes(j) && (() => { const sd = segDist(E, pieces[j].a, pieces[j].b); return sd.d < TOL && sd.k > 1e-6 && sd.k < 1 - 1e-6; })());
+      const all = ids.concat(through);
+      all.forEach(a => all.forEach(b => { if (a !== b) link.get(a).add(b); }));
+      const nd = node3.find(q => dist(q.p, E) < TOL), st = !nd && struts.find(([a, b]) => segDist(E, a, b).d < TOL), gr = !nd && E.y < TOL;
+      if (nd || st || gr) all.forEach(k => anchored.add(k));
+      if (nd) pushC('dome-noeud', E, all, { node: nd.id });
+      else if (st) { const v = [st[1].x - st[0].x, st[1].y - st[0].y, st[1].z - st[0].z], l = Math.hypot(...v); pushC('dome-montant', E, all, { strutDir: v.map(x => x / l) }); }
+      else if (gr) pushC('sol', E, all);
+      if (all.length >= 2) {
+        let fam;
+        if (through.length) fam = through.some(j => ids.some(i => cosAng(pieces[i], pieces[j]) < 0.17)) ? 'T' : 'oblique';
+        else fam = ids.some(i => ids.some(j => i !== j && cosAng(pieces[i], pieces[j]) < 0.17)) ? 'angle' : 'oblique';
+        if (!(nd || st)) pushC(fam, E, all);   // sur le dôme, l'assemblage au dôme fait aussi la liaison entre pièces
+      }
+      if (!nd && !st && !gr && all.length < 2) c.ends.forEach(e => floating.push({ piece: e.i, kind: pieces[e.i].kind, end: e.end, at: E }));
+    });
+    // 2) contacts « posé sur » : pièces parallèles, côte à côte (distance d'axe = une section) et qui se recouvrent
+    pieces.forEach((p, i) => pieces.forEach((q, j) => { if (j <= i || cosAng(p, q) < 0.999) return;
+      const e = dir(p), proj = X => (X.x - p.a.x) * e[0] + (X.y - p.a.y) * e[1] + (X.z - p.a.z) * e[2];
+      const lo = Math.max(0, Math.min(proj(q.a), proj(q.b))), hi = Math.min(p.length, Math.max(proj(q.a), proj(q.b)));
+      if (hi - lo < MIN) return;
+      const m = proj(q.a), Q = { x: p.a.x + e[0] * m, y: p.a.y + e[1] * m, z: p.a.z + e[2] * m }, ld = dist(Q, q.a);
+      if (Math.abs(ld - sec.w) < 1e-6) { link.get(i).add(j); link.get(j).add(i);
+        const mid = (lo + hi) / 2; pushC('pose', { x: p.a.x + e[0] * mid, y: p.a.y + e[1] * mid, z: p.a.z + e[2] * mid }, [i, j]); }
+    }));
+    // moises : deux joues de 300 mm, parallèles au montant du dôme, de part et d'autre (rayon du montant 22 mm)
+    const extras = [];
+    connections.filter(c => c.family === 'dome-montant' && c.joint === 'moise').forEach(c => {
+      const sd = c.strutDir, pd = dir(pieces[c.pieces[0]]);
+      let k = [sd[1] * pd[2] - sd[2] * pd[1], sd[2] * pd[0] - sd[0] * pd[2], sd[0] * pd[1] - sd[1] * pd[0]]; const kl = Math.hypot(...k); if (kl < 1e-9) return; k = k.map(x => x / kl);
+      const off = Math.max(0.022, sec.d / 2) + 0.011;   // de part et d'autre du plus épais des deux, moise de 22 mm
+      [-1, 1].forEach(sg => { const C = { x: c.at.x + k[0] * off * sg, y: c.at.y + k[1] * off * sg, z: c.at.z + k[2] * off * sg };
+        extras.push({ kind: 'moise', a: { x: C.x - sd[0] * 0.15, y: C.y - sd[1] * 0.15, z: C.z - sd[2] * 0.15 }, b: { x: C.x + sd[0] * 0.15, y: C.y + sd[1] * 0.15, z: C.z + sd[2] * 0.15 }, length: 0.3, up: { x: k[0], y: k[1], z: k[2] } }); });
+    });
+    const reach = new Set(anchored), stack = [...anchored];
+    while (stack.length) { const i = stack.pop(); link.get(i).forEach(j => { if (!reach.has(j)) { reach.add(j); stack.push(j); } }); }
+    const unsupported = pieces.map((p, i) => i).filter(i => !reach.has(i));
+
     const totals = {}; pieces.forEach(p => { const t = totals[p.kind] || (totals[p.kind] = { count: 0, length: 0 }); t.count++; t.length += p.length; });
-    let roofArea = 0; roof.forEach(q => { [[0, 1, 2], [0, 2, 3]].forEach(([i, j, k]) => { const A = q[i], B = q[j], C = q[k];
-      const e = [B.x - A.x, B.y - A.y, B.z - A.z], f = [C.x - A.x, C.y - A.y, C.z - A.z];
-      roofArea += Math.hypot(e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]) / 2; }); });
-    return { section: sec, pieces, roof, totals, roofArea, closed: !!chain };
+    const area4 = q => { let A = 0; [[0, 1, 2], [0, 2, 3]].forEach(([i, j, k]) => { const a = q[i], b = q[j], c = q[k];
+      const e = [b.x - a.x, b.y - a.y, b.z - a.z], f = [c.x - a.x, c.y - a.y, c.z - a.z];
+      A += Math.hypot(e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]) / 2; }); return A; };
+    const areas = {}; panels.forEach(pn => { areas[pn.kind] = (areas[pn.kind] || 0) + area4(pn.pts); });
+    const byFamily = {}; connections.forEach(c => { byFamily[c.family] = (byFamily[c.family] || 0) + 1; });
+    return { section: sec, support, attachAppui: attA, attachChevron: attC, pieces, panels, roof: panels.filter(p => p.kind === 'toit').map(p => p.pts),
+      roofArea: areas.toit || 0, areas, totals, connections, extras, byFamily, floating, unsupported,
+      complete: !!chain && !floating.length && !unsupported.length, closed: !!chain, warnings,
+      advised: support !== 'porte-a-faux' };
   }
 
-  const Door = { compute, structure, contourLoop, plumbPlane, fits, inside, clipT, area2, topAt };
+  const Door = { SUPPORTS, ATTACH, compute, structure, contourLoop, plumbPlane, fits, inside, clipT, area2, topAt };
   if (typeof module !== 'undefined' && module.exports) module.exports = Door;
   else global.Door = Door;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script id="joinery-src">// ---------------------------------------------------------
+// joinery.js — Bibliothèque d'assemblages de menuiserie et de techniques constructives
+// (mission NOMAD-2026-005). Données pures + schémas SVG, sans DOM, testées sous Node
+// (tests/node/joinery.test.js).
+//
+// Image : c'est le classeur de fiches de l'atelier. Chaque raccord calculé par la
+// structure (door.js) appartient à une FAMILLE (angle, T, oblique, pose, nœud du dôme,
+// montant du dôme, sol) ; chaque famille propose plusieurs ASSEMBLAGES, chacun avec sa
+// fiche : à quoi il sert, quand le choisir, ses limites, l'outillage, les étapes, un schéma.
+//
+// Statut : 🟠 fiches didactiques, non vérifiées en atelier ; aucune ne remplace une
+// note de calcul. Les assemblages ne changent pas la géométrie : ils disent COMMENT
+// relier les pièces que la structure place.
+// ---------------------------------------------------------
+(function (global) {
+  'use strict';
+
+  // familles de raccords (classées par door.js) et assemblage proposé par défaut
+  const FAMILIES = {
+    angle: { name: 'Angle (deux pièces finissent au même point)', default: 'tenon-mortaise', options: ['tenon-mortaise', 'mi-bois', 'equerre'] },
+    T: { name: 'En T (une pièce arrive sur une autre)', default: 'tenon-mortaise', options: ['tenon-mortaise', 'sabot', 'equerre', 'vis-structurelle'] },
+    oblique: { name: 'Oblique (rencontre en biais)', default: 'embrevement', options: ['embrevement', 'entaille', 'vis-structurelle'] },
+    pose: { name: 'Posé sur (pièces côte à côte)', default: 'vis-structurelle', options: ['vis-structurelle', 'boulon', 'entaille'] },
+    'dome-noeud': { name: 'Sur un nœud du dôme', default: 'platine', options: ['platine', 'boulon'] },
+    'dome-montant': { name: 'Sur un montant du dôme', default: 'moise', options: ['moise', 'cale-biaise', 'sabot'] },
+    sol: { name: 'Au sol', default: 'pied-poteau', options: ['pied-poteau', 'platine-plancher', 'lisse-ancree'] }
+  };
+
+  // petits outils de dessin : schémas en élévation, 160 × 100
+  const R = (x, y, w, h, c) => '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="' + (c || '#d9b48a') + '" stroke="#5a3d22" stroke-width="1.2"/>';
+  const Pl = (pts, c) => '<polygon points="' + pts + '" fill="' + (c || '#d9b48a') + '" stroke="#5a3d22" stroke-width="1.2"/>';
+  const Ln = (x1, y1, x2, y2, c, dash) => '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke="' + (c || '#5a3d22') + '" stroke-width="1.2"' + (dash ? ' stroke-dasharray="3 2"' : '') + '/>';
+  const Ci = (x, y, r, c) => '<circle cx="' + x + '" cy="' + y + '" r="' + r + '" fill="' + (c || '#8a8f96') + '" stroke="#3b3f44" stroke-width="1"/>';
+  const T = (x, y, s) => '<text x="' + x + '" y="' + y + '" font-size="8" fill="#3b2a18" font-family="sans-serif">' + s + '</text>';
+  const SVG = body => '<svg viewBox="0 0 160 100" width="160" height="100" xmlns="http://www.w3.org/2000/svg">' + body + '</svg>';
+  const STEEL = '#b9bec4', DOME = '#c9a06e';
+
+  const LIBRARY = {
+    'tenon-mortaise': { name: 'Tenon-mortaise', family: 'bois-bois', analogy: 'Une clé dans sa serrure : le tenon entre dans la mortaise et ne peut plus pivoter.',
+      use: 'Assemblage d\'angle ou en T des cadres (huisserie, potelets sur chevêtre). Transmet bien la compression et tient l\'équerrage.',
+      limits: 'Affaiblit la pièce mortaisée (garder au moins 1/3 de bois de chaque côté). Tenon = 1/3 de l\'épaisseur. Cheviller ou coller ; craint la traction seule.',
+      tools: 'Scie, ciseau à bois ou mortaiseuse, trusquin, maillet.',
+      steps: ['Tracer au trusquin le tenon (1/3 de l\'épaisseur) et la mortaise', 'Scier les joues et les épaulements du tenon', 'Creuser la mortaise 2 mm plus profonde que le tenon', 'Ajuster à sec, puis cheviller (cheville décalée de 1 à 2 mm pour serrer)'],
+      svg: SVG(R(20, 10, 30, 80) + R(50, 35, 90, 30) + R(35, 41, 15, 18, '#c49a6c') + Ln(35, 41, 35, 59, '#5a3d22', true) + Ci(42, 50, 2.5, '#7a5230') + T(60, 30, 'tenon') + T(4, 98, 'mortaise')) },
+    'mi-bois': { name: 'Mi-bois', family: 'bois-bois', analogy: 'Deux mains qui se croisent à plat : chaque pièce perd la moitié de son épaisseur pour se loger dans l\'autre.',
+      use: 'Angle simple et rapide de cadre (huisserie, traverses). Les faces restent affleurantes.',
+      limits: 'Chaque pièce garde seulement la moitié de sa section au droit de l\'assemblage. Toujours visser ou cheviller ; faible en flexion.',
+      tools: 'Scie circulaire réglée à mi-épaisseur, ciseau, vis.',
+      steps: ['Régler la profondeur de coupe à la moitié de l\'épaisseur', 'Faire des traits de scie rapprochés sur la largeur de l\'autre pièce', 'Nettoyer au ciseau', 'Assembler, coller et visser en quinconce'],
+      svg: SVG(R(20, 30, 120, 25) + R(20, 30, 25, 60, '#c49a6c') + Ln(20, 42, 45, 42, '#5a3d22', true) + T(60, 25, 'chaque pièce : 1/2 épaisseur')) },
+    embrevement: { name: 'Embrèvement', family: 'bois-bois', analogy: 'Le pied d\'une échelle calé dans une marche : la pièce en biais pousse dans une entaille et ne glisse pas.',
+      use: 'Rencontre en biais qui travaille en compression : rampant sur potelet, contrefiche sur chevêtre.',
+      limits: 'Ne tient que si la pièce pousse ; ajouter une vis ou un boulon contre le soulèvement. Profondeur ≤ 1/4 de la hauteur de la pièce entaillée.',
+      tools: 'Fausse équerre, scie, ciseau, rabot.',
+      steps: ['Relever l\'angle à la fausse équerre', 'Tracer l\'entaille selon la bissectrice de l\'angle', 'Scier et dégager l\'entaille au ciseau', 'Couper l\'about de la pièce en biais, ajuster et fixer d\'une vis'],
+      svg: SVG(R(10, 60, 140, 25) + Pl('40,60 55,52 130,10 118,4 40,52') + Pl('40,60 55,60 55,52', '#c49a6c') + T(80, 50, 'pousse')) },
+    entaille: { name: 'Entaille simple', family: 'bois-bois', analogy: 'Un tiroir dans son rail : la pièce repose dans une encoche qui l\'empêche de glisser.',
+      use: 'Chevron ou traverse posé sur une pièce porteuse ; reprise d\'un appui sans quincaillerie visible.',
+      limits: 'Entaille ≤ 1/3 de la hauteur de la pièce porteuse. Fixer par vis ; ne tient pas seule en traction.',
+      tools: 'Scie, ciseau, défonceuse (option).',
+      steps: ['Tracer la largeur de la pièce posée', 'Scier les deux joues à la profondeur', 'Dégager au ciseau', 'Poser et visser'],
+      svg: SVG(R(10, 50, 140, 30) + R(60, 30, 30, 32, '#c49a6c') + Ln(60, 50, 90, 50, '#5a3d22', true) + T(95, 40, 'encoche ≤ 1/3')) },
+    sabot: { name: 'Sabot métallique', family: 'quincaillerie', analogy: 'Une chaussure pour le bout de la poutre : le sabot la porte et se cloue sur la pièce d\'en face.',
+      use: 'Pièce qui arrive en T sur une autre (chevron, traverse). Rapide, ne fragilise pas le bois. Variante à ailes inclinables sur un montant de dôme.',
+      limits: 'Utiliser les pointes crantées ou vis prescrites par le fabricant, toutes les perforations. Galvanisé ou inox à l\'extérieur.',
+      tools: 'Visseuse, pointes annelées ou vis à tête cylindrique pour connecteurs.',
+      steps: ['Choisir le sabot à la section de la pièce portée (ici 45 × 70)', 'Fixer le sabot sur la pièce porteuse, de niveau', 'Poser la pièce, fixer toutes les perforations'],
+      svg: SVG(R(10, 15, 30, 80) + R(40, 40, 110, 25) + Pl('40,36 70,36 70,69 40,69 40,65 66,65 66,40 40,40', STEEL) + T(75, 34, 'sabot')) },
+    equerre: { name: 'Équerre renforcée', family: 'quincaillerie', analogy: 'Le coin d\'un livre relié : une cornière tient l\'angle à 90°.',
+      use: 'Angle ou T sans usinage, tenue de l\'équerrage d\'un cadre ; montage rapide ou démontable.',
+      limits: 'Toujours par paire (une de chaque côté) pour un effort sérieux. Ne remplace pas un appui en compression.',
+      tools: 'Visseuse, vis pour connecteurs.',
+      steps: ['Présenter les pièces d\'équerre', 'Fixer l\'équerre sur la pièce porteuse', 'Fixer sur la pièce portée, puis la seconde équerre de l\'autre côté'],
+      svg: SVG(R(20, 10, 25, 80) + R(45, 60, 105, 25) + Pl('45,30 50,30 50,55 75,55 75,60 45,60', STEEL) + T(80, 50, 'équerre')) },
+    'vis-structurelle': { name: 'Vis structurelle', family: 'quincaillerie', analogy: 'Une couture invisible : de longues vis filetées tirent les deux pièces l\'une contre l\'autre.',
+      use: 'Pièces posées l\'une sur l\'autre (chevêtre sur linteau), reprises rapides en biais.',
+      limits: 'Respecter les distances aux bords et la longueur d\'ancrage du fabricant ; avant-trou dans les bois durs. Pas d\'appui en bout de bois seul.',
+      tools: 'Visseuse puissante, embout adapté.',
+      steps: ['Serrer les pièces', 'Visser en croix (deux vis inclinées l\'une vers l\'autre)', 'Respecter l\'espacement indiqué par le fabricant'],
+      svg: SVG(R(10, 20, 140, 25) + R(10, 45, 140, 25, '#c49a6c') + Ln(50, 15, 70, 70, '#3b3f44') + Ln(110, 15, 90, 70, '#3b3f44') + T(10, 90, 'vis en croix')) },
+    boulon: { name: 'Boulon traversant', family: 'quincaillerie', analogy: 'Un serre-joint qui reste en place : la tige traverse les pièces et l\'écrou serre.',
+      use: 'Liaison démontable de deux pièces côte à côte, ou d\'une pièce sur une platine de nœud.',
+      limits: 'Rondelles larges côté bois, resserrer après séchage. Distance au bout ≥ 7 diamètres.',
+      tools: 'Perceuse et mèche longue, clés.',
+      steps: ['Serrer les pièces', 'Percer au diamètre du boulon', 'Poser boulon, rondelles larges et écrou ; serrer sans écraser le bois'],
+      svg: SVG(R(10, 25, 140, 22) + R(10, 47, 140, 22, '#c49a6c') + R(76, 15, 8, 64, STEEL) + R(68, 15, 24, 6, STEEL) + R(68, 73, 24, 6, STEEL) + T(96, 18, 'rondelle')) },
+    platine: { name: 'Platine sur nœud', family: 'dome', analogy: 'Une prise multiple : le nœud du dôme reçoit une plaque, et la nouvelle pièce s\'y branche.',
+      use: 'Pièce qui arrive sur un nœud du dôme (lisse sur le seuil, chevron au nœud). Les efforts vont droit dans le nœud.',
+      limits: 'Dépend du type de connecteur du dôme : vérifier la place libre sur le nœud et le perçage. Acier galvanisé, boulonné.',
+      tools: 'Perceuse, clés, plat acier ou platine du fournisseur.',
+      steps: ['Repérer le nœud (étiquette N…)', 'Fixer une platine coudée sous la plaque du nœud ou sur ses boulons', 'Boulonner la pièce sur la platine'],
+      svg: SVG(Ci(60, 50, 14) + R(20, 45, 30, 10, DOME) + R(60, 10, 10, 30, DOME) + R(74, 44, 20, 12, STEEL) + R(94, 44, 56, 12) + T(100, 40, 'nouvelle pièce') + T(28, 80, 'nœud du dôme')) },
+    moise: { name: 'Moisage', family: 'dome', analogy: 'Un sandwich : deux planches serrent le montant du dôme et la nouvelle pièce, boulonnées au travers.',
+      use: 'Raccord n\'importe où le long d\'un montant du dôme incliné, sans l\'entailler. Très bon pour les appuis et chevrons.',
+      limits: 'Deux moises par raccord, au moins 2 boulons par pièce serrée. Ne pas percer à moins de 7 diamètres du bout du montant.',
+      tools: 'Scie, perceuse et mèche longue, boulons, clés.',
+      steps: ['Couper deux moises (environ 300 mm)', 'Les présenter de part et d\'autre du montant et de la pièce', 'Percer au travers, boulonner, serrer'],
+      svg: SVG(Pl('20,90 40,90 120,10 100,10', DOME) + R(55, 40, 95, 18) + R(40, 30, 70, 8, '#c49a6c') + R(40, 60, 70, 8, '#c49a6c') + Ci(62, 49, 3) + Ci(92, 49, 3) + T(112, 36, 'moises')) },
+    'cale-biaise': { name: 'Cale biaise vissée', family: 'dome', analogy: 'Une cale sous un pied de table bancal : elle rattrape la pente du montant pour offrir une face d\'appui droite.',
+      use: 'Poser une pièce horizontale sur un montant de dôme incliné, avec une face d\'appui franche.',
+      limits: 'La cale est collée et vissée au montant ; la pièce est vissée dans la cale. Angle relevé sur place à la fausse équerre.',
+      tools: 'Fausse équerre, scie à onglet, visseuse.',
+      steps: ['Relever l\'angle entre le montant et l\'horizontale', 'Couper une cale à cet angle', 'Coller et visser la cale sur le montant', 'Poser la pièce et la visser dans la cale'],
+      svg: SVG(Pl('20,90 40,90 120,10 100,10', DOME) + Pl('70,40 92,40 92,62', '#c49a6c') + R(92, 32, 58, 16) + T(96, 60, 'cale')) },
+    'pied-poteau': { name: 'Pied de poteau réglable', family: 'sol', analogy: 'Les pieds réglables d\'une machine à laver : le poteau ne touche pas le sol mouillé et se met de niveau.',
+      use: 'Poteau d\'angle de l\'avant-corps posé sur une dalle, un plot ou une terrasse. Tient le bois à l\'écart de l\'eau.',
+      limits: 'Garder au moins 20 mm entre le bois et le sol. Ancrage chimique ou mécanique dans le support.',
+      tools: 'Perforateur, cheville ou scellement, visseuse.',
+      steps: ['Tracer l\'implantation', 'Cheviller la platine basse dans le support', 'Régler la hauteur, fixer le poteau dans l\'étrier'],
+      svg: SVG(R(0, 85, 160, 15, '#bdb6aa') + R(66, 10, 28, 58) + R(70, 68, 20, 4, STEEL) + R(78, 72, 4, 10, STEEL) + R(64, 82, 32, 4, STEEL) + T(100, 78, '≥ 20 mm')) },
+    'platine-plancher': { name: 'Platine sur plancher', family: 'sol', analogy: 'Une semelle de chaussure vissée : la pièce s\'appuie sur une plaque fixée dans le plancher.',
+      use: 'Montant ou poteau posé à l\'intérieur, sur le plancher du dôme (sas intérieur).',
+      limits: 'Visser dans une solive ou une lambourde, pas seulement dans le panneau de plancher.',
+      tools: 'Visseuse, vis structurelles.',
+      steps: ['Repérer la solive sous le plancher', 'Visser la platine', 'Fixer la pièce sur la platine'],
+      svg: SVG(R(0, 80, 160, 12, '#c9a06e') + R(66, 10, 28, 66) + Pl('56,76 104,76 104,80 56,80', STEEL) + T(110, 74, 'platine')) },
+    'lisse-ancree': { name: 'Lisse basse ancrée', family: 'sol', analogy: 'Le rail d\'une porte coulissante : une pièce couchée au sol reçoit les montants et répartit leur appui.',
+      use: 'Pied de paroi ou de poteau : relie les poteaux d\'angle au seuil du dôme et ancre l\'ensemble au sol.',
+      limits: 'Sur une bande d\'arase (ou de la membrane) pour couper les remontées d\'eau ; ancrage tous les 600 mm environ.',
+      tools: 'Perforateur, chevilles, visseuse.',
+      steps: ['Poser une bande d\'arase sous la lisse', 'Cheviller la lisse au support', 'Assembler les montants sur la lisse (tenon ou équerre)'],
+      svg: SVG(R(0, 85, 160, 15, '#bdb6aa') + R(10, 72, 140, 13) + R(30, 15, 20, 57) + R(110, 15, 20, 57) + Ln(70, 72, 70, 95, '#3b3f44') + T(76, 68, 'ancrage')) }
+  };
+
+  // assemblage choisi pour une famille (choix de l'utilisateur s'il est valable, sinon défaut)
+  function resolve(choices) {
+    const out = {};
+    Object.keys(FAMILIES).forEach(f => { const c = choices && choices[f]; out[f] = FAMILIES[f].options.includes(c) ? c : FAMILIES[f].default; });
+    return out;
+  }
+
+  const Joinery = { FAMILIES, LIBRARY, resolve };
+  if (typeof module !== 'undefined' && module.exports) module.exports = Joinery;
+  else global.Joinery = Joinery;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script id="door-ui-src">// ---------------------------------------------------------
+// door-ui.js — Fiche « Porte d'aplomb » de l'onglet Base (NOMAD-2026-005) : réglages, résultat,
+// choix constructifs, raccords et bibliothèque d'assemblages. Ne fait que du texte HTML
+// à partir des calculs (door.js) et des fiches (joinery.js) ; les événements restent dans app.js
+// (attributs data-door-key / data-door-f / data-door-add / data-door-del / data-joint-fiche).
+// ---------------------------------------------------------
+(function (global) {
+  'use strict';
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const mm = v => Math.round(v * 1000) + ' mm', m2 = v => v.toFixed(2) + ' m²';
+  const PIECES = { huisserie: 'Huisserie (montants, linteau, seuil)', chevetre: 'Chevêtre (posé sur le linteau)', appui: 'Appuis du chevêtre (jusqu\'au montant du dôme)',
+    contrefiche: 'Contrefiches (du chevêtre au nœud du dôme)', potelet: 'Potelets', rampant: 'Rampants (bord haut, plan de porte)', chevron: 'Chevrons du toit (jusqu\'au dôme)',
+    poteau: 'Poteaux d\'angle', lisse: 'Lisses basses (jusqu\'au seuil du dôme)', traverse: 'Traverses des parois' };
+  const SUPPORT = { poteaux: 'Poteaux d\'angle au sol + lisses basses', parois: 'Poteaux + parois latérales fermées', 'porte-a-faux': '⛔ Porte-à-faux (déconseillé)' };
+  const SUPPORT_WHY = {
+    poteaux: 'Comme les pieds d\'une table : les bouts du chevêtre descendent au sol par un poteau, et une lisse basse relie chaque pied au seuil du dôme.',
+    parois: 'Comme une cabane accolée : les poteaux reçoivent des traverses qui ferment les côtés jusqu\'au cadre du dôme ; l\'avant-corps devient une petite pièce.',
+    'porte-a-faux': 'Comme une étagère sans équerre : tout le poids du toit pend sur les appuis vissés au dôme. Gardé pour comparer, sans document de fabrication.' };
+  const ATTACH = { montant: 'sur le montant (n\'importe où)', noeud: 'sur un nœud seulement' };
+  const sel = (key, f, cur, opts) => '<select data-door-key="' + esc(key) + '" data-door-f="' + f + '">' +
+    Object.keys(opts).map(k => '<option value="' + k + '"' + (k === cur ? ' selected' : '') + '>' + esc(opts[k]) + '</option>').join('') + '</select>';
+
+  function fiche(J, id) {
+    const f = J.LIBRARY[id]; if (!f) return '';
+    return '<div class="jfiche" data-fiche="' + id + '"><div class="jfiche-svg">' + f.svg + '</div><div><b>' + esc(f.name) + '</b> <span class="muted">🟠 fiche didactique, à valider en atelier</span>' +
+      '<p><i>' + esc(f.analogy) + '</i></p><dl><dt>Quand</dt><dd>' + esc(f.use) + '</dd><dt>Limites</dt><dd>' + esc(f.limits) + '</dd><dt>Outillage</dt><dd>' + esc(f.tools) + '</dd></dl>' +
+      '<ol>' + f.steps.map(s => '<li>' + esc(s) + '</li>').join('') + '</ol></div></div>';
+  }
+
+  // o = { key, door, result (Door.compute), structure (Door.structure), joints (Joinery.resolve), fiche (id ouvert ou null), deep (recul maxi) }
+  function html(J, o) {
+    const key = o.key, d = o.door, r = o.result, sk = o.structure;
+    const num = (f, lab, v, min, max, step) => '<label>' + lab + ' <input type="number" data-door-key="' + esc(key) + '" data-door-f="' + f + '" value="' + v + '" min="' + min + '" max="' + max + '" step="' + step + '"></label>';
+    let h = '<div class="door"><div class="door-head"><b>Porte d\'aplomb</b><button class="ghost" data-door-del="' + esc(key) + '">Retirer la porte</button></div>';
+    if (!r.ok) return h + '<div class="op-warn">' + esc(r.error) + '</div></div>';
+    h += '<div class="door-in">' + num('width', 'Largeur (m)', d.width, 0.5, 3, 0.01) + num('height', 'Hauteur (m)', d.height, 1.5, 3, 0.01) +
+      num('offset', 'Décalage (m)', d.offset, -2, 2, 0.01) +
+      '<label>Recul vers l\'intérieur <input type="range" data-door-key="' + esc(key) + '" data-door-f="setback" min="0" max="' + o.deep.toFixed(3) + '" step="0.01" value="' + d.setback + '"> ' + mm(d.setback) + ' / ' + mm(o.deep) + '</label></div>';
+    h += r.fits ? '<div class="op-status ok">🟡 La porte passe dans l\'ouverture (calculé).</div>'
+      : '<div class="op-status err">🔴 La porte ne passe pas : un montant du cadre la coupe. Maxi : ' + mm(r.max.heightForWidth) + ' de haut pour ' + mm(d.width) + ' de large, ou ' + mm(r.max.widthForHeight) + ' de large pour ' + mm(d.height) + ' de haut.</div>';
+    if (!r.fits) return h + '</div>';
+    const post = (n, p) => p ? '<dt>Potelet ' + n + '</dt><dd>monte de ' + mm(p.rise) + ' au-dessus du linteau, puis ' + (Math.abs(p.depth) < 0.005 ? 'touche le cadre' : (p.depth < 0 ? 'recule' : 'avance') + ' de ' + mm(Math.abs(p.depth)) + ' jusqu\'au montant du dôme') + '</dd>' : '';
+    h += '<dl><dt>Huisserie (axes)</dt><dd>2 montants de ' + mm(d.height) + ' · linteau et seuil de ' + mm(d.width) + '</dd>' +
+      post('gauche', r.parts.posts[0]) + post('du milieu', r.parts.posts[1]) + post('droit', r.parts.posts[2]) + '</dl>';
+    h += '<dl><dt>Fermeture autour de la porte</dt><dd>' + m2(r.infill.total) + ' (au-dessus du linteau ' + m2(r.infill.tympan) + ' · sur les côtés ' + m2(r.infill.sides) + ')</dd>' +
+      '<dt>Ébrasement (écart porte ↔ cadre)</dt><dd>de ' + mm(r.reveal.min) + ' à ' + mm(r.reveal.max) + ' (négatif = derrière la porte, côté intérieur)</dd></dl>';
+    if (!sk) return h + '</div>';
+    // choix constructifs
+    h += '<div class="door-choice"><b>Choix constructifs</b>' +
+      '<label>Tenue de l\'avant-corps ' + sel(key, 'support', sk.support, SUPPORT) + '</label>' +
+      '<label>Appuis du chevêtre ' + sel(key, 'attachAppui', sk.attachAppui, ATTACH) + '</label>' +
+      '<label>Chevrons ' + sel(key, 'attachChevron', sk.attachChevron, ATTACH) + '</label>' +
+      '<div class="door-note">' + esc(SUPPORT_WHY[sk.support]) + '</div></div>';
+    sk.warnings.forEach(w => { h += '<div class="op-status err">⚠ ' + esc(w) + '</div>'; });
+    // raccords : rien de volant
+    h += sk.complete
+      ? '<div class="op-status ok">✅ Aucune pièce volante : ' + sk.connections.length + ' raccords, chaque pièce rejoint le sol ou le dôme par une chaîne d\'assemblages.</div>'
+      : '<div class="op-status err">⚠ ' + sk.floating.length + ' bout(s) de pièce volant(s), ' + sk.unsupported.length + ' pièce(s) non portée(s) : ' +
+        esc(sk.floating.map(f => PIECES[f.kind] || f.kind).concat(sk.unsupported.map(i => PIECES[sk.pieces[i].kind] || sk.pieces[i].kind)).join(', ')) + '</div>';
+    // pièces
+    h += '<div class="door-3d"><b>Pièces (dessinées en 3D)</b> <span class="muted">🟠 aperçu · section 45 × 70 mm · longueurs d\'axe, sans les coupes d\'assemblage</span><dl>' +
+      Object.keys(PIECES).filter(k => sk.totals[k]).map(k => '<dt>' + PIECES[k] + '</dt><dd>' + sk.totals[k].count + ' · ' +
+        sk.pieces.filter(p => p.kind === k).map(p => mm(p.length)).join(', ') + '</dd>').join('') +
+      '<dt>Toit de l\'avant-corps</dt><dd>' + m2(sk.areas.toit || 0) + '</dd>' +
+      (sk.areas.paroi ? '<dt>Parois latérales · façade</dt><dd>' + m2(sk.areas.paroi) + ' · ' + m2(sk.areas.facade || 0) + '</dd>' : '') +
+      (sk.byFamily['dome-montant'] && o.joints['dome-montant'] === 'moise' ? '<dt>Moises (2 par raccord sur montant)</dt><dd>' + 2 * sk.byFamily['dome-montant'] + ' · 300 mm</dd>' : '') + '</dl></div>';
+    // raccords et assemblages
+    h += '<div class="door-joints"><b>Raccords et assemblages</b> <span class="muted">cliquer un nom pour ouvrir sa fiche</span><table><tr><th>Raccord</th><th>Nombre</th><th>Assemblage</th></tr>' +
+      Object.keys(J.FAMILIES).filter(f => sk.byFamily[f]).map(f => '<tr><td>' + esc(J.FAMILIES[f].name) + '</td><td>' + sk.byFamily[f] + '</td><td>' +
+        sel(key, 'joint:' + f, o.joints[f], Object.fromEntries(J.FAMILIES[f].options.map(id => [id, J.LIBRARY[id].name]))) +
+        ' <a href="#" data-joint-fiche="' + o.joints[f] + '">fiche</a></td></tr>').join('') + '</table>' +
+      (o.fiche ? fiche(J, o.fiche) : '') + '</div>';
+    // bibliothèque complète
+    const fam = { 'bois-bois': 'Assemblages bois-bois', quincaillerie: 'Quincaillerie', dome: 'Raccords au dôme', sol: 'Ancrages au sol' };
+    h += '<details class="door-lib"><summary>Bibliothèque d\'assemblages (' + Object.keys(J.LIBRARY).length + ' fiches)</summary>' +
+      Object.keys(fam).map(g => '<div><b>' + fam[g] + '</b> : ' + Object.keys(J.LIBRARY).filter(id => J.LIBRARY[id].family === g)
+        .map(id => '<a href="#" data-joint-fiche="' + id + '">' + esc(J.LIBRARY[id].name) + '</a>').join(' · ') + '</div>').join('') + '</details>';
+    h += '<div class="door-note">Comme une porte dans un mur épais : la paroi du dôme penche, donc au-dessus de la porte le cadre est en retrait. ' +
+      'Porte au droit du seuil (recul 0) : il faut un petit toit, un <i>avant-corps</i>, du linteau jusqu\'au dôme. Porte reculée : elle se rapproche du cadre et forme un <i>sas intérieur</i>. ' +
+      '🟠 La tenue de la structure (efforts, sections) n\'est pas encore calculée.</div>';
+    return h + '</div>';
+  }
+
+  const DoorUI = { html, fiche, PIECES, SUPPORT };
+  if (typeof module !== 'undefined' && module.exports) module.exports = DoorUI;
+  else global.DoorUI = DoorUI;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="unfold-src">
@@ -10288,57 +10623,39 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   }
   // Porte d'aplomb (NOMAD-2026-005) : une porte par ouverture fermée par le sol, repérée par son seuil
   const doorKey = (o, L) => o.seuil.map(k => k.split('-').map(id => L.get(+id)).sort().join('–')).sort().join(' ');
+  let doorFiche = null;   // fiche d'assemblage ouverte
+  const doorOpts = d => ({ support: d.support, attachAppui: d.attachAppui, attachChevron: d.attachChevron, joints: Joinery.resolve(d.joints) });
   function doorBlock(o, L){
-    const key = doorKey(o, L), d = ds.openings.doors[key], esc = s => s.replace(/"/g, '&quot;');
-    if (!d) return '<div class="door"><button class="ghost" data-door-add="' + esc(key) + '">Ajouter une porte d\'aplomb</button></div>';
+    const key = doorKey(o, L), d = ds.openings.doors[key];
+    if (!d) return '<div class="door"><button class="ghost" data-door-add="' + key.replace(/"/g, '&quot;') + '">Ajouter une porte d\'aplomb</button></div>';
     const r = Door.compute(ds.nominal, Ouvertures.strutIndex(ds.nominal), o, d);
-    const mm = v => Math.round(v * 1000) + ' mm', m2 = v => v.toFixed(2) + ' m²';
-    const num = (f, lab, v, min, max, step) => '<label>' + lab + ' <input type="number" data-door-key="' + esc(key) + '" data-door-f="' + f + '" value="' + v + '" min="' + min + '" max="' + max + '" step="' + step + '"></label>';
-    let h = '<div class="door"><div class="door-head"><b>Porte d\'aplomb</b><button class="ghost" data-door-del="' + esc(key) + '">Retirer la porte</button></div>';
-    if (!r.ok) return h + '<div class="op-warn">' + r.error + '</div></div>';
-    const deep = Math.max(0, -Math.min(...r.nodes.map(p => p.depth - d.setback)));
-    h += '<div class="door-in">' + num('width', 'Largeur (m)', d.width, 0.5, 3, 0.01) + num('height', 'Hauteur (m)', d.height, 1.5, 3, 0.01) +
-      num('offset', 'Décalage (m)', d.offset, -2, 2, 0.01) +
-      '<label>Recul vers l\'intérieur <input type="range" data-door-key="' + esc(key) + '" data-door-f="setback" min="0" max="' + deep.toFixed(3) + '" step="0.01" value="' + d.setback + '"> ' + mm(d.setback) + ' / ' + mm(deep) + '</label></div>';
-    h += r.fits ? '<div class="op-status ok">🟡 La porte passe dans l\'ouverture (calculé).</div>'
-      : '<div class="op-status err">🔴 La porte ne passe pas : un montant du cadre la coupe. Maxi : ' + mm(r.max.heightForWidth) + ' de haut pour ' + mm(d.width) + ' de large, ou ' + mm(r.max.widthForHeight) + ' de large pour ' + mm(d.height) + ' de haut.</div>';
-    if (r.fits) {
-      const post = (n, p) => p ? '<dt>Potelet ' + n + '</dt><dd>monte de ' + mm(p.rise) + ' au-dessus du linteau, puis ' + (Math.abs(p.depth) < 0.005 ? 'touche le cadre' : (p.depth < 0 ? 'recule' : 'avance') + ' de ' + mm(Math.abs(p.depth)) + ' jusqu\'au montant du dôme') + '</dd>' : '';
-      h += '<dl><dt>Huisserie (axes)</dt><dd>2 montants de ' + mm(d.height) + ' · linteau et seuil de ' + mm(d.width) + '</dd>' +
-        post('gauche', r.parts.posts[0]) + post('du milieu', r.parts.posts[1]) + post('droit', r.parts.posts[2]) +
-        '<dt>Fermeture autour de la porte</dt><dd>' + m2(r.infill.total) + ' (au-dessus du linteau ' + m2(r.infill.tympan) + ' · sur les côtés ' + m2(r.infill.sides) + ')</dd>' +
-        '<dt>Ébrasement (écart porte ↔ cadre)</dt><dd>de ' + mm(r.reveal.min) + ' à ' + mm(r.reveal.max) + ' (négatif = derrière la porte, côté intérieur)</dd></dl>';
-      const sk = Door.structure(r, DOOR_SECTION), NAMES = { huisserie: 'Huisserie (montants, linteau, seuil)', chevetre: 'Chevêtre (sur le linteau)', appui: 'Appuis du chevêtre (jusqu\'au dôme)',
-        potelet: 'Potelets', rampant: 'Rampants (bord haut, plan de porte)', chevron: 'Chevrons du toit (jusqu\'au dôme)' };
-      if (sk) h += '<div class="door-3d"><b>Structure en 3D</b> <span class="muted">🟠 aperçu · section 45 × 70 mm · longueurs d\'axe, sans les coupes d\'assemblage</span><dl>' +
-        Object.keys(NAMES).filter(k => sk.totals[k]).map(k => '<dt>' + NAMES[k] + '</dt><dd>' + sk.totals[k].count + ' pièce' + (sk.totals[k].count > 1 ? 's' : '') + ' · ' +
-          sk.pieces.filter(p => p.kind === k).map(p => mm(p.length)).join(', ') + '</dd>').join('') +
-        '<dt>Toit de l\'avant-corps</dt><dd>' + m2(sk.roofArea) + '</dd></dl></div>';
-      h += '<div class="door-note">Comme une porte dans un mur épais : la paroi du dôme penche, donc au-dessus de la porte le cadre est en retrait. ' +
-        'Porte au droit du seuil (recul 0) : il faut un petit toit, un <i>avant-corps</i>, du linteau jusqu\'au dôme. Porte reculée : elle se rapproche du cadre et forme un <i>sas intérieur</i>. ' +
-        '🟠 La tenue de la structure autour de l\'ouverture (montants retirés, renforts) n\'est pas encore évaluée.</div>';
-    }
-    return h + '</div>';
+    const deep = r.ok ? Math.max(0, -Math.min(...r.nodes.map(p => p.depth - d.setback))) : 0;
+    return DoorUI.html(Joinery, { key, door: d, result: r, structure: r.ok && Door.structure(r, DOOR_SECTION, doorOpts(d)), joints: Joinery.resolve(d.joints), fiche: doorFiche, deep });
   }
   // structures 3D des portes qui passent (affichées dans la 3D de l'onglet Base)
   function doorStructures(){
     const res = ds.openings.result; if (!(res && res.ok)) return [];
     const L = Ouvertures.nodeLabels(ds.nominal), S = Ouvertures.strutIndex(ds.nominal), out = [];
     res.openings.forEach(o => { const d = o.closedByGround && ds.openings.doors[doorKey(o, L)]; if (!d) return;
-      const st = Door.structure(Door.compute(ds.nominal, S, o, d), DOOR_SECTION); if (st) out.push(st); });
+      const st = Door.structure(Door.compute(ds.nominal, S, o, d), DOOR_SECTION, doorOpts(d)); if (st) out.push(st); });
     return out;
   }
   const DOOR_SECTION = { w: 0.045, d: 0.07 };   // 45 × 70 mm, en attendant les vraies sections (aperçu 🟠)
   function doorsChanged(){ updateOpeningsReadout(); baseFor = null; if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
   function doorClick(ev){
     const t = ev.target, add = t.getAttribute && t.getAttribute('data-door-add'), del = t.getAttribute && t.getAttribute('data-door-del');
+    const fiche = t.getAttribute && t.getAttribute('data-joint-fiche');
+    if (fiche) { ev.preventDefault(); doorFiche = doorFiche === fiche ? null : fiche; updateOpeningsReadout(); return; }
     if (add) { ds.openings.doors[add] = { width: 0.9, height: 2, offset: 0, setback: 0 }; doorsChanged(); }
     else if (del) { delete ds.openings.doors[del]; doorsChanged(); }
   }
   function doorChange(ev){
     const t = ev.target, k = t.getAttribute && t.getAttribute('data-door-key'), f = t.getAttribute('data-door-f');
     if (!k || !ds.openings.doors[k]) return;
-    const v = parseFloat(t.value); if (isFinite(v)) ds.openings.doors[k][f] = v;
+    const dd = ds.openings.doors[k];
+    if (f.startsWith('joint:')) { dd.joints = Object.assign({}, dd.joints, { [f.slice(6)]: t.value }); doorFiche = t.value; }
+    else if (t.tagName === 'SELECT') dd[f] = t.value;
+    else { const v = parseFloat(t.value); if (isFinite(v)) dd[f] = v; }
     doorsChanged();
   }
   function pickStrut(evtX, evtY){

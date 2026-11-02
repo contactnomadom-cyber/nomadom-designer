@@ -89,6 +89,13 @@ Outil **didactique** : chaque calcul explique ce qu'il fait (retour de connaissa
 
 **Structure 3D de la porte (demande du 02/11/2026)** — modélisée dans la 3D de l'onglet Base, aperçu 🟠, section 45 × 70 mm en attendant les vraies : huisserie, chevêtre posé sur le linteau avec ses 2 appuis jusqu'au dôme, potelets, rampants (bord haut dans le plan de porte), chevrons horizontaux jusqu'aux montants du dôme, toit de l'avant-corps. Chaque chevron et appui finit sur un montant du cadre (vérifié par test). Longueurs d'axe, sans les coupes d'assemblage.
 
+**Choix constructifs, raccords, bibliothèque (demande du 02–03/11/2026)**
+- Tenue de l'avant-corps au choix : poteaux d'angle + lisses basses (défaut) · parois latérales fermées · porte-à-faux (⛔ déconseillé, avertissement, pas de document de fabrication).
+- Accroche au dôme au choix, pièce par pièce : appuis et chevrons « sur le montant » (n'importe où) ou « sur un nœud seulement » (contrefiches).
+- **Aucune pièce volante** : chaque bout de pièce est classé (sol, nœud du dôme, montant du dôme, autre pièce : angle, T, oblique, posé sur) ; le logiciel vérifie que chaque pièce rejoint le sol ou le dôme par une chaîne de raccords (testé sur 72 combinaisons : 2 diamètres × 3 reculs × 3 tenues × 2 × 2 accroches).
+- Bibliothèque `src/fabrication/joinery.js` : 14 fiches didactiques 🟠 (analogie, quand, limites, outillage, étapes, schéma) — bois-bois (tenon-mortaise, mi-bois, embrèvement, entaille), quincaillerie (sabot, équerre, vis structurelle, boulon), dôme (platine sur nœud, moisage, cale biaise), sol (pied de poteau, platine sur plancher, lisse ancrée). Un assemblage choisi par famille de raccord ; les moises se dessinent en 3D.
+- Questions : sections réelles ; type de connecteur des nœuds (pour la platine) ; ancrage au sol réel (dalle, plots, terrasse).
+
 **Questions ouvertes ❓**
 1. ✅ Position du plan de porte : réglée porte par porte (curseur de recul) — décision du 02/11/2026.
 2. ✅ « Ajouter une porte » dans l'onglet Base, sous chaque ouverture fermée par le sol — décision du 02/11/2026.

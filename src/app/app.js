@@ -295,57 +295,39 @@
   }
   // Porte d'aplomb (NOMAD-2026-005) : une porte par ouverture fermée par le sol, repérée par son seuil
   const doorKey = (o, L) => o.seuil.map(k => k.split('-').map(id => L.get(+id)).sort().join('–')).sort().join(' ');
+  let doorFiche = null;   // fiche d'assemblage ouverte
+  const doorOpts = d => ({ support: d.support, attachAppui: d.attachAppui, attachChevron: d.attachChevron, joints: Joinery.resolve(d.joints) });
   function doorBlock(o, L){
-    const key = doorKey(o, L), d = ds.openings.doors[key], esc = s => s.replace(/"/g, '&quot;');
-    if (!d) return '<div class="door"><button class="ghost" data-door-add="' + esc(key) + '">Ajouter une porte d\'aplomb</button></div>';
+    const key = doorKey(o, L), d = ds.openings.doors[key];
+    if (!d) return '<div class="door"><button class="ghost" data-door-add="' + key.replace(/"/g, '&quot;') + '">Ajouter une porte d\'aplomb</button></div>';
     const r = Door.compute(ds.nominal, Ouvertures.strutIndex(ds.nominal), o, d);
-    const mm = v => Math.round(v * 1000) + ' mm', m2 = v => v.toFixed(2) + ' m²';
-    const num = (f, lab, v, min, max, step) => '<label>' + lab + ' <input type="number" data-door-key="' + esc(key) + '" data-door-f="' + f + '" value="' + v + '" min="' + min + '" max="' + max + '" step="' + step + '"></label>';
-    let h = '<div class="door"><div class="door-head"><b>Porte d\'aplomb</b><button class="ghost" data-door-del="' + esc(key) + '">Retirer la porte</button></div>';
-    if (!r.ok) return h + '<div class="op-warn">' + r.error + '</div></div>';
-    const deep = Math.max(0, -Math.min(...r.nodes.map(p => p.depth - d.setback)));
-    h += '<div class="door-in">' + num('width', 'Largeur (m)', d.width, 0.5, 3, 0.01) + num('height', 'Hauteur (m)', d.height, 1.5, 3, 0.01) +
-      num('offset', 'Décalage (m)', d.offset, -2, 2, 0.01) +
-      '<label>Recul vers l\'intérieur <input type="range" data-door-key="' + esc(key) + '" data-door-f="setback" min="0" max="' + deep.toFixed(3) + '" step="0.01" value="' + d.setback + '"> ' + mm(d.setback) + ' / ' + mm(deep) + '</label></div>';
-    h += r.fits ? '<div class="op-status ok">🟡 La porte passe dans l\'ouverture (calculé).</div>'
-      : '<div class="op-status err">🔴 La porte ne passe pas : un montant du cadre la coupe. Maxi : ' + mm(r.max.heightForWidth) + ' de haut pour ' + mm(d.width) + ' de large, ou ' + mm(r.max.widthForHeight) + ' de large pour ' + mm(d.height) + ' de haut.</div>';
-    if (r.fits) {
-      const post = (n, p) => p ? '<dt>Potelet ' + n + '</dt><dd>monte de ' + mm(p.rise) + ' au-dessus du linteau, puis ' + (Math.abs(p.depth) < 0.005 ? 'touche le cadre' : (p.depth < 0 ? 'recule' : 'avance') + ' de ' + mm(Math.abs(p.depth)) + ' jusqu\'au montant du dôme') + '</dd>' : '';
-      h += '<dl><dt>Huisserie (axes)</dt><dd>2 montants de ' + mm(d.height) + ' · linteau et seuil de ' + mm(d.width) + '</dd>' +
-        post('gauche', r.parts.posts[0]) + post('du milieu', r.parts.posts[1]) + post('droit', r.parts.posts[2]) +
-        '<dt>Fermeture autour de la porte</dt><dd>' + m2(r.infill.total) + ' (au-dessus du linteau ' + m2(r.infill.tympan) + ' · sur les côtés ' + m2(r.infill.sides) + ')</dd>' +
-        '<dt>Ébrasement (écart porte ↔ cadre)</dt><dd>de ' + mm(r.reveal.min) + ' à ' + mm(r.reveal.max) + ' (négatif = derrière la porte, côté intérieur)</dd></dl>';
-      const sk = Door.structure(r, DOOR_SECTION), NAMES = { huisserie: 'Huisserie (montants, linteau, seuil)', chevetre: 'Chevêtre (sur le linteau)', appui: 'Appuis du chevêtre (jusqu\'au dôme)',
-        potelet: 'Potelets', rampant: 'Rampants (bord haut, plan de porte)', chevron: 'Chevrons du toit (jusqu\'au dôme)' };
-      if (sk) h += '<div class="door-3d"><b>Structure en 3D</b> <span class="muted">🟠 aperçu · section 45 × 70 mm · longueurs d\'axe, sans les coupes d\'assemblage</span><dl>' +
-        Object.keys(NAMES).filter(k => sk.totals[k]).map(k => '<dt>' + NAMES[k] + '</dt><dd>' + sk.totals[k].count + ' pièce' + (sk.totals[k].count > 1 ? 's' : '') + ' · ' +
-          sk.pieces.filter(p => p.kind === k).map(p => mm(p.length)).join(', ') + '</dd>').join('') +
-        '<dt>Toit de l\'avant-corps</dt><dd>' + m2(sk.roofArea) + '</dd></dl></div>';
-      h += '<div class="door-note">Comme une porte dans un mur épais : la paroi du dôme penche, donc au-dessus de la porte le cadre est en retrait. ' +
-        'Porte au droit du seuil (recul 0) : il faut un petit toit, un <i>avant-corps</i>, du linteau jusqu\'au dôme. Porte reculée : elle se rapproche du cadre et forme un <i>sas intérieur</i>. ' +
-        '🟠 La tenue de la structure autour de l\'ouverture (montants retirés, renforts) n\'est pas encore évaluée.</div>';
-    }
-    return h + '</div>';
+    const deep = r.ok ? Math.max(0, -Math.min(...r.nodes.map(p => p.depth - d.setback))) : 0;
+    return DoorUI.html(Joinery, { key, door: d, result: r, structure: r.ok && Door.structure(r, DOOR_SECTION, doorOpts(d)), joints: Joinery.resolve(d.joints), fiche: doorFiche, deep });
   }
   // structures 3D des portes qui passent (affichées dans la 3D de l'onglet Base)
   function doorStructures(){
     const res = ds.openings.result; if (!(res && res.ok)) return [];
     const L = Ouvertures.nodeLabels(ds.nominal), S = Ouvertures.strutIndex(ds.nominal), out = [];
     res.openings.forEach(o => { const d = o.closedByGround && ds.openings.doors[doorKey(o, L)]; if (!d) return;
-      const st = Door.structure(Door.compute(ds.nominal, S, o, d), DOOR_SECTION); if (st) out.push(st); });
+      const st = Door.structure(Door.compute(ds.nominal, S, o, d), DOOR_SECTION, doorOpts(d)); if (st) out.push(st); });
     return out;
   }
   const DOOR_SECTION = { w: 0.045, d: 0.07 };   // 45 × 70 mm, en attendant les vraies sections (aperçu 🟠)
   function doorsChanged(){ updateOpeningsReadout(); baseFor = null; if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
   function doorClick(ev){
     const t = ev.target, add = t.getAttribute && t.getAttribute('data-door-add'), del = t.getAttribute && t.getAttribute('data-door-del');
+    const fiche = t.getAttribute && t.getAttribute('data-joint-fiche');
+    if (fiche) { ev.preventDefault(); doorFiche = doorFiche === fiche ? null : fiche; updateOpeningsReadout(); return; }
     if (add) { ds.openings.doors[add] = { width: 0.9, height: 2, offset: 0, setback: 0 }; doorsChanged(); }
     else if (del) { delete ds.openings.doors[del]; doorsChanged(); }
   }
   function doorChange(ev){
     const t = ev.target, k = t.getAttribute && t.getAttribute('data-door-key'), f = t.getAttribute('data-door-f');
     if (!k || !ds.openings.doors[k]) return;
-    const v = parseFloat(t.value); if (isFinite(v)) ds.openings.doors[k][f] = v;
+    const dd = ds.openings.doors[k];
+    if (f.startsWith('joint:')) { dd.joints = Object.assign({}, dd.joints, { [f.slice(6)]: t.value }); doorFiche = t.value; }
+    else if (t.tagName === 'SELECT') dd[f] = t.value;
+    else { const v = parseFloat(t.value); if (isFinite(v)) dd[f] = v; }
     doorsChanged();
   }
   function pickStrut(evtX, evtY){
