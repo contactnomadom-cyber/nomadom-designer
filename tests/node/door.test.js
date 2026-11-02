@@ -77,5 +77,23 @@ const a2 = O.analyse(d2, (() => { const yB = Math.min(...d2.points.map(p => p.y)
 const rr = a2.ok && D.compute(d2, O.strutIndex(d2), a2.openings[0], { width: 0.9, height: 2 });
 check(d2.points.length === 26 && rr && rr.ok && !rr.fits && rr.max.heightForWidth > 0, '2V Ø5,30 : un seul triangle de base ne suffit pas pour une porte, hauteur maxi donnée');
 
+// 7. structure 3D (aperçu) : pièces, retours posés sur le cadre, toit
+const sk = D.structure(r), sk5 = D.structure(r3);
+check(D.structure(r2) === null, 'porte refusée : pas de structure');
+check(sk && sk.closed && sk.totals.huisserie.count === 4 && sk.totals.chevetre.count === 1 && sk.totals.appui.count === 2 && sk.totals.potelet.count === 3,
+  'structure : huisserie (4), chevêtre (1), appuis (2), potelets (3)');
+check(near(sk.totals.huisserie.length, 2 * 2 + 2 * 0.9) && sk.totals.chevetre.length > 0.9, 'huisserie 5,80 m ; chevêtre plus large que la porte');
+const yB0 = Math.min(...dome.points.map(p => p.y));
+const frameSegs = op.frame.map(k => k.split('-').map(Number).map(id => { const p = dome.pointById.get(id); return { x: p.x, y: p.y - yB0, z: p.z }; }));
+const dSeg = (p, [a, b]) => { const ab = [b.x - a.x, b.y - a.y, b.z - a.z], ap = [p.x - a.x, p.y - a.y, p.z - a.z];
+  const t = Math.max(0, Math.min(1, (ab[0] * ap[0] + ab[1] * ap[1] + ab[2] * ap[2]) / (ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2))); return Math.hypot(ap[0] - t * ab[0], ap[1] - t * ab[1], ap[2] - t * ab[2]); };
+const rets = sk.pieces.filter(p => p.kind === 'chevron' || p.kind === 'appui');
+check(rets.length >= 5 && rets.every(p => Math.min(...frameSegs.map(f => dSeg(p.b, f))) < 1e-9), 'chaque chevron et appui finit sur un montant du cadre');
+check(rets.every(p => near(p.a.y, p.b.y)) && sk.pieces.filter(p => p.kind === 'potelet').every(p => near(p.a.x, p.b.x) && near(p.a.z, p.b.z)), 'chevrons horizontaux, potelets verticaux');
+check(sk.pieces.filter(p => p.kind === 'huisserie').every(p => [p.a, p.b].every(q => near((q.x - r.plane.origin.x) * r.plane.normal.x + (q.z - r.plane.origin.z) * r.plane.normal.z, 0))), 'huisserie dans le plan de la porte (recul 0)');
+check(sk.roof.length === sk.totals.rampant.count && sk.roofArea > 1 && sk.roofArea < 4, 'toit : un pan par rampant, surface plausible');
+check(near(sk.totals.chevron.length - sk5.totals.chevron.length, 0.5 * sk.totals.chevron.count) && near(sk.totals.appui.length - sk5.totals.appui.length, 1)
+  && near(sk5.totals.huisserie.length, sk.totals.huisserie.length) && sk5.roofArea < sk.roofArea, 'recul 0,50 m : chaque retour raccourcit de 0,50 m, toit plus petit');
+
 if (fails.length) { console.log('ÉCHEC ' + fails.length + '/' + n); fails.forEach(x => console.log('  ' + x)); process.exit(1); }
 console.log('OK ' + n + '/' + n);

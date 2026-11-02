@@ -87,6 +87,8 @@ Outil **didactique** : chaque calcul explique ce qu'il fait (retour de connaissa
 - Sur la référence 3V Ø 5 m, une porte 0,90 × 2,00 m demande une ouverture de 9 triangles (seuil d'un seul montant B, 956 mm). Hauteur maxi pour 0,90 de large : 2,37 m.
 - Au-dessus du linteau, le cadre du dôme est **en retrait d'environ 0,90 m** derrière le plan de la porte (la paroi penche) : la fermeture n'est donc pas un simple tympan plat, c'est un petit « toit » de 0,9 m de profondeur — ou bien on recule la porte (sas intérieur).
 
+**Structure 3D de la porte (demande du 02/11/2026)** — modélisée dans la 3D de l'onglet Base, aperçu 🟠, section 45 × 70 mm en attendant les vraies : huisserie, chevêtre posé sur le linteau avec ses 2 appuis jusqu'au dôme, potelets, rampants (bord haut dans le plan de porte), chevrons horizontaux jusqu'aux montants du dôme, toit de l'avant-corps. Chaque chevron et appui finit sur un montant du cadre (vérifié par test). Longueurs d'axe, sans les coupes d'assemblage.
+
 **Questions ouvertes ❓**
 1. ✅ Position du plan de porte : réglée porte par porte (curseur de recul) — décision du 02/11/2026.
 2. ✅ « Ajouter une porte » dans l'onglet Base, sous chaque ouverture fermée par le sol — décision du 02/11/2026.

@@ -315,22 +315,38 @@
         post('gauche', r.parts.posts[0]) + post('du milieu', r.parts.posts[1]) + post('droit', r.parts.posts[2]) +
         '<dt>Fermeture autour de la porte</dt><dd>' + m2(r.infill.total) + ' (au-dessus du linteau ' + m2(r.infill.tympan) + ' · sur les côtés ' + m2(r.infill.sides) + ')</dd>' +
         '<dt>Ébrasement (écart porte ↔ cadre)</dt><dd>de ' + mm(r.reveal.min) + ' à ' + mm(r.reveal.max) + ' (négatif = derrière la porte, côté intérieur)</dd></dl>';
+      const sk = Door.structure(r, DOOR_SECTION), NAMES = { huisserie: 'Huisserie (montants, linteau, seuil)', chevetre: 'Chevêtre (sur le linteau)', appui: 'Appuis du chevêtre (jusqu\'au dôme)',
+        potelet: 'Potelets', rampant: 'Rampants (bord haut, plan de porte)', chevron: 'Chevrons du toit (jusqu\'au dôme)' };
+      if (sk) h += '<div class="door-3d"><b>Structure en 3D</b> <span class="muted">🟠 aperçu · section 45 × 70 mm · longueurs d\'axe, sans les coupes d\'assemblage</span><dl>' +
+        Object.keys(NAMES).filter(k => sk.totals[k]).map(k => '<dt>' + NAMES[k] + '</dt><dd>' + sk.totals[k].count + ' pièce' + (sk.totals[k].count > 1 ? 's' : '') + ' · ' +
+          sk.pieces.filter(p => p.kind === k).map(p => mm(p.length)).join(', ') + '</dd>').join('') +
+        '<dt>Toit de l\'avant-corps</dt><dd>' + m2(sk.roofArea) + '</dd></dl></div>';
       h += '<div class="door-note">Comme une porte dans un mur épais : la paroi du dôme penche, donc au-dessus de la porte le cadre est en retrait. ' +
         'Porte au droit du seuil (recul 0) : il faut un petit toit, un <i>avant-corps</i>, du linteau jusqu\'au dôme. Porte reculée : elle se rapproche du cadre et forme un <i>sas intérieur</i>. ' +
         '🟠 La tenue de la structure autour de l\'ouverture (montants retirés, renforts) n\'est pas encore évaluée.</div>';
     }
     return h + '</div>';
   }
+  // structures 3D des portes qui passent (affichées dans la 3D de l'onglet Base)
+  function doorStructures(){
+    const res = ds.openings.result; if (!(res && res.ok)) return [];
+    const L = Ouvertures.nodeLabels(ds.nominal), S = Ouvertures.strutIndex(ds.nominal), out = [];
+    res.openings.forEach(o => { const d = o.closedByGround && ds.openings.doors[doorKey(o, L)]; if (!d) return;
+      const st = Door.structure(Door.compute(ds.nominal, S, o, d), DOOR_SECTION); if (st) out.push(st); });
+    return out;
+  }
+  const DOOR_SECTION = { w: 0.045, d: 0.07 };   // 45 × 70 mm, en attendant les vraies sections (aperçu 🟠)
+  function doorsChanged(){ updateOpeningsReadout(); baseFor = null; if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
   function doorClick(ev){
     const t = ev.target, add = t.getAttribute && t.getAttribute('data-door-add'), del = t.getAttribute && t.getAttribute('data-door-del');
-    if (add) { ds.openings.doors[add] = { width: 0.9, height: 2, offset: 0, setback: 0 }; updateOpeningsReadout(); }
-    else if (del) { delete ds.openings.doors[del]; updateOpeningsReadout(); }
+    if (add) { ds.openings.doors[add] = { width: 0.9, height: 2, offset: 0, setback: 0 }; doorsChanged(); }
+    else if (del) { delete ds.openings.doors[del]; doorsChanged(); }
   }
   function doorChange(ev){
     const t = ev.target, k = t.getAttribute && t.getAttribute('data-door-key'), f = t.getAttribute('data-door-f');
     if (!k || !ds.openings.doors[k]) return;
     const v = parseFloat(t.value); if (isFinite(v)) ds.openings.doors[k][f] = v;
-    updateOpeningsReadout();
+    doorsChanged();
   }
   function pickStrut(evtX, evtY){
     const P = canvas._projected; if (!P) return null;
@@ -1735,8 +1751,9 @@
     if (!baseCam) baseCam = { yaw: 0.7, pitch: 0.38, dist: model.radius * 3.8, target: [0, model.height * 0.45, 0] };
     if (baseFor !== SD) {
       const st = Design.defaultState();
-      if (baseEng.isThree) baseEng.update(Design, model, st, { style: 'real', toile: 'verre', openings: [] }, () => baseEng.render(baseCam, false));
-      else baseEng.setScene(Design3D.buildScene(Design, model, st, { style: 'real', toile: 'verre', openings: [] }));
+      const o3 = { style: 'real', toile: 'verre', openings: [], doors: doorStructures() };
+      if (baseEng.isThree) baseEng.update(Design, model, st, o3, () => baseEng.render(baseCam, false));
+      else baseEng.setScene(Design3D.buildScene(Design, model, st, o3));
       baseFor = SD;
     }
     baseEng.render(baseCam, false);

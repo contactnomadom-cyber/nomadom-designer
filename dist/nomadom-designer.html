@@ -8322,6 +8322,22 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       if (caps !== false) { B.tri(Bp, b1.p, b0.p, col, m, clip, u, u, u); const nu = u.map(v => -v); B.tri(A, a0.p, a1.p, col, m, clip, nu, nu, nu); }
     }
   }
+  // poutre de section rectangulaire w × d entre deux points {x,y,z} ; up = direction du côté d (sinon vertical)
+  function beam(B, a, b, w, d, up, col, m) {
+    const A = [a.x, a.y, a.z], Bp = [b.x, b.y, b.z], ax = [Bp[0] - A[0], Bp[1] - A[1], Bp[2] - A[2]], L = Math.hypot(...ax);
+    if (L < 1e-6) return;
+    const e = ax.map(v => v / L), dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+    let v = up ? [up.x, up.y, up.z] : [0, 1, 0]; if (Math.abs(dot(v, e)) > 0.95) v = Math.abs(e[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    const k = dot(v, e); v = [v[0] - k * e[0], v[1] - k * e[1], v[2] - k * e[2]]; const lv = Math.hypot(...v); v = v.map(x => x / lv);
+    const h = [e[1] * v[2] - e[2] * v[1], e[2] * v[0] - e[0] * v[2], e[0] * v[1] - e[1] * v[0]];
+    const c = (P, i, j) => [P[0] + h[0] * i * w / 2 + v[0] * j * d / 2, P[1] + h[1] * i * w / 2 + v[1] * j * d / 2, P[2] + h[2] * i * w / 2 + v[2] * j * d / 2];
+    const sides = [[[1, -1], [1, 1], h], [[1, 1], [-1, 1], v], [[-1, 1], [-1, -1], h.map(x => -x)], [[-1, -1], [1, -1], v.map(x => -x)]];
+    sides.forEach(([p, q, n]) => { const a0 = c(A, ...p), a1 = c(A, ...q), b0 = c(Bp, ...p), b1 = c(Bp, ...q);
+      B.tri(a0, b0, b1, col, m, false, n, n, n); B.tri(a0, b1, a1, col, m, false, n, n, n); });
+    const ne = e.map(x => -x);
+    B.tri(c(A, 1, 1), c(A, 1, -1), c(A, -1, -1), col, m, false, ne, ne, ne); B.tri(c(A, 1, 1), c(A, -1, -1), c(A, -1, 1), col, m, false, ne, ne, ne);
+    B.tri(c(Bp, 1, 1), c(Bp, 1, -1), c(Bp, -1, -1), col, m, false, e, e, e); B.tri(c(Bp, 1, 1), c(Bp, -1, -1), c(Bp, -1, 1), col, m, false, e, e, e);
+  }
   // dalle : polygone horizontal extrudé (points {x,z} en coordonnées monde)
   function slab(B, poly, y0, y1, col, colSide, m, clip) {
     const c = poly.reduce((a, p) => [a[0] + p.x / poly.length, a[1] + p.z / poly.length], [0, 0]);
@@ -8633,6 +8649,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     // panneaux Kumiko (NOMAD-2026-003, aperçu) : segments déjà posés par KumikoLayout, côté intérieur des montants
     (opts.kumiko || []).forEach(sg => cyl(opaque, F0, sg.a, sg.b, sg.kind === 'waku' ? 0.010 : (sg.kind === 'jigumi' ? 0.006 : 0.0045),
       C(sg.kind === 'waku' ? 'woodDark' : 'wood'), 2, 6, true, false));
+    // structure des portes d'aplomb (NOMAD-2026-005, aperçu) : pièces de Door.structure, y depuis le sol ; toit de l'avant-corps
+    (opts.doors || []).forEach(dr => {
+      dr.pieces.forEach(p => beam(opaque, p.a, p.b, dr.section.w, dr.section.d, p.up, C(p.kind === 'huisserie' || p.kind === 'chevetre' ? 'woodDark' : 'wood'), 2));
+      dr.roof.forEach(q => { const P = q.map(p => [p.x, p.y + dr.section.d / 2, p.z]); opaque.quad(P[0], P[1], P[2], P[3], C('floorSide'), 1, false); });
+    });
     // mezzanine : plancher, solives de rive, garde-corps sur les bords libres
     const mp = Z.mezzPolygon(model, st.mezz);
     if (mp) {
@@ -9603,7 +9624,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     poly.forEach((p, i) => {
       const q = poly[(i + 1) % poly.length], kp = keep(p), kq = keep(q);
       if (kp) out.push(p);
-      if (kp !== kq) { const k = (h - p.t) / (q.t - p.t); out.push({ s: p.s + k * (q.s - p.s), t: h }); }
+      if (kp !== kq) { const k = (h - p.t) / (q.t - p.t), c = { s: p.s + k * (q.s - p.s), t: h }; if (p.d !== undefined) c.d = p.d + k * (q.d - p.d); out.push(c); }
     });
     return out;
   }
@@ -9705,7 +9726,61 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     return res;
   }
 
-  const Door = { compute, contourLoop, plumbPlane, fits, inside, clipT, area2, topAt };
+  // Structure 3D qui porte la porte (aperçu 🟠, axes des pièces, section affichée sec = { w, d } en m).
+  // Entrée : résultat de compute() quand la porte passe. Points { x, y, z } : y = hauteur depuis le sol.
+  //  - huisserie : 2 montants, seuil, linteau (plan de la porte) ;
+  //  - chevêtre : poutre horizontale posée sur le linteau (axe à h + sec.d), d'un bord du contour à l'autre,
+  //    avec ses 2 appuis (retours horizontaux jusqu'aux montants du dôme) ;
+  //  - potelets : du chevêtre jusqu'au bord haut de la fermeture, à l'aplomb des montants de porte et au milieu ;
+  //  - rampants : bord haut de la fermeture, dans le plan de la porte (le contour du dôme ramené sur ce plan) ;
+  //  - chevrons : retours horizontaux, du rampant jusqu'au cadre du dôme (à chaque nœud et en tête de potelet) ;
+  //  - toit : surface entre les rampants et le cadre du dôme (le dessus de l'avant-corps).
+  // Chaque retour finit sur un montant du cadre (nœud, ou point du montant interpolé).
+  function structure(r, sec) {
+    if (!r || !r.ok || !r.fits) return null;
+    sec = sec || { w: 0.045, d: 0.07 };
+    const { s0, width: w, height: h, setback: sb } = r.door, L = r.plane.origin, u = r.plane.along, n = r.plane.normal;
+    const P = (s, t, d) => ({ x: L.x + u.x * s + n.x * ((d || 0) - sb), y: t, z: L.z + u.z * s + n.z * ((d || 0) - sb) });
+    const len = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    const pieces = [], roof = [], MIN = 0.005;
+    const add = (kind, a, b, up) => { const l = len(a, b); if (l > MIN) pieces.push({ kind, a, b, length: l, up }); };
+    const V = { x: 0, y: 1, z: 0 };   // section posée « à plat » sur les retours : 70 mm vertical
+    // huisserie
+    add('huisserie', P(s0, 0), P(s0, h), n); add('huisserie', P(s0 + w, 0), P(s0 + w, h), n);
+    add('huisserie', P(s0, 0), P(s0 + w, 0), n); add('huisserie', P(s0, h), P(s0 + w, h), n);
+    // bord haut de la fermeture, au-dessus du chevêtre : chaîne gauche → droite
+    const hc = h + sec.d, cl = clipT(r.contour, hc, true);
+    let chain = null;
+    const flat = cl.map((p, i) => [i, cl[(i + 1) % cl.length]]).filter(([i, q]) => Math.abs(cl[i].t - hc) < 1e-7 && Math.abs(q.t - hc) < 1e-7 && q.s > cl[i].s);
+    if (cl.length > 2 && flat.length === 1) {
+      const i = flat[0][0], k = (i + 1) % cl.length; chain = [];
+      for (let j = 0; j < cl.length; j++) chain.push(cl[(k + j) % cl.length]);   // droite → haut → gauche
+      chain.reverse();
+    }
+    if (chain) {
+      const a = chain[0], b = chain[chain.length - 1];
+      add('chevetre', P(a.s, hc), P(b.s, hc), n);
+      add('appui', P(a.s, hc), P(a.s, hc, a.d), V); add('appui', P(b.s, hc), P(b.s, hc, b.d), V);
+      for (let j = 0; j + 1 < chain.length; j++) {
+        const p = chain[j], q = chain[j + 1];
+        add('rampant', P(p.s, p.t), P(q.s, q.t), n);
+        roof.push([P(p.s, p.t), P(q.s, q.t), P(q.s, q.t, q.d), P(p.s, p.t, p.d)]);
+        if (j > 0) add('chevron', P(p.s, p.t), P(p.s, p.t, p.d), V);
+      }
+      [s0, s0 + w / 2, s0 + w].forEach(s => {
+        const tp = topAt(r.contour, s, hc); if (!tp) return;
+        add('potelet', P(s, hc), P(s, tp.t), n);
+        if (!chain.some(p => Math.abs(p.s - s) < MIN)) add('chevron', P(s, tp.t), P(s, tp.t, tp.d), V);   // pas de doublon sous un nœud
+      });
+    }
+    const totals = {}; pieces.forEach(p => { const t = totals[p.kind] || (totals[p.kind] = { count: 0, length: 0 }); t.count++; t.length += p.length; });
+    let roofArea = 0; roof.forEach(q => { [[0, 1, 2], [0, 2, 3]].forEach(([i, j, k]) => { const A = q[i], B = q[j], C = q[k];
+      const e = [B.x - A.x, B.y - A.y, B.z - A.z], f = [C.x - A.x, C.y - A.y, C.z - A.z];
+      roofArea += Math.hypot(e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]) / 2; }); });
+    return { section: sec, pieces, roof, totals, roofArea, closed: !!chain };
+  }
+
+  const Door = { compute, structure, contourLoop, plumbPlane, fits, inside, clipT, area2, topAt };
   if (typeof module !== 'undefined' && module.exports) module.exports = Door;
   else global.Door = Door;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -10233,22 +10308,38 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
         post('gauche', r.parts.posts[0]) + post('du milieu', r.parts.posts[1]) + post('droit', r.parts.posts[2]) +
         '<dt>Fermeture autour de la porte</dt><dd>' + m2(r.infill.total) + ' (au-dessus du linteau ' + m2(r.infill.tympan) + ' · sur les côtés ' + m2(r.infill.sides) + ')</dd>' +
         '<dt>Ébrasement (écart porte ↔ cadre)</dt><dd>de ' + mm(r.reveal.min) + ' à ' + mm(r.reveal.max) + ' (négatif = derrière la porte, côté intérieur)</dd></dl>';
+      const sk = Door.structure(r, DOOR_SECTION), NAMES = { huisserie: 'Huisserie (montants, linteau, seuil)', chevetre: 'Chevêtre (sur le linteau)', appui: 'Appuis du chevêtre (jusqu\'au dôme)',
+        potelet: 'Potelets', rampant: 'Rampants (bord haut, plan de porte)', chevron: 'Chevrons du toit (jusqu\'au dôme)' };
+      if (sk) h += '<div class="door-3d"><b>Structure en 3D</b> <span class="muted">🟠 aperçu · section 45 × 70 mm · longueurs d\'axe, sans les coupes d\'assemblage</span><dl>' +
+        Object.keys(NAMES).filter(k => sk.totals[k]).map(k => '<dt>' + NAMES[k] + '</dt><dd>' + sk.totals[k].count + ' pièce' + (sk.totals[k].count > 1 ? 's' : '') + ' · ' +
+          sk.pieces.filter(p => p.kind === k).map(p => mm(p.length)).join(', ') + '</dd>').join('') +
+        '<dt>Toit de l\'avant-corps</dt><dd>' + m2(sk.roofArea) + '</dd></dl></div>';
       h += '<div class="door-note">Comme une porte dans un mur épais : la paroi du dôme penche, donc au-dessus de la porte le cadre est en retrait. ' +
         'Porte au droit du seuil (recul 0) : il faut un petit toit, un <i>avant-corps</i>, du linteau jusqu\'au dôme. Porte reculée : elle se rapproche du cadre et forme un <i>sas intérieur</i>. ' +
         '🟠 La tenue de la structure autour de l\'ouverture (montants retirés, renforts) n\'est pas encore évaluée.</div>';
     }
     return h + '</div>';
   }
+  // structures 3D des portes qui passent (affichées dans la 3D de l'onglet Base)
+  function doorStructures(){
+    const res = ds.openings.result; if (!(res && res.ok)) return [];
+    const L = Ouvertures.nodeLabels(ds.nominal), S = Ouvertures.strutIndex(ds.nominal), out = [];
+    res.openings.forEach(o => { const d = o.closedByGround && ds.openings.doors[doorKey(o, L)]; if (!d) return;
+      const st = Door.structure(Door.compute(ds.nominal, S, o, d), DOOR_SECTION); if (st) out.push(st); });
+    return out;
+  }
+  const DOOR_SECTION = { w: 0.045, d: 0.07 };   // 45 × 70 mm, en attendant les vraies sections (aperçu 🟠)
+  function doorsChanged(){ updateOpeningsReadout(); baseFor = null; if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
   function doorClick(ev){
     const t = ev.target, add = t.getAttribute && t.getAttribute('data-door-add'), del = t.getAttribute && t.getAttribute('data-door-del');
-    if (add) { ds.openings.doors[add] = { width: 0.9, height: 2, offset: 0, setback: 0 }; updateOpeningsReadout(); }
-    else if (del) { delete ds.openings.doors[del]; updateOpeningsReadout(); }
+    if (add) { ds.openings.doors[add] = { width: 0.9, height: 2, offset: 0, setback: 0 }; doorsChanged(); }
+    else if (del) { delete ds.openings.doors[del]; doorsChanged(); }
   }
   function doorChange(ev){
     const t = ev.target, k = t.getAttribute && t.getAttribute('data-door-key'), f = t.getAttribute('data-door-f');
     if (!k || !ds.openings.doors[k]) return;
     const v = parseFloat(t.value); if (isFinite(v)) ds.openings.doors[k][f] = v;
-    updateOpeningsReadout();
+    doorsChanged();
   }
   function pickStrut(evtX, evtY){
     const P = canvas._projected; if (!P) return null;
@@ -11653,8 +11744,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     if (!baseCam) baseCam = { yaw: 0.7, pitch: 0.38, dist: model.radius * 3.8, target: [0, model.height * 0.45, 0] };
     if (baseFor !== SD) {
       const st = Design.defaultState();
-      if (baseEng.isThree) baseEng.update(Design, model, st, { style: 'real', toile: 'verre', openings: [] }, () => baseEng.render(baseCam, false));
-      else baseEng.setScene(Design3D.buildScene(Design, model, st, { style: 'real', toile: 'verre', openings: [] }));
+      const o3 = { style: 'real', toile: 'verre', openings: [], doors: doorStructures() };
+      if (baseEng.isThree) baseEng.update(Design, model, st, o3, () => baseEng.render(baseCam, false));
+      else baseEng.setScene(Design3D.buildScene(Design, model, st, o3));
       baseFor = SD;
     }
     baseEng.render(baseCam, false);

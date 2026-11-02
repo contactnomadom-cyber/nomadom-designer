@@ -41,7 +41,7 @@
     poly.forEach((p, i) => {
       const q = poly[(i + 1) % poly.length], kp = keep(p), kq = keep(q);
       if (kp) out.push(p);
-      if (kp !== kq) { const k = (h - p.t) / (q.t - p.t); out.push({ s: p.s + k * (q.s - p.s), t: h }); }
+      if (kp !== kq) { const k = (h - p.t) / (q.t - p.t), c = { s: p.s + k * (q.s - p.s), t: h }; if (p.d !== undefined) c.d = p.d + k * (q.d - p.d); out.push(c); }
     });
     return out;
   }
@@ -143,7 +143,61 @@
     return res;
   }
 
-  const Door = { compute, contourLoop, plumbPlane, fits, inside, clipT, area2, topAt };
+  // Structure 3D qui porte la porte (aperçu 🟠, axes des pièces, section affichée sec = { w, d } en m).
+  // Entrée : résultat de compute() quand la porte passe. Points { x, y, z } : y = hauteur depuis le sol.
+  //  - huisserie : 2 montants, seuil, linteau (plan de la porte) ;
+  //  - chevêtre : poutre horizontale posée sur le linteau (axe à h + sec.d), d'un bord du contour à l'autre,
+  //    avec ses 2 appuis (retours horizontaux jusqu'aux montants du dôme) ;
+  //  - potelets : du chevêtre jusqu'au bord haut de la fermeture, à l'aplomb des montants de porte et au milieu ;
+  //  - rampants : bord haut de la fermeture, dans le plan de la porte (le contour du dôme ramené sur ce plan) ;
+  //  - chevrons : retours horizontaux, du rampant jusqu'au cadre du dôme (à chaque nœud et en tête de potelet) ;
+  //  - toit : surface entre les rampants et le cadre du dôme (le dessus de l'avant-corps).
+  // Chaque retour finit sur un montant du cadre (nœud, ou point du montant interpolé).
+  function structure(r, sec) {
+    if (!r || !r.ok || !r.fits) return null;
+    sec = sec || { w: 0.045, d: 0.07 };
+    const { s0, width: w, height: h, setback: sb } = r.door, L = r.plane.origin, u = r.plane.along, n = r.plane.normal;
+    const P = (s, t, d) => ({ x: L.x + u.x * s + n.x * ((d || 0) - sb), y: t, z: L.z + u.z * s + n.z * ((d || 0) - sb) });
+    const len = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    const pieces = [], roof = [], MIN = 0.005;
+    const add = (kind, a, b, up) => { const l = len(a, b); if (l > MIN) pieces.push({ kind, a, b, length: l, up }); };
+    const V = { x: 0, y: 1, z: 0 };   // section posée « à plat » sur les retours : 70 mm vertical
+    // huisserie
+    add('huisserie', P(s0, 0), P(s0, h), n); add('huisserie', P(s0 + w, 0), P(s0 + w, h), n);
+    add('huisserie', P(s0, 0), P(s0 + w, 0), n); add('huisserie', P(s0, h), P(s0 + w, h), n);
+    // bord haut de la fermeture, au-dessus du chevêtre : chaîne gauche → droite
+    const hc = h + sec.d, cl = clipT(r.contour, hc, true);
+    let chain = null;
+    const flat = cl.map((p, i) => [i, cl[(i + 1) % cl.length]]).filter(([i, q]) => Math.abs(cl[i].t - hc) < 1e-7 && Math.abs(q.t - hc) < 1e-7 && q.s > cl[i].s);
+    if (cl.length > 2 && flat.length === 1) {
+      const i = flat[0][0], k = (i + 1) % cl.length; chain = [];
+      for (let j = 0; j < cl.length; j++) chain.push(cl[(k + j) % cl.length]);   // droite → haut → gauche
+      chain.reverse();
+    }
+    if (chain) {
+      const a = chain[0], b = chain[chain.length - 1];
+      add('chevetre', P(a.s, hc), P(b.s, hc), n);
+      add('appui', P(a.s, hc), P(a.s, hc, a.d), V); add('appui', P(b.s, hc), P(b.s, hc, b.d), V);
+      for (let j = 0; j + 1 < chain.length; j++) {
+        const p = chain[j], q = chain[j + 1];
+        add('rampant', P(p.s, p.t), P(q.s, q.t), n);
+        roof.push([P(p.s, p.t), P(q.s, q.t), P(q.s, q.t, q.d), P(p.s, p.t, p.d)]);
+        if (j > 0) add('chevron', P(p.s, p.t), P(p.s, p.t, p.d), V);
+      }
+      [s0, s0 + w / 2, s0 + w].forEach(s => {
+        const tp = topAt(r.contour, s, hc); if (!tp) return;
+        add('potelet', P(s, hc), P(s, tp.t), n);
+        if (!chain.some(p => Math.abs(p.s - s) < MIN)) add('chevron', P(s, tp.t), P(s, tp.t, tp.d), V);   // pas de doublon sous un nœud
+      });
+    }
+    const totals = {}; pieces.forEach(p => { const t = totals[p.kind] || (totals[p.kind] = { count: 0, length: 0 }); t.count++; t.length += p.length; });
+    let roofArea = 0; roof.forEach(q => { [[0, 1, 2], [0, 2, 3]].forEach(([i, j, k]) => { const A = q[i], B = q[j], C = q[k];
+      const e = [B.x - A.x, B.y - A.y, B.z - A.z], f = [C.x - A.x, C.y - A.y, C.z - A.z];
+      roofArea += Math.hypot(e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]) / 2; }); });
+    return { section: sec, pieces, roof, totals, roofArea, closed: !!chain };
+  }
+
+  const Door = { compute, structure, contourLoop, plumbPlane, fits, inside, clipT, area2, topAt };
   if (typeof module !== 'undefined' && module.exports) module.exports = Door;
   else global.Door = Door;
 })(typeof window !== 'undefined' ? window : globalThis);

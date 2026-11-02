@@ -146,6 +146,22 @@
       if (caps !== false) { B.tri(Bp, b1.p, b0.p, col, m, clip, u, u, u); const nu = u.map(v => -v); B.tri(A, a0.p, a1.p, col, m, clip, nu, nu, nu); }
     }
   }
+  // poutre de section rectangulaire w × d entre deux points {x,y,z} ; up = direction du côté d (sinon vertical)
+  function beam(B, a, b, w, d, up, col, m) {
+    const A = [a.x, a.y, a.z], Bp = [b.x, b.y, b.z], ax = [Bp[0] - A[0], Bp[1] - A[1], Bp[2] - A[2]], L = Math.hypot(...ax);
+    if (L < 1e-6) return;
+    const e = ax.map(v => v / L), dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+    let v = up ? [up.x, up.y, up.z] : [0, 1, 0]; if (Math.abs(dot(v, e)) > 0.95) v = Math.abs(e[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    const k = dot(v, e); v = [v[0] - k * e[0], v[1] - k * e[1], v[2] - k * e[2]]; const lv = Math.hypot(...v); v = v.map(x => x / lv);
+    const h = [e[1] * v[2] - e[2] * v[1], e[2] * v[0] - e[0] * v[2], e[0] * v[1] - e[1] * v[0]];
+    const c = (P, i, j) => [P[0] + h[0] * i * w / 2 + v[0] * j * d / 2, P[1] + h[1] * i * w / 2 + v[1] * j * d / 2, P[2] + h[2] * i * w / 2 + v[2] * j * d / 2];
+    const sides = [[[1, -1], [1, 1], h], [[1, 1], [-1, 1], v], [[-1, 1], [-1, -1], h.map(x => -x)], [[-1, -1], [1, -1], v.map(x => -x)]];
+    sides.forEach(([p, q, n]) => { const a0 = c(A, ...p), a1 = c(A, ...q), b0 = c(Bp, ...p), b1 = c(Bp, ...q);
+      B.tri(a0, b0, b1, col, m, false, n, n, n); B.tri(a0, b1, a1, col, m, false, n, n, n); });
+    const ne = e.map(x => -x);
+    B.tri(c(A, 1, 1), c(A, 1, -1), c(A, -1, -1), col, m, false, ne, ne, ne); B.tri(c(A, 1, 1), c(A, -1, -1), c(A, -1, 1), col, m, false, ne, ne, ne);
+    B.tri(c(Bp, 1, 1), c(Bp, 1, -1), c(Bp, -1, -1), col, m, false, e, e, e); B.tri(c(Bp, 1, 1), c(Bp, -1, -1), c(Bp, -1, 1), col, m, false, e, e, e);
+  }
   // dalle : polygone horizontal extrudé (points {x,z} en coordonnées monde)
   function slab(B, poly, y0, y1, col, colSide, m, clip) {
     const c = poly.reduce((a, p) => [a[0] + p.x / poly.length, a[1] + p.z / poly.length], [0, 0]);
@@ -457,6 +473,11 @@
     // panneaux Kumiko (NOMAD-2026-003, aperçu) : segments déjà posés par KumikoLayout, côté intérieur des montants
     (opts.kumiko || []).forEach(sg => cyl(opaque, F0, sg.a, sg.b, sg.kind === 'waku' ? 0.010 : (sg.kind === 'jigumi' ? 0.006 : 0.0045),
       C(sg.kind === 'waku' ? 'woodDark' : 'wood'), 2, 6, true, false));
+    // structure des portes d'aplomb (NOMAD-2026-005, aperçu) : pièces de Door.structure, y depuis le sol ; toit de l'avant-corps
+    (opts.doors || []).forEach(dr => {
+      dr.pieces.forEach(p => beam(opaque, p.a, p.b, dr.section.w, dr.section.d, p.up, C(p.kind === 'huisserie' || p.kind === 'chevetre' ? 'woodDark' : 'wood'), 2));
+      dr.roof.forEach(q => { const P = q.map(p => [p.x, p.y + dr.section.d / 2, p.z]); opaque.quad(P[0], P[1], P[2], P[3], C('floorSide'), 1, false); });
+    });
     // mezzanine : plancher, solives de rive, garde-corps sur les bords libres
     const mp = Z.mezzPolygon(model, st.mezz);
     if (mp) {
