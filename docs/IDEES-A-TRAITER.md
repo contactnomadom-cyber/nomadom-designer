@@ -163,7 +163,7 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 **Questions ouvertes ❓**
 1. Validation des maquettes A et C (écrans Base, Cover+, Design ; Quadrisphère et Informations suivront le même modèle).
 2. Mode Présentation : quels onglets montrer au client (Votre dôme, Toile, Aménagement, Pavillon) et le bouton « Préparer le devis » (le devis n'existe pas encore : idée n° 2).
-3. Revue visuelle Gemini (gouvernance ADR-0003) : maintenant ou plus tard ?
+3. ✅ Revue visuelle Gemini avant de coder (décision du 03/11/2026) — paquet : `docs/maquettes/ui-2026-11/REVUE-GEMINI.md`.
 
 ---
 
