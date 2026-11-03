@@ -286,6 +286,20 @@
       }
       pen.text((op.type === 'porte' ? 'P' : op.type === 'baie' ? 'B' : 'F') + ' ' + cm(op.w), T({ x: (g.p0.x + g.p1.x) / 2 - g.nx * 0.25, z: (g.p0.z + g.p1.z) / 2 - g.nz * 0.25 }), { size: 7.5, color: col });
     });
+    // portes d'aplomb, sas et pilotis réglés dans l'onglet Base (NOMAD-2026-005 à 007), vus du dessus
+    const CA = window.CoverApp;
+    if (lvl === 0 && CA && CA.doorScenes) {
+      const fsc = CA.floorScene && CA.floorScene();
+      if (fsc && opts.structure !== false) fsc.boxes.filter(b => b.kind === 'bloc29').forEach(b => { const c = T({ x: b.x, z: b.z }), r = 0.15 * (T({ x: b.x + 1, z: b.z }).x - c.x);
+        pen.poly([{ x: c.x - r, y: c.y - r }, { x: c.x + r, y: c.y - r }, { x: c.x + r, y: c.y + r }, { x: c.x - r, y: c.y + r }], { stroke: nb ? '#888' : '#8a8a84', w: 0.6, dash: [2, 2] }); });
+      CA.doorScenes().forEach((dsc, i) => {
+        (dsc.panels || []).filter(pn => pn.kind === 'plancher-sas').forEach(pn => pen.poly(P(pn.pts), { fill: nb ? '#fff' : '#f4efe4', stroke: '#000', w: 1 }));
+        (dsc.pieces || []).filter(p => p.kind === 'panne' || p.kind === 'lisse-basse').forEach(p => pen.line(T(p.a), T(p.b), { stroke: nb ? '#555' : '#7d6a50', w: p.kind === 'panne' ? 0.5 : 1.2, dash: p.kind === 'panne' ? [4, 3] : null }));
+        const jambs = (dsc.pieces || []).filter(p => p.kind === 'huisserie' && Math.abs(p.a.y) < 1e-6 && p.b.y > 1);
+        for (let j = 0; j + 1 < jambs.length; j += 2) { const a = T(jambs[j].a), b = T(jambs[j + 1].a);
+          pen.line(a, b, { stroke: '#b23a2f', w: 2.2 }); pen.text('P' + (i + 1) + (j ? '·2' : ''), { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 8 * k }, { size: 8, bold: true, color: '#b23a2f' }); }
+      });
+    }
     // éléments
     st.items.filter(it => (it.level || 0) === lvl || (lvl === 1 && (it.type === 'escalier' || it.type === 'echelle'))).forEach(it => {
       const L = Z.libOf(it.type), issues = Z.checkItem(model, st, it), on = sel && sel.kind === 'item' && sel.id === it.id;
@@ -327,7 +341,8 @@
   // ---------------------------------------------------------
   let planT = null;
   function planTransform(cv) {
-    const W = cv.width, H = cv.height, R = model.radius + 0.6;
+    const ext = window.CoverApp && window.CoverApp.doorScenes ? Math.max(0, ...window.CoverApp.doorScenes().flatMap(x => x.pieces.map(p => Math.hypot(p.b.x, p.b.z)))) : 0;
+    const W = cv.width, H = cv.height, R = Math.max(model.radius, ext) + 0.6;
     const s = Math.min(W, H) / (2 * R) * view.zoom;
     const cx = W / 2 + view.panX, cy = H / 2 + view.panY;
     return { s, f: p => ({ x: cx + p.x * s, y: cy + p.z * s }), inv: q => ({ x: (q.x - cx) / s, z: (q.y - cy) / s }) };

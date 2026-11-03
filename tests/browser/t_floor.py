@@ -43,6 +43,10 @@ with sync_playwright() as p:
     # autre diamètre : le plancher suit
     pg.eval_on_selector('#paramDiameter', 'e => { e.value = "6.20"; e.dispatchEvent(new Event("change")); }'); pg.wait_for_timeout(1500)
     check('Retirer le plancher' in txt() and '23 (' in txt(), 'Ø 6,20 m : le plancher suit le dôme')
+    pg.click('#tabCover'); pg.wait_for_timeout(1200)
+    pg.click('#tabInfo'); pg.wait_for_selector('section.info-card:has-text("Portes, sas et plancher")', timeout=15000)
+    check('pilotis' in pg.inner_text('section.info-card:has-text("Portes, sas et plancher")'), 'Informations : récapitulatif du plancher et des pilotis')
+    pg.click('#tabBase'); pg.wait_for_timeout(1200)
     pg.click('[data-floor-off]'); pg.wait_for_timeout(1200)
     check(pg.query_selector('[data-floor-on]') is not None, 'plancher retiré')
     check(not errs, 'aucune erreur JavaScript' + (' : ' + '; '.join(errs[:3]) if errs else ''))

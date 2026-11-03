@@ -112,6 +112,10 @@ Demande de Nathan : l'option sas d'entrée, avec une deuxième porte ; le sas do
 - Quantités : section, volume, couverture (toit + parois), plancher du sas, pignon et cloison. Toujours « aucune pièce volante » (raccords contrôlés).
 - Toit et parois dessinés en toile ; avec un plancher sur pilotis, des pilotis sous chaque cadre du sas extérieur.
 
+**Présence dans les onglets (vérifiée le 03/11/2026, tests navigateur)**
+- Base : réglages, calculs, 3D. Design : 3D et plan (sol du sas, pannes, portes P1 / P1·2, pilotis en pointillé). Informations : récapitulatif (pièces, sas, plancher, charges). Cover+ : signale la toile du sas à prévoir — **patron pas encore calculé** (étape 3) ; la 3D de Cover+ ne montre pas le sas. Quadrisphère : sans objet.
+- Pas encore : charges du sas et de ses pilotis dans la portance.
+
 **Questions ouvertes ❓**
 1. Forme : avec une ouverture étroite au sol (9 triangles, seuil de 956 mm), le sas s'évase vers le haut — garder cette forme exacte, ou proposer aussi un sas rectangulaire calé sur l'ouverture ?
 2. Toile du sas et raccord étanche avec la toile du dôme (étape 3).

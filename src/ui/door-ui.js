@@ -100,6 +100,34 @@
     return h + '</div>';
   }
 
+  // Récapitulatif pour les autres onglets. scenes = structures des portes (Door.build), fl = Floor.layout ou null.
+  // mode 'cover' : ce que la toile doit prévoir (Cover+) ; mode 'info' : section complète (Informations).
+  function summary(scenes, fl, mode) {
+    scenes = scenes || [];
+    const sas = scenes.filter(x => x.kind === 'sas'), ac = scenes.filter(x => x.kind !== 'sas');
+    if (mode === 'cover') {
+      if (!scenes.length && !fl) return '';
+      let h = '<div class="op-warn">';
+      scenes.forEach((x, i) => { h += '🟠 Porte ' + (i + 1) + (x.kind === 'sas' ? ' avec sas ' + (x.direction === 'exterieur' ? 'extérieur' : 'intérieur') + ' de ' + mm(x.length) +
+        ' : ' + m2(x.coverArea) + ' de toile à prévoir (toit + parois du sas) et le raccord au dôme — patron pas encore calculé (étape 3).'
+        : ' : avant-corps, toit de ' + m2(x.areas.toit || 0) + ' à couvrir — patron pas encore calculé.') + '<br>'; });
+      if (fl && fl.ok) h += '🟠 Plancher sur pilotis : la toile descend jusqu\'à la ceinture du plancher (bas de toile à régler sur place).';
+      return h + '</div>';
+    }
+    if (!scenes.length && !(fl && fl.ok)) return '';
+    const tot = {}; scenes.forEach(x => x.pieces.forEach(p => { const t = tot[p.kind] || (tot[p.kind] = { n: 0, L: 0 }); t.n++; t.L += p.length; }));
+    let h = '<section class="info-card"><h3>Portes, sas et plancher</h3><p class="muted">🟠 aperçu calculé dans l\'onglet Base · longueurs d\'axe, sans les coupes d\'assemblage · sections provisoires</p>';
+    if (scenes.length) {
+      h += '<table><tr><th>Pièce</th><th>Nombre</th><th>Longueur totale</th></tr>' + Object.keys(PIECES).filter(k => tot[k]).map(k => '<tr><td>' + PIECES[k] + '</td><td>' + tot[k].n + '</td><td>' + tot[k].L.toFixed(2).replace('.', ',') + ' m</td></tr>').join('') + '</table>';
+      h += '<p>' + scenes.length + ' porte(s) d\'aplomb' + (sas.length ? ' · ' + sas.length + ' sas (' + sas.map(x => mm(x.length) + ' ' + (x.direction === 'exterieur' ? 'dehors' : 'dedans') + ', ' + x.inside.volume.toFixed(1).replace('.', ',') + ' m³, couverture ' + m2(x.coverArea)).join(' ; ') + ')' : '') +
+        (ac.length ? ' · ' + ac.length + ' avant-corps (toit ' + m2(ac.reduce((s, x) => s + (x.areas.toit || 0), 0)) + ')' : '') + ' · ' +
+        (scenes.every(x => x.complete) ? '✅ aucune pièce volante' : '⚠ pièce volante ou non portée') + '</p>';
+    }
+    if (fl && fl.ok) { const q = fl.qty;
+      h += '<p>Plancher ' + (fl.deck === 'etoile' ? 'en étoile' : 'plein') + ' sur ' + (fl.support === 'pentagone' ? 'pentagone + triangle' : 'pilotis') + ' : ' + q.deckArea.toFixed(2).replace('.', ',') + ' m², ' + q.piles + ' pilotis (' + q.blocksFirst + ' blocs de 29 + ' + q.blocksNext + ' blocs de 19), solives ' + q.joistLength.toFixed(1).replace('.', ',') + ' m, poutres ' + (q.beams.ceinture + q.beams.pentagone + q.beams.triangle).toFixed(1).replace('.', ',') + ' m · charge totale ' + fl.loads.totalEls.toFixed(0) + ' kN, pilotis le plus chargé ' + Math.round(fl.loads.pmax) + ' kPa.</p>'; }
+    return h + '</section>';
+  }
+
   // modifie les réglages d'une porte (champ data-door-f) ; renvoie l'id de fiche à ouvrir, s'il y en a une
   function apply(dd, f, value, tag) {
     if (f.startsWith('joint:')) { dd.joints = Object.assign({}, dd.joints, { [f.slice(6)]: value }); return value; }
@@ -111,7 +139,7 @@
     return null;
   }
 
-  const DoorUI = { html, apply, fiche, PIECES, SUPPORT };
+  const DoorUI = { html, apply, summary, fiche, PIECES, SUPPORT };
   if (typeof module !== 'undefined' && module.exports) module.exports = DoorUI;
   else global.DoorUI = DoorUI;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -290,7 +290,7 @@
     if (!ds.openings.labels.length) { ec.style.display = 'none'; return; }
     ec.style.display = '';
     ec.innerHTML = '<div class="sheet-head"><b>Ouvertures</b><button id="opGoBase" class="ghost">Modifier dans l\'onglet Base</button>' +
-      '<span class="muted">les triangles ouverts sont retirés de toutes les découpes · numéros de triangles renumérotés (' + ds.dome.faces.length + ' △)</span></div>' + body(false);
+      '<span class="muted">les triangles ouverts sont retirés de toutes les découpes · numéros de triangles renumérotés (' + ds.dome.faces.length + ' △)</span></div>' + body(false) + DoorUI.summary(doorStructures(), ds.floor && Floor.layout(ds.nominal, ds.floor), 'cover');
     $id('opGoBase').onclick = () => showView('base');
   }
   // Porte d'aplomb (NOMAD-2026-005) : une porte par ouverture fermée par le sol, repérée par son seuil
@@ -307,7 +307,7 @@
   }
   // plancher en 3D, avec les pilotis sous un sas d'entrée extérieur
   function floorScene(){ if (!ds.floor) return null; const lay = Floor.layout(ds.nominal, ds.floor); return Floor.scene(lay, Floor.extraPiles(lay, doorStructures().flatMap(x => x.groundPoints || []), -0.0225)); }
-  function floorChanged(){ updateFloorReadout(); baseFor = null; if (window.CoverDesign) window.CoverDesign.domeChanged(); if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
+  function floorChanged(){ updateFloorReadout(); updateOpeningsReadout(); baseFor = null; if (window.CoverDesign) window.CoverDesign.domeChanged(); if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
   let doorFiche = null;   // fiche d'assemblage ouverte
   function doorBlock(o, L){
     const key = doorKey(o, L), d = ds.openings.doors[key];
@@ -1944,6 +1944,7 @@
       ds.nominal.edgeClasses.map(g => { const t = ds.dome.offset ? ds.dome.edgeClasses.find(c => c.name === g.name) : null;
         return '<tr><td><b>' + g.name + '</b></td><td>×' + g.count + '</td><td>' + (g.length*1000).toFixed(2) + '</td>' + (t ? '<td>' + (t.length*1000).toFixed(1) + '</td>' : '') + '</tr>'; }).join('') +
       '</table>' + (ds.dome.offset ? '<div class="offset-info" style="margin-top:8px">' + offsetInfoHtml() + '</div>' : '') + '</section>';
+    h += DoorUI.summary(doorStructures(), ds.floor && Floor.layout(ds.nominal, ds.floor), 'info');
     h += '<section class="info-card"><h3>Comprendre les options et réglages</h3>' + CoverInfo.helpHtml() + '</section>';
     el.innerHTML = h;
     openIds.forEach(id => { const d = document.getElementById(id); if (d) d.open = true; });
