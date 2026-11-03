@@ -631,8 +631,10 @@
     if (dirty3) {
       const openings = st.openings.map(op => Object.assign(openingGeom(op), { type: op.type, h: op.h, sill: op.sill || 0 }));
       const kumiko = kmSegments();
-      if (eng.isThree) eng.update(Z, model, st, { style: style3, toile: toileMode, openings, kumiko }, () => eng.render(cam, toileMode === 'coupe'));
-      else eng.setScene(Design3D.buildScene(Z, model, st, { style: style3, toile: toileMode, models: glbCache, openings, kumiko }));
+      // portes d'aplomb et plancher sur pilotis réglés dans l'onglet Base (NOMAD-2026-005 / 006)
+      const CA = window.CoverApp, doors = CA && CA.doorScenes ? CA.doorScenes() : [], floor = CA && CA.floorScene ? CA.floorScene() : null;
+      if (eng.isThree) eng.update(Z, model, st, { style: style3, toile: toileMode, openings, kumiko, doors, floor }, () => eng.render(cam, toileMode === 'coupe'));
+      else eng.setScene(Design3D.buildScene(Z, model, st, { style: style3, toile: toileMode, models: glbCache, openings, kumiko, doors, floor }));
       cam.target[1] = Math.min(cam.target[1], model.height); dirty3 = false;
     }
     eng.render(cam, toileMode === 'coupe');

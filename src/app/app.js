@@ -305,7 +305,7 @@
       if (t.tagName === 'SELECT') ds.floor[f] = t.value; else { const v = parseFloat(t.value); if (isFinite(v)) ds.floor[f] = v; }
       floorChanged(); };
   }
-  function floorChanged(){ updateFloorReadout(); baseFor = null; if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
+  function floorChanged(){ updateFloorReadout(); baseFor = null; if (window.CoverDesign) window.CoverDesign.domeChanged(); if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
   let doorFiche = null;   // fiche d'assemblage ouverte
   const doorOpts = d => ({ support: d.support, attachAppui: d.attachAppui, attachChevron: d.attachChevron, joints: Joinery.resolve(d.joints) });
   function doorBlock(o, L){
@@ -324,7 +324,7 @@
     return out;
   }
   const DOOR_SECTION = { w: 0.045, d: 0.07 };   // 45 × 70 mm, en attendant les vraies sections (aperçu 🟠)
-  function doorsChanged(){ updateOpeningsReadout(); baseFor = null; if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
+  function doorsChanged(){ updateOpeningsReadout(); baseFor = null; if (window.CoverDesign) window.CoverDesign.domeChanged(); if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
   function doorClick(ev){
     const t = ev.target, add = t.getAttribute && t.getAttribute('data-door-add'), del = t.getAttribute && t.getAttribute('data-door-del');
     const fiche = t.getAttribute && t.getAttribute('data-joint-fiche');
@@ -1971,7 +1971,7 @@
   document.getElementById('tabDesign').addEventListener('click', () => showView('design'));
   document.getElementById('tabBase').addEventListener('click', () => showView('base'));
   // accès du module Design (onglet séparé) au dôme courant
-  window.CoverApp = { dome: () => ds.struct || ds.nominal, labels: () => Ouvertures.nodeLabels(ds.nominal), label: domeLabel, showView,
+  window.CoverApp = { dome: () => ds.struct || ds.nominal, labels: () => Ouvertures.nodeLabels(ds.nominal), label: domeLabel, showView, doorScenes: () => doorStructures(), floorScene: () => ds.floor ? Floor.scene(Floor.layout(ds.nominal, ds.floor)) : null,
     // contour d'ouvertures donné en étiquettes [['N1', 'N2'], …] (scénarios de test, reprise d'un projet)
     setOpenings: pairs => { ds.openings.labels = pairs.map(p => p.slice().sort()); openingsChanged(); } };
   // « ? » à côté de chaque réglage : ouvre l'explication correspondante
