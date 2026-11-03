@@ -104,6 +104,7 @@ Outil **didactique** : chaque calcul explique ce qu'il fait (retour de connaissa
 ---
 
 ## Fait
+- ✅ 0.9.16 — Porte d'aplomb (NOMAD-2026-005, étape 1) : calcul, structure 3D, choix constructifs, raccords sans pièce volante, bibliothèque de 14 assemblages (aperçu 🟠).
 - ✅ 0.9.15 — Kumiko dans le Design, aperçu (NOMAD-2026-002 moteur, NOMAD-2026-003 interface) : pose triangle par triangle dans la 3D, tableau et plan du panneau, statut 🟠.
 - ✅ 0.9.14 — M1 : données sûres dans l'aménagement Design (imports .json et .glb contrôlés, texte échappé, sauvegarde illisible mise de côté).
 - ✅ 0.9.13 — A10 : architecture restructurée (objet dôme unique, calculs dans des modules testés, interface < 2 000 lignes) ; Ø affiché = Ø calculé.
