@@ -7,6 +7,7 @@
 (function (global) {
   'use strict';
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const kN = v => v.toFixed(1).replace('.', ',') + ' kN';
   const mm = v => Math.round(v * 1000) + ' mm', m2 = v => v.toFixed(2).replace('.', ',') + ' m²';
   const PIECES = { huisserie: 'Huisserie (montants, linteau, seuil)', chevetre: 'Chevêtre (posé sur le linteau)', appui: 'Appuis du chevêtre (jusqu\'au montant du dôme)',
     contrefiche: 'Contrefiches (du chevêtre au nœud du dôme)', panne: 'Pannes du sas (du nœud du dôme au bout)', 'lisse-basse': 'Lisses basses du sas', cadre: 'Cadres de section', 'lisse-cadre': 'Traverses basses des cadres', potelet: 'Potelets', rampant: 'Rampants (bord haut, plan de porte)', chevron: 'Chevrons du toit (jusqu\'au dôme)',
@@ -70,6 +71,8 @@
       '<dt>Couverture (toit + parois)</dt><dd>' + m2(sk.coverArea) + ' (toit ' + m2(sk.areas.toit || 0) + ' · parois ' + m2(sk.areas.paroi || 0) + ')</dd>' +
       '<dt>Plancher du sas</dt><dd>' + m2(sk.floorArea) + '</dd>' +
       '<dt>Pignon (bout, sans la porte 2) · cloison (porte 1)</dt><dd>' + m2(sk.areas.pignon) + ' · ' + m2(sk.areas.cloison) + '</dd>' +
+      (o.sasLoad ? '<dt>Charges du sas 🟠</dt><dd>bois ' + kN(o.sasLoad.wood) + ' · total permanent ' + kN(o.sasLoad.G) + ' · occupation ' + kN(o.sasLoad.Q) + ' · neige ' + kN(o.sasLoad.S) + ' = ' + kN(o.sasLoad.total) +
+        (sk.direction === 'exterieur' ? ' (portés par les pilotis ou les lisses du sas)' : ' (portés par le plancher du dôme)') + '</dd>' : '') +
       '<dt>Porte 2</dt><dd>' + (sk.door2.fits ? '🟡 passe (' + mm(sk.door2.width) + ' × ' + mm(sk.door2.height) + ')' : '🔴 ne passe pas') + '</dd></dl></div>';
     // raccords : rien de volant
     h += sk.complete

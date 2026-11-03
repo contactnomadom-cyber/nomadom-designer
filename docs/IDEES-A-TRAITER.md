@@ -112,9 +112,13 @@ Demande de Nathan : l'option sas d'entrée, avec une deuxième porte ; le sas do
 - Quantités : section, volume, couverture (toit + parois), plancher du sas, pignon et cloison. Toujours « aucune pièce volante » (raccords contrôlés).
 - Toit et parois dessinés en toile ; avec un plancher sur pilotis, des pilotis sous chaque cadre du sas extérieur.
 
+**Toile, charges, Cover+ (demande du 03/11/2026 : « les 3 ») — fait (aperçu 🟠)**
+- Toile du sas (`src/textile/sas-toile.js`) : chaque face plate du tunnel déroulée en trapèze ; surplus (coutures A/B, ourlet de pied, couture avec le pignon ou ourlet sur l'huisserie) ; **rabat de 100 mm sous la toile du dôme** le long de chaque montant du cadre ; recouvrements dans le sens de l'eau (la pièce du haut par-dessus) et bande de faîtage ; pignon autour de la porte 2 (en lés si plus large que la laize) ; consommation de rouleau. Sas intérieur : toile seulement entre la porte 1 et les montants.
+- Charges du sas (bois, toile, plancher, occupation, neige) : dans la fiche porte ; avec un plancher, réparties sur les pilotis du sas et comptées dans la portance.
+- Cover+ : patrons du sas sous les ouvertures, sas dessiné dans la 3D. Pas encore : placement sur le rouleau avec le dôme (nesting) ni fiches de traçage / export.
+
 **Présence dans les onglets (vérifiée le 03/11/2026, tests navigateur)**
-- Base : réglages, calculs, 3D. Design : 3D et plan (sol du sas, pannes, portes P1 / P1·2, pilotis en pointillé). Informations : récapitulatif (pièces, sas, plancher, charges). Cover+ : signale la toile du sas à prévoir — **patron pas encore calculé** (étape 3) ; la 3D de Cover+ ne montre pas le sas. Quadrisphère : sans objet.
-- Pas encore : charges du sas et de ses pilotis dans la portance.
+- Base : réglages, calculs, 3D. Design : 3D et plan (sol du sas, pannes, portes P1 / P1·2, pilotis en pointillé). Informations : récapitulatif (pièces, sas, plancher, charges). Cover+ : patrons de la toile du sas et sas en 3D. Quadrisphère : sans objet.
 
 **Questions ouvertes ❓**
 1. Forme : avec une ouverture étroite au sol (9 triangles, seuil de 956 mm), le sas s'évase vers le haut — garder cette forme exacte, ou proposer aussi un sas rectangulaire calé sur l'ouverture ?

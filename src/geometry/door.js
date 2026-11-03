@@ -386,6 +386,9 @@
     return Object.assign(an, { kind: 'sas', direction: dirn, length: Ls, spacing, frames: planes.length, section: sec, pieces, panels,
       door2: { s0: s02, width: d2.width, height: d2.height, fits: fit2 }, coverArea: cover, floorArea: an.areas['plancher-sas'] || 0,
       inside: { width: r.plane.width, height: Math.max(...poly.map(p => p.t)), volume: aC * Ls },
+      // géométrie pour la toile (SasToile) : contour (s, t, profondeur du nœud), bout extérieur, porte du bout extérieur
+      geom: { loop: loop.map(p => ({ id: p.id, s: p.s, t: p.t, d: p.depth })), dOuter: g > 0 ? dEnd : 0, outerIsToile: g > 0,
+        outerDoor: g > 0 ? { s0: s02, width: d2.width, height: d2.height } : { s0, width: w, height: h }, contour: poly.map(p => ({ s: p.s, t: p.t })) },
       groundPoints: planes.filter(d => g > 0 && d > 1e-9).flatMap(d => loop.filter(p => p.t < 1e-7).map(p => P(p.s, 0, d))),
       errors, warnings, ok: an.ok && !errors.length, complete: an.ok && !errors.length });
   }

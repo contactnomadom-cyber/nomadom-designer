@@ -229,11 +229,33 @@
     joistSpacing: DEFAULTS.joistSpacing, slope: 0, slopeDir: 0, soil: DEFAULTS.soil });
 
   // Pilotis supplémentaires (sous un sas d'entrée, NOMAD-2026-007) : mêmes blocs, même terrain, tête à topY.
-  function extraPiles(res, pts, topY) {
+  function extraPiles(res, pts, topY, load) {
     if (!res || !res.ok || !pts.length) return [];
-    const B1 = res.options.blocks.first, B2 = res.options.blocks.next;
+    const B1 = res.options.blocks.first, B2 = res.options.blocks.next, k = 1 / pts.length, kg = 0.00981, foot = B1.l * B1.w;
     return pts.map(at => { const gr = res.groundAt(at), H = topY - gr, nx = Math.max(0, Math.floor((H - B1.h) / B2.h + 1e-9));
-      return { row: 'sas', at: { x: at.x, z: at.z }, ground: gr, stack: { height: H, first: 1, next: nx, shim: H - B1.h - nx * B2.h, void: H }, tooLow: H < B1.h }; });
+      const G = (load ? load.G * k : 0) + (B1.kg + nx * B2.kg) * kg, Q = load ? load.Q * k : 0, S = load ? load.S * k : 0;
+      return { row: 'sas', at: { x: at.x, z: at.z }, ground: gr, area: load ? load.floorArea * k : 0,
+        stack: { height: H, first: 1, next: nx, shim: H - B1.h - nx * B2.h, void: H }, tooLow: H < B1.h,
+        loads: { G, Q, S, els: G + Q + S, elu: 1.35 * G + 1.5 * Q + 1.5 * 0.5 * S }, pressure: (G + Q + S) / foot }; });
+  }
+  // Charges d'un sas d'entrée (Door.sas), aperçu 🟠 : bois (pièces × kg/m), toile, plancher + occupation, neige sur le toit.
+  function sasLoad(sc, opts) {
+    const L = Object.assign({}, DEFAULTS.loads, opts && opts.loads), kg = 0.00981, woodKgPerM = 1.5;   // 45 × 70 résineux
+    const wood = sc.pieces.reduce((s, p) => s + p.length, 0) * woodKgPerM * kg;
+    let roofPlan = 0; sc.panels.filter(p => p.kind === 'toit').forEach(p => { const q = p.pts; let a = 0; q.forEach((P, i) => { const R = q[(i + 1) % q.length]; a += P.x * R.z - R.x * P.z; }); roofPlan += Math.abs(a) / 2; });
+    const G = wood + sc.coverArea * L.coverKgPerM2 * kg + sc.floorArea * L.floorG, Q = sc.floorArea * L.liveQ, S = roofPlan * L.snow * L.snowShape;
+    return { G, Q, S, total: G + Q + S, wood, roofPlan, floorArea: sc.floorArea };
+  }
+  // Ajoute des pilotis (sas) au plancher : quantités, total, pilotis le plus chargé.
+  function withExtra(res, extra) {
+    if (!res || !res.ok || !extra || !extra.length) return res;
+    const piles = res.piles.concat(extra), pmax = Math.max(...piles.map(p => p.pressure)), soil = res.loads.soil, ratio = pmax / soil.q;
+    const warnings = res.warnings.filter(w => !w.startsWith('Pression sous le bloc'));
+    if (ratio > 1) warnings.push('Pression sous le bloc le plus chargé (' + Math.round(pmax) + ' kPa) au-delà de la valeur courante pour « ' + soil.name + ' » (' + soil.q + ' kPa) : agrandir l\'assise.');
+    if (extra.some(p => p.tooLow)) warnings.push('Sous le sas, le terrain est trop haut pour un bloc d\'assise complet : décaisser davantage.');
+    return Object.assign({}, res, { piles, warnings,
+      loads: Object.assign({}, res.loads, { pmax, ratio, totalEls: piles.reduce((s, p) => s + p.loads.els, 0) }),
+      qty: Object.assign({}, res.qty, { piles: piles.length, pilesSas: extra.length, blocksFirst: piles.length, blocksNext: piles.reduce((s, p) => s + p.stack.next, 0) }) });
   }
 
   // Pièces 3D pour le rendu (repère du Design, plancher fini à y = 0) : poutres, solives, blocs, panneaux.
@@ -256,7 +278,7 @@
     return { beams, boxes, panels, groundY: Math.min(...res.piles.map(p => p.ground)) - 0.05 };
   }
 
-  const Floor = { SUPPORTS, DECKS, SOILS, DEFAULTS, layout, scene, choices, extraPiles, baseRing, pentagonIdx, polyArea, segX };
+  const Floor = { SUPPORTS, DECKS, SOILS, DEFAULTS, layout, scene, choices, extraPiles, sasLoad, withExtra, baseRing, pentagonIdx, polyArea, segX };
   if (typeof module !== 'undefined' && module.exports) module.exports = Floor;
   else global.Floor = Floor;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -27,6 +27,8 @@
     "door-ui-src":        "src/ui/door-ui.js",
     "floor-src":          "src/products/habitat/floor.js",
     "floor-ui-src":       "src/ui/floor-ui.js",
+    "sas-toile-src":      "src/textile/sas-toile.js",
+    "openings-ctl-src":   "src/ui/openings-ctl.js",
     "unfold-src":         "src/geometry/unfold.js",
     "designui-src":       "src/products/habitat/designui.js",
     "quadri-geom-src":    "src/products/quadrisphere/quadri-geom.js",

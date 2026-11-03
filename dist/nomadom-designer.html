@@ -188,6 +188,8 @@
   .jfiche-svg{ flex: 0 0 160px; } .jfiche p{ margin: 4px 0; } .jfiche ol{ margin: 4px 0 0 18px; padding: 0; }
   .floor-t{ border-collapse: collapse; margin: 4px 0; } .floor-t td, .floor-t th{ padding: 1px 8px; border-bottom: 1px solid var(--line); text-align: right; }
   .floor-plan{ margin: 8px 0; } .floor-plan svg{ background: #fff; border: 1px solid var(--line); max-width: 100%; height: auto; }
+  .sas-toile{ margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); } .sas-pieces{ display:flex; flex-wrap:wrap; gap: 8px; margin: 6px 0; }
+  .sas-pieces figure{ margin:0; font-size: .85em; text-align:center; } .sas-pieces svg{ background:#fff; border:1px solid var(--line); }
   .door-lib{ margin: 6px 0; } .door-lib div{ margin: 3px 0; }
   .op-legend{ display:flex; flex-wrap:wrap; gap: 4px 14px; color: var(--ink-dim); font-size: 11px; margin-top: 6px; }
   .op-legend i{ display:inline-block; width:18px; height:3px; vertical-align:middle; margin-right:4px; }
@@ -9996,6 +9998,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     return Object.assign(an, { kind: 'sas', direction: dirn, length: Ls, spacing, frames: planes.length, section: sec, pieces, panels,
       door2: { s0: s02, width: d2.width, height: d2.height, fits: fit2 }, coverArea: cover, floorArea: an.areas['plancher-sas'] || 0,
       inside: { width: r.plane.width, height: Math.max(...poly.map(p => p.t)), volume: aC * Ls },
+      // géométrie pour la toile (SasToile) : contour (s, t, profondeur du nœud), bout extérieur, porte du bout extérieur
+      geom: { loop: loop.map(p => ({ id: p.id, s: p.s, t: p.t, d: p.depth })), dOuter: g > 0 ? dEnd : 0, outerIsToile: g > 0,
+        outerDoor: g > 0 ? { s0: s02, width: d2.width, height: d2.height } : { s0, width: w, height: h }, contour: poly.map(p => ({ s: p.s, t: p.t })) },
       groundPoints: planes.filter(d => g > 0 && d > 1e-9).flatMap(d => loop.filter(p => p.t < 1e-7).map(p => P(p.s, 0, d))),
       errors, warnings, ok: an.ok && !errors.length, complete: an.ok && !errors.length });
   }
@@ -10156,6 +10161,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
 (function (global) {
   'use strict';
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const kN = v => v.toFixed(1).replace('.', ',') + ' kN';
   const mm = v => Math.round(v * 1000) + ' mm', m2 = v => v.toFixed(2).replace('.', ',') + ' m²';
   const PIECES = { huisserie: 'Huisserie (montants, linteau, seuil)', chevetre: 'Chevêtre (posé sur le linteau)', appui: 'Appuis du chevêtre (jusqu\'au montant du dôme)',
     contrefiche: 'Contrefiches (du chevêtre au nœud du dôme)', panne: 'Pannes du sas (du nœud du dôme au bout)', 'lisse-basse': 'Lisses basses du sas', cadre: 'Cadres de section', 'lisse-cadre': 'Traverses basses des cadres', potelet: 'Potelets', rampant: 'Rampants (bord haut, plan de porte)', chevron: 'Chevrons du toit (jusqu\'au dôme)',
@@ -10219,6 +10225,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       '<dt>Couverture (toit + parois)</dt><dd>' + m2(sk.coverArea) + ' (toit ' + m2(sk.areas.toit || 0) + ' · parois ' + m2(sk.areas.paroi || 0) + ')</dd>' +
       '<dt>Plancher du sas</dt><dd>' + m2(sk.floorArea) + '</dd>' +
       '<dt>Pignon (bout, sans la porte 2) · cloison (porte 1)</dt><dd>' + m2(sk.areas.pignon) + ' · ' + m2(sk.areas.cloison) + '</dd>' +
+      (o.sasLoad ? '<dt>Charges du sas 🟠</dt><dd>bois ' + kN(o.sasLoad.wood) + ' · total permanent ' + kN(o.sasLoad.G) + ' · occupation ' + kN(o.sasLoad.Q) + ' · neige ' + kN(o.sasLoad.S) + ' = ' + kN(o.sasLoad.total) +
+        (sk.direction === 'exterieur' ? ' (portés par les pilotis ou les lisses du sas)' : ' (portés par le plancher du dôme)') + '</dd>' : '') +
       '<dt>Porte 2</dt><dd>' + (sk.door2.fits ? '🟡 passe (' + mm(sk.door2.width) + ' × ' + mm(sk.door2.height) + ')' : '🔴 ne passe pas') + '</dd></dl></div>';
     // raccords : rien de volant
     h += sk.complete
@@ -10524,11 +10532,33 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     joistSpacing: DEFAULTS.joistSpacing, slope: 0, slopeDir: 0, soil: DEFAULTS.soil });
 
   // Pilotis supplémentaires (sous un sas d'entrée, NOMAD-2026-007) : mêmes blocs, même terrain, tête à topY.
-  function extraPiles(res, pts, topY) {
+  function extraPiles(res, pts, topY, load) {
     if (!res || !res.ok || !pts.length) return [];
-    const B1 = res.options.blocks.first, B2 = res.options.blocks.next;
+    const B1 = res.options.blocks.first, B2 = res.options.blocks.next, k = 1 / pts.length, kg = 0.00981, foot = B1.l * B1.w;
     return pts.map(at => { const gr = res.groundAt(at), H = topY - gr, nx = Math.max(0, Math.floor((H - B1.h) / B2.h + 1e-9));
-      return { row: 'sas', at: { x: at.x, z: at.z }, ground: gr, stack: { height: H, first: 1, next: nx, shim: H - B1.h - nx * B2.h, void: H }, tooLow: H < B1.h }; });
+      const G = (load ? load.G * k : 0) + (B1.kg + nx * B2.kg) * kg, Q = load ? load.Q * k : 0, S = load ? load.S * k : 0;
+      return { row: 'sas', at: { x: at.x, z: at.z }, ground: gr, area: load ? load.floorArea * k : 0,
+        stack: { height: H, first: 1, next: nx, shim: H - B1.h - nx * B2.h, void: H }, tooLow: H < B1.h,
+        loads: { G, Q, S, els: G + Q + S, elu: 1.35 * G + 1.5 * Q + 1.5 * 0.5 * S }, pressure: (G + Q + S) / foot }; });
+  }
+  // Charges d'un sas d'entrée (Door.sas), aperçu 🟠 : bois (pièces × kg/m), toile, plancher + occupation, neige sur le toit.
+  function sasLoad(sc, opts) {
+    const L = Object.assign({}, DEFAULTS.loads, opts && opts.loads), kg = 0.00981, woodKgPerM = 1.5;   // 45 × 70 résineux
+    const wood = sc.pieces.reduce((s, p) => s + p.length, 0) * woodKgPerM * kg;
+    let roofPlan = 0; sc.panels.filter(p => p.kind === 'toit').forEach(p => { const q = p.pts; let a = 0; q.forEach((P, i) => { const R = q[(i + 1) % q.length]; a += P.x * R.z - R.x * P.z; }); roofPlan += Math.abs(a) / 2; });
+    const G = wood + sc.coverArea * L.coverKgPerM2 * kg + sc.floorArea * L.floorG, Q = sc.floorArea * L.liveQ, S = roofPlan * L.snow * L.snowShape;
+    return { G, Q, S, total: G + Q + S, wood, roofPlan, floorArea: sc.floorArea };
+  }
+  // Ajoute des pilotis (sas) au plancher : quantités, total, pilotis le plus chargé.
+  function withExtra(res, extra) {
+    if (!res || !res.ok || !extra || !extra.length) return res;
+    const piles = res.piles.concat(extra), pmax = Math.max(...piles.map(p => p.pressure)), soil = res.loads.soil, ratio = pmax / soil.q;
+    const warnings = res.warnings.filter(w => !w.startsWith('Pression sous le bloc'));
+    if (ratio > 1) warnings.push('Pression sous le bloc le plus chargé (' + Math.round(pmax) + ' kPa) au-delà de la valeur courante pour « ' + soil.name + ' » (' + soil.q + ' kPa) : agrandir l\'assise.');
+    if (extra.some(p => p.tooLow)) warnings.push('Sous le sas, le terrain est trop haut pour un bloc d\'assise complet : décaisser davantage.');
+    return Object.assign({}, res, { piles, warnings,
+      loads: Object.assign({}, res.loads, { pmax, ratio, totalEls: piles.reduce((s, p) => s + p.loads.els, 0) }),
+      qty: Object.assign({}, res.qty, { piles: piles.length, pilesSas: extra.length, blocksFirst: piles.length, blocksNext: piles.reduce((s, p) => s + p.stack.next, 0) }) });
   }
 
   // Pièces 3D pour le rendu (repère du Design, plancher fini à y = 0) : poutres, solives, blocs, panneaux.
@@ -10551,7 +10581,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     return { beams, boxes, panels, groundY: Math.min(...res.piles.map(p => p.ground)) - 0.05 };
   }
 
-  const Floor = { SUPPORTS, DECKS, SOILS, DEFAULTS, layout, scene, choices, extraPiles, baseRing, pentagonIdx, polyArea, segX };
+  const Floor = { SUPPORTS, DECKS, SOILS, DEFAULTS, layout, scene, choices, extraPiles, sasLoad, withExtra, baseRing, pentagonIdx, polyArea, segX };
   if (typeof module !== 'undefined' && module.exports) module.exports = Floor;
   else global.Floor = Floor;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -10607,7 +10637,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     h += plan(r);
     const q = r.qty, L = r.loads;
     h += '<div class="door-3d"><b>Quantités</b> <span class="muted">🟠 aperçu · longueurs d\'axe · poutres 75 × 195, solives 45 × 145 provisoires</span><dl>' +
-      '<dt>Pilotis</dt><dd>' + q.piles + ' (' + q.pilesOuter + ' sous les nœuds de base' + (q.pilesInner ? ' + ' + q.pilesInner + ' en 2ᵉ rangée' : '') + ')</dd>' +
+      '<dt>Pilotis</dt><dd>' + q.piles + ' (' + q.pilesOuter + ' sous les nœuds de base' + (q.pilesInner ? ' + ' + q.pilesInner + ' en 2ᵉ rangée' : '') + (q.pilesSas ? ' + ' + q.pilesSas + ' sous le sas' : '') + ')</dd>' +
       '<dt>Blocs béton</dt><dd>' + q.blocksFirst + ' × 39 × 29 × 19 (assise, couchés) + ' + q.blocksNext + ' × 39 × 19 × 19</dd>' +
       '<dt>Ceinture</dt><dd>' + m(q.beams.ceinture) + ' (' + r.ring.length + ' côtés)</dd>' +
       (q.beams.pentagone ? '<dt>Pentagone</dt><dd>' + m(q.beams.pentagone) + ' (5 côtés de ' + mm(q.beams.pentagone / 5) + ')</dd>' : '') +
@@ -10617,12 +10647,13 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       '<dt>Surface de plancher</dt><dd>' + q.deckArea.toFixed(2).replace('.', ',') + ' m²</dd>' +
       '<dt>Vide ventilé</dt><dd>' + mm(r.voidMin) + ' au point le plus haut du terrain (mini 300 mm)</dd></dl></div>';
     // pilotis : empilement et charges
-    const rows = r.piles.map((p, i) => '<tr><td>' + (i + 1) + '</td><td>' + (p.row === 'exterieure' ? 'ext.' : 'int.') + '</td><td>' + mm(p.stack.height) + '</td><td>1 + ' + p.stack.next + '</td><td>' + mm(p.stack.shim) + '</td><td>' +
+    const rows = r.piles.map((p, i) => '<tr><td>' + (i + 1) + '</td><td>' + (p.row === 'exterieure' ? 'ext.' : p.row === 'sas' ? 'sas' : 'int.') + '</td><td>' + mm(p.stack.height) + '</td><td>1 + ' + p.stack.next + '</td><td>' + mm(p.stack.shim) + '</td><td>' +
       p.area.toFixed(2).replace('.', ',') + '</td><td>' + kN(p.loads.els) + '</td><td>' + Math.round(p.pressure) + '</td></tr>').join('');
     h += '<details class="door-lib"><summary>Pilotis : blocs et charges (' + r.piles.length + ')</summary><table class="floor-t"><tr><th>n°</th><th>rangée</th><th>hauteur sous poutre</th><th>blocs 29 + 19</th><th>calage</th><th>zone (m²)</th><th>charge</th><th>kPa</th></tr>' + rows + '</table></details>';
     h += '<div class="door-3d"><b>Charges et portance</b> <span class="muted">🟠 ordres de grandeur, pas une note de calcul · vent (soulèvement) non calculé</span><dl>' +
       '<dt>Poids du dôme (montants, nœuds, toile)</dt><dd>' + kN(L.domeG) + ' sur les ' + q.pilesOuter + ' pilotis de la ceinture</dd>' +
       '<dt>Neige</dt><dd>' + kN(L.snowS) + ' (' + String(r.options.loads.snow).replace('.', ',') + ' kN/m² × ' + String(r.options.loads.snowShape).replace('.', ',') + ' sur ' + L.floorArea.toFixed(1).replace('.', ',') + ' m²)</dd>' +
+      (q.pilesSas ? '<dt>Sas d\'entrée (bois, toile, plancher, occupation, neige)</dt><dd>' + kN(r.piles.filter(p => p.row === 'sas').reduce((t, p) => t + p.loads.els, 0)) + ' sur ' + q.pilesSas + ' pilotis du sas</dd>' : '') +
       '<dt>Plancher + occupation</dt><dd>' + String(r.options.loads.floorG).replace('.', ',') + ' + ' + String(r.options.loads.liveQ).replace('.', ',') + ' kN/m² (habitation)</dd>' +
       '<dt>Total sur les pilotis</dt><dd>' + kN(L.totalEls) + ' (≈ ' + Math.round(L.totalEls / 9.81 * 100) / 100 + ' t)</dd>' +
       '<dt>Pilotis le plus chargé</dt><dd>' + kN(Math.max(...r.piles.map(p => p.loads.els))) + ' → ' + Math.round(L.pmax) + ' kPa sous le bloc de 39 × 29 · ' + esc(L.soil.name) + ' : ' + L.soil.q + ' kPa courants · ' +
@@ -10640,6 +10671,221 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   const FloorUI = { html, plan, SUPPORT, DECK };
   if (typeof module !== 'undefined' && module.exports) module.exports = FloorUI;
   else global.FloorUI = FloorUI;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script id="sas-toile-src">// ---------------------------------------------------------
+// sas-toile.js — Toile d'un sas d'entrée (NOMAD-2026-007, étape 3) : patrons, raccord au dôme,
+// recouvrements dans le sens de l'eau, consommation de rouleau. Logique pure, sans DOM
+// (le HTML renvoyé est du texte), testée sous Node (tests/node/sas-toile.test.js). Unités : m.
+//
+// Image : le sas est un tunnel droit ; chaque face du tunnel est plate. On la déroule comme
+// une planche : un trapèze rectangle — le grand bord le long du bout du sas, le bord biais le
+// long du montant du dôme où la face s'arrête.
+//
+// Étanchéité avant tout (ADR-0002) :
+//  - côté dôme, chaque pièce a un RABAT qui passe SOUS la toile du dôme (comme les tuiles : la
+//    pièce du haut recouvre celle du bas, l'eau qui coule du dôme ne rentre pas dans le raccord) ;
+//  - entre deux faces, la pièce la plus haute recouvre la plus basse ; au faîtage, une bande de
+//    faîtage recouvre les deux ;
+//  - pied des parois : ourlet ; bout extérieur : couture avec le pignon (sas extérieur) ou ourlet
+//    fixé sur l'huisserie (sas intérieur, le bout extérieur est la porte 1).
+// Statut 🟠 : patrons calculés, non vérifiés en atelier ; pas encore placés sur le rouleau avec
+// le reste du dôme (nesting) ni exportés en fiches de traçage.
+// ---------------------------------------------------------
+(function (global) {
+  'use strict';
+
+  const FLAP = 0.10;   // rabat sous la toile du dôme
+  const RIDGE = 0.15;  // largeur de la bande de faîtage
+
+  function patterns(sc, fabric) {
+    const g = sc.geom, loop = g.loop, m = loop.length;
+    const seam = (fabric && fabric.seam) || { A: 0.02, B: 0.02, hem: 0.05 }, usable = (fabric && fabric.usable) || 1.48;
+    const ground = p => p.t < 1e-7;
+    const faces = [];
+    for (let i = 0; i < m; i++) {
+      const p = loop[i], q = loop[(i + 1) % m];
+      if (ground(p) && ground(q)) continue;   // plancher du sas : pas de toile
+      const Le = Math.hypot(q.s - p.s, q.t - p.t), Lp = Math.abs(g.dOuter - p.d), Lq = Math.abs(g.dOuter - q.d);
+      faces.push({ i, p, q, Le, Lp, Lq, kind: Math.abs(q.t - p.t) <= Math.abs(q.s - p.s) ? 'toit' : 'paroi',
+        strut: Math.hypot(Le, q.d - p.d), top: Math.max(p.t, q.t), area: Le * (Lp + Lq) / 2 });
+    }
+    // voisins par nœud : couture (et qui recouvre qui) ou pied de paroi
+    const byNode = new Map(); faces.forEach(f => [f.p.id, f.q.id].forEach(id => { if (!byNode.has(id)) byNode.set(id, []); byNode.get(id).push(f); }));
+    const seams = [];
+    byNode.forEach((fs, id) => {
+      if (fs.length !== 2) return;
+      const [a, b] = fs, other = f => (f.p.id === id ? f.q : f.p);
+      const ta = other(a).t, tb = other(b).t, tn = loop.find(x => x.id === id).t;
+      if (ta < tn && tb < tn) seams.push({ node: id, ridge: true, faces: [a, b] });
+      else seams.push({ node: id, upper: ta >= tb ? a : b, lower: ta >= tb ? b : a });
+    });
+    // surplus par pièce et taille sur le rouleau
+    const pieces = faces.map((f, k) => {
+      const side = node => ground(node) ? { kind: 'ourlet de pied', a: seam.hem } : { kind: 'couture', a: null };
+      const left = side(f.p), right = side(f.q);
+      if (left.a === null) left.a = seam.A; if (right.a === null) right.a = seam.B;
+      const outer = g.outerIsToile ? { kind: 'couture avec le pignon', a: seam.A } : { kind: 'ourlet sur l\'huisserie', a: seam.hem };
+      const width = f.Le + left.a + right.a, length = Math.max(f.Lp, f.Lq) + outer.a + FLAP;
+      const les = Math.max(1, Math.ceil(width / usable - 1e-9));
+      return { name: 'S' + (k + 1), kind: f.kind, Le: f.Le, Lp: f.Lp, Lq: f.Lq, area: f.area, strut: f.strut,
+        allow: { left, right, outer, dome: { kind: 'rabat sous la toile du dôme', a: FLAP } }, width, length, les,
+        roll: length * les, nodes: [f.p.id, f.q.id],
+        // contour net (m) : x le long du bout du sas, y depuis le bout extérieur vers le dôme
+        net: [{ x: 0, y: 0 }, { x: f.Le, y: 0 }, { x: f.Le, y: f.Lq }, { x: 0, y: f.Lp }] };
+    });
+    const nameOf = f => pieces[faces.indexOf(f)].name;
+    const overlaps = seams.map(sm => sm.ridge ? { node: sm.node, ridge: true, pieces: sm.faces.map(nameOf), text: 'faîtage : bande de ' + Math.round(RIDGE * 1000) + ' mm qui recouvre ' + sm.faces.map(nameOf).join(' et ') }
+      : { node: sm.node, upper: nameOf(sm.upper), lower: nameOf(sm.lower), text: nameOf(sm.upper) + ' recouvre ' + nameOf(sm.lower) + ' (la pièce du haut par-dessus)' });
+    // faîtage : bande sur toute la longueur
+    const ridgeLen = seams.filter(s => s.ridge).reduce((t, s) => t + Math.max(...s.faces.map(f => Math.max(f.Lp, f.Lq))), 0);
+    // pignon (sas extérieur) : contour moins la porte du bout
+    let pignon = null;
+    if (g.outerIsToile) {
+      const C = g.contour; let a = 0; C.forEach((p, i) => { const q = C[(i + 1) % C.length]; a += p.s * q.t - q.s * p.t; });
+      const door = g.outerDoor, net = Math.abs(a) / 2 - door.width * door.height;
+      const ss = C.map(p => p.s), W = Math.max(...ss) - Math.min(...ss), H = Math.max(...C.map(p => p.t));
+      const width = W + 2 * seam.A, length = H + seam.A + seam.hem, les = Math.max(1, Math.ceil(width / usable - 1e-9));
+      pignon = { name: 'P', area: net, width, length, les, roll: length * les, doorHole: { width: door.width, height: door.height }, contour: C, door };
+    }
+    const net = pieces.reduce((t, p) => t + p.area, 0) + (pignon ? pignon.area : 0);
+    const roll = pieces.reduce((t, p) => t + p.roll, 0) + (pignon ? pignon.roll : 0) + (ridgeLen ? ridgeLen + 0.1 : 0);
+    return { direction: sc.direction, length: sc.length, pieces, pignon, overlaps, ridge: { length: ridgeLen, width: RIDGE },
+      raccord: { length: pieces.reduce((t, p) => t + p.strut, 0), flap: FLAP, struts: pieces.map(p => ({ piece: p.name, length: p.strut })) },
+      netArea: net, rollLength: roll, laize: fabric ? fabric.laize : 1.5, usable };
+  }
+
+  // ---- fiche HTML (Cover+) ----
+  const mm = v => Math.round(v * 1000) + ' mm', m2 = v => v.toFixed(2).replace('.', ',') + ' m²', m = v => v.toFixed(2).replace('.', ',') + ' m';
+  function pieceSvg(p) {
+    const W = 150, H = 110, sx = (W - 20) / Math.max(p.Le, 0.3), sy = (H - 24) / Math.max(p.Lp, p.Lq, 0.3), k = Math.min(sx, sy);
+    const X = x => (10 + x * k).toFixed(1), Y = y => (H - 14 - y * k).toFixed(1);
+    const pts = p.net.map(q => X(q.x) + ',' + Y(q.y)).join(' ');
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '"><polygon points="' + pts + '" fill="#f3ead9" stroke="#7d6a50" stroke-width="1.2"/>' +
+      '<line x1="' + X(0) + '" y1="' + Y(p.Lp) + '" x2="' + X(p.Le) + '" y2="' + Y(p.Lq) + '" stroke="#1f5a8a" stroke-width="2.4"/>' +
+      '<text x="' + X(p.Le / 2) + '" y="' + (H - 3) + '" font-size="8" text-anchor="middle">' + mm(p.Le) + '</text>' +
+      '<text x="' + X(p.Le / 2) + '" y="' + (+Y(Math.max(p.Lp, p.Lq)) - 4) + '" font-size="8" text-anchor="middle" fill="#1f5a8a">côté dôme</text>' +
+      '<text x="' + X(p.Le / 2) + '" y="' + Y(Math.min(p.Lp, p.Lq) / 2) + '" font-size="11" font-weight="bold" text-anchor="middle">' + p.name + '</text></svg>';
+  }
+  function html(list) {
+    if (!list || !list.length) return '';
+    return list.map((T, n) => {
+      let h = '<div class="sas-toile"><b>Toile du sas ' + (list.length > 1 ? (n + 1) + ' ' : '') + '</b><span class="muted"> 🟠 patrons calculés, non vérifiés en atelier · pas encore placés sur le rouleau avec le dôme</span>';
+      h += '<div class="door-note">Chaque face du tunnel est plate : on la déroule en trapèze. Le bord bleu suit le montant du dôme ; son rabat de ' + mm(T.raccord.flap) +
+        ' passe sous la toile du dôme (comme les tuiles, celle du haut recouvre celle du bas).</div>';
+      h += '<div class="sas-pieces">' + T.pieces.map(p => '<figure>' + pieceSvg(p) + '<figcaption>' + p.name + ' · ' + p.kind + '<br>' + mm(p.Le) + ' × ' + mm(p.Lp) + ' / ' + mm(p.Lq) +
+        '<br>coupe ' + mm(p.width) + ' × ' + mm(p.length) + (p.les > 1 ? ' · ' + p.les + ' lés' : '') + '</figcaption></figure>').join('') + '</div>';
+      h += '<table class="floor-t"><tr><th>pièce</th><th>bord gauche</th><th>bord droit</th><th>bout</th><th>côté dôme</th><th>m²</th></tr>' +
+        T.pieces.map(p => '<tr><td>' + p.name + '</td><td>' + p.allow.left.kind + ' ' + mm(p.allow.left.a) + '</td><td>' + p.allow.right.kind + ' ' + mm(p.allow.right.a) + '</td><td>' + p.allow.outer.kind + ' ' + mm(p.allow.outer.a) +
+          '</td><td>rabat ' + mm(p.allow.dome.a) + ' · montant ' + mm(p.strut) + '</td><td>' + p.area.toFixed(2).replace('.', ',') + '</td></tr>').join('') + '</table>';
+      h += '<dl>' + (T.pignon ? '<dt>Pignon (bout, autour de la porte 2)</dt><dd>' + m2(T.pignon.area) + ' net · coupe ' + mm(T.pignon.width) + ' × ' + mm(T.pignon.length) + (T.pignon.les > 1 ? ' en ' + T.pignon.les + ' lés (coutures verticales à recouvrement)' : '') + ' · ourlet autour de la porte</dd>' : '') +
+        '<dt>Recouvrements (sens de l\'eau)</dt><dd>' + T.overlaps.map(o => o.text).join(' · ') + '</dd>' +
+        '<dt>Raccord au dôme</dt><dd>' + m(T.raccord.length) + ' le long des montants du cadre de l\'ouverture, rabat de ' + mm(T.raccord.flap) + ' sous la toile du dôme</dd>' +
+        '<dt>Total</dt><dd>' + m2(T.netArea) + ' net · environ ' + m(T.rollLength) + ' de rouleau (laize ' + mm(T.laize) + ')</dd></dl></div>';
+      return h;
+    }).join('');
+  }
+
+  const SasToile = { FLAP, RIDGE, patterns, html };
+  if (typeof module !== 'undefined' && module.exports) module.exports = SasToile;
+  else global.SasToile = SasToile;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script id="openings-ctl-src">// ---------------------------------------------------------
+// openings-ctl.js — Commandes des portes d'aplomb, sas d'entrée et plancher (NOMAD-2026-005 à 007),
+// sorties de app.js (qui reste sous 2 000 lignes). Relie l'objet dôme (ds), les calculs (Door, Floor,
+// SasToile, Joinery) et les fiches (DoorUI, FloorUI). Aucun calcul ici : seulement l'aiguillage.
+// ---------------------------------------------------------
+(function (global) {
+  'use strict';
+
+  const DOOR_SECTION = { w: 0.045, d: 0.07 };   // 45 × 70 mm, en attendant les vraies sections (aperçu 🟠)
+
+  // ctx = { ds, $id, readout() (réécrit la fiche des ouvertures), redraw() (3D Base et Design) }
+  function create(ctx) {
+    const ds = ctx.ds, $id = ctx.$id;
+    let doorFiche = null;   // fiche d'assemblage ouverte
+    const doorKey = (o, L) => o.seuil.map(k => k.split('-').map(id => L.get(+id)).sort().join('–')).sort().join(' ');
+
+    function doorBlock(o, L) {
+      const key = doorKey(o, L), d = ds.openings.doors[key];
+      if (!d) return '<div class="door"><button class="ghost" data-door-add="' + key.replace(/"/g, '&quot;') + '">Ajouter une porte d\'aplomb</button></div>';
+      const r = Door.compute(ds.nominal, Ouvertures.strutIndex(ds.nominal), o, d);
+      const deep = r.ok ? Math.max(0, -Math.min(...r.nodes.map(p => p.depth - d.setback))) : 0;
+      const st = r.ok && Door.build(r, d, DOOR_SECTION, Joinery.resolve(d.joints));
+      return DoorUI.html(Joinery, { key, door: d, result: r, structure: st, joints: Joinery.resolve(d.joints), fiche: doorFiche, deep,
+        sasLoad: st && st.kind === 'sas' ? Floor.sasLoad(st, ds.floor ? Floor.layout(ds.nominal, ds.floor).options : null) : null });
+    }
+    // structures des portes qui passent (3D Base et Design, plan du Design, récapitulatifs)
+    function doorStructures() {
+      const res = ds.openings.result; if (!(res && res.ok)) return [];
+      const L = Ouvertures.nodeLabels(ds.nominal), S = Ouvertures.strutIndex(ds.nominal), out = [];
+      res.openings.forEach(o => { const d = o.closedByGround && ds.openings.doors[doorKey(o, L)]; if (!d) return;
+        const st = Door.build(Door.compute(ds.nominal, S, o, d), d, DOOR_SECTION, Joinery.resolve(d.joints)); if (st) out.push(st); });
+      return out;
+    }
+    const sasScenes = () => doorStructures().filter(x => x.kind === 'sas');
+    function doorsChanged() { ctx.readout(); updateFloorReadout(); ctx.redraw(); }
+    function doorClick(ev) {
+      const t = ev.target, add = t.getAttribute && t.getAttribute('data-door-add'), del = t.getAttribute && t.getAttribute('data-door-del');
+      const fiche = t.getAttribute && t.getAttribute('data-joint-fiche');
+      if (fiche) { ev.preventDefault(); doorFiche = doorFiche === fiche ? null : fiche; ctx.readout(); return; }
+      if (add) { ds.openings.doors[add] = { width: 0.9, height: 2, offset: 0, setback: 0 }; doorsChanged(); }
+      else if (del) { delete ds.openings.doors[del]; doorsChanged(); }
+    }
+    function doorChange(ev) {
+      const t = ev.target, k = t.getAttribute && t.getAttribute('data-door-key'), f = t.getAttribute('data-door-f');
+      if (!k || !ds.openings.doors[k]) return;
+      doorFiche = DoorUI.apply(ds.openings.doors[k], f, t.value, t.tagName) || doorFiche;
+      doorsChanged();
+    }
+
+    // plancher : calcul avec les pilotis des sas extérieurs (et leurs charges)
+    function floorLayout() {
+      if (!ds.floor) return null;
+      const lay = Floor.layout(ds.nominal, ds.floor); if (!lay.ok) return lay;
+      const extra = [];
+      sasScenes().forEach(sc => { const pts = sc.groundPoints || []; if (!pts.length) return;
+        Floor.extraPiles(lay, pts, -0.0225, Floor.sasLoad(sc, lay.options)).forEach(p => extra.push(p)); });
+      return Floor.withExtra(lay, extra);
+    }
+    function floorScene() { const lay = floorLayout(); return lay && lay.ok ? Floor.scene(lay) : null; }
+    function updateFloorReadout() {
+      const el = $id('baseFloor'); if (!el) return;
+      el.innerHTML = FloorUI.html(Floor, ds.floor, floorLayout());
+      el.onclick = ev => { const t = ev.target, on = t.getAttribute('data-floor-on'), off = t.getAttribute('data-floor-off');
+        if (on || off) { ds.floor = on ? Floor.choices() : null; floorChanged(); } };
+      el.onchange = ev => { const t = ev.target, f = t.getAttribute('data-floor-f'); if (!f || !ds.floor) return;
+        if (t.tagName === 'SELECT') ds.floor[f] = t.value; else { const v = parseFloat(t.value); if (isFinite(v)) ds.floor[f] = v; }
+        floorChanged(); };
+    }
+    function floorChanged() { updateFloorReadout(); ctx.readout(); ctx.redraw(); }
+
+    // toile des sas (Cover+) : patrons, raccord au dôme, consommation de rouleau
+    const sasToile = () => sasScenes().map(sc => SasToile.patterns(sc, ds.fabric));
+    // récapitulatifs pour Cover+ et Informations
+    const summary = mode => DoorUI.summary(doorStructures(), floorLayout(), mode) + (mode === 'cover' ? SasToile.html(sasToile())
+      : sasToile().map(T => '<section class="info-card"><h3>Toile du sas</h3><p>' + T.pieces.length + ' pièces' + (T.pignon ? ' + pignon' : '') + ' · ' + T.netArea.toFixed(2).replace('.', ',') +
+        ' m² net · environ ' + T.rollLength.toFixed(1).replace('.', ',') + ' m de rouleau · raccord au dôme ' + T.raccord.length.toFixed(2).replace('.', ',') + ' m (rabat sous la toile du dôme) · 🟠 patrons détaillés dans Cover+</p></section>').join(''));
+
+    // sas dans la 3D de Cover+ (vue en projection, dessinée par-dessus le dôme)
+    // phase 'back' : faces derrière le centre du dôme (dessinées avant lui) ; 'front' : devant (après lui)
+    function drawCover3D(c2d, proj, yBase, dpr, phase) {
+      sasScenes().forEach(sc => {
+        const faces = sc.panels.filter(p => p.kind !== 'plancher-sas').map(p => { const P = p.pts.map(q => proj({ x: q.x, y: q.y + yBase, z: q.z }));
+          return { P, z: P.reduce((s, q) => s + q.z, 0) / P.length, roof: p.kind === 'toit' }; }).filter(f => !phase || (phase === 'back') === (f.z < 0)).sort((a, b) => a.z - b.z);
+        faces.forEach(f => { c2d.beginPath(); f.P.forEach((q, i) => (i ? c2d.lineTo(q.x, q.y) : c2d.moveTo(q.x, q.y))); c2d.closePath();
+          c2d.fillStyle = f.roof ? 'rgba(216,190,140,0.55)' : 'rgba(205,190,160,0.45)'; c2d.fill();
+          c2d.strokeStyle = '#7d6a50'; c2d.lineWidth = 1.2 * dpr; c2d.stroke(); });
+      });
+    }
+
+    return { doorBlock, doorClick, doorChange, doorStructures, floorLayout, floorScene, updateFloorReadout, summary, sasToile, drawCover3D, DOOR_SECTION };
+  }
+
+  const OpeningsCtl = { create, DOOR_SECTION };
+  if (typeof module !== 'undefined' && module.exports) module.exports = OpeningsCtl;
+  else global.OpeningsCtl = OpeningsCtl;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="unfold-src">
@@ -11140,56 +11386,13 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     if (!ds.openings.labels.length) { ec.style.display = 'none'; return; }
     ec.style.display = '';
     ec.innerHTML = '<div class="sheet-head"><b>Ouvertures</b><button id="opGoBase" class="ghost">Modifier dans l\'onglet Base</button>' +
-      '<span class="muted">les triangles ouverts sont retirés de toutes les découpes · numéros de triangles renumérotés (' + ds.dome.faces.length + ' △)</span></div>' + body(false) + DoorUI.summary(doorStructures(), ds.floor && Floor.layout(ds.nominal, ds.floor), 'cover');
+      '<span class="muted">les triangles ouverts sont retirés de toutes les découpes · numéros de triangles renumérotés (' + ds.dome.faces.length + ' △)</span></div>' + body(false) + OC.summary('cover');
     $id('opGoBase').onclick = () => showView('base');
   }
-  // Porte d'aplomb (NOMAD-2026-005) : une porte par ouverture fermée par le sol, repérée par son seuil
-  const doorKey = (o, L) => o.seuil.map(k => k.split('-').map(id => L.get(+id)).sort().join('–')).sort().join(' ');
-  // Plancher et soubassement (NOMAD-2026-006) : fiche dans l'onglet Base, dessin dans la 3D de Base
-  function updateFloorReadout(){
-    const el = $id('baseFloor'); if (!el) return;
-    el.innerHTML = FloorUI.html(Floor, ds.floor, ds.floor ? Floor.layout(ds.nominal, ds.floor) : null);
-    el.onclick = ev => { const t = ev.target, on = t.getAttribute('data-floor-on'), off = t.getAttribute('data-floor-off');
-      if (on || off) { ds.floor = on ? Floor.choices() : null; floorChanged(); } };
-    el.onchange = ev => { const t = ev.target, f = t.getAttribute('data-floor-f'); if (!f || !ds.floor) return;
-      if (t.tagName === 'SELECT') ds.floor[f] = t.value; else { const v = parseFloat(t.value); if (isFinite(v)) ds.floor[f] = v; }
-      floorChanged(); };
-  }
-  // plancher en 3D, avec les pilotis sous un sas d'entrée extérieur
-  function floorScene(){ if (!ds.floor) return null; const lay = Floor.layout(ds.nominal, ds.floor); return Floor.scene(lay, Floor.extraPiles(lay, doorStructures().flatMap(x => x.groundPoints || []), -0.0225)); }
-  function floorChanged(){ updateFloorReadout(); updateOpeningsReadout(); baseFor = null; if (window.CoverDesign) window.CoverDesign.domeChanged(); if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
-  let doorFiche = null;   // fiche d'assemblage ouverte
-  function doorBlock(o, L){
-    const key = doorKey(o, L), d = ds.openings.doors[key];
-    if (!d) return '<div class="door"><button class="ghost" data-door-add="' + key.replace(/"/g, '&quot;') + '">Ajouter une porte d\'aplomb</button></div>';
-    const r = Door.compute(ds.nominal, Ouvertures.strutIndex(ds.nominal), o, d);
-    const deep = r.ok ? Math.max(0, -Math.min(...r.nodes.map(p => p.depth - d.setback))) : 0;
-    return DoorUI.html(Joinery, { key, door: d, result: r, structure: r.ok && Door.build(r, d, DOOR_SECTION, Joinery.resolve(d.joints)), joints: Joinery.resolve(d.joints), fiche: doorFiche, deep });
-  }
-  // structures 3D des portes qui passent (affichées dans la 3D de l'onglet Base)
-  function doorStructures(){
-    const res = ds.openings.result; if (!(res && res.ok)) return [];
-    const L = Ouvertures.nodeLabels(ds.nominal), S = Ouvertures.strutIndex(ds.nominal), out = [];
-    res.openings.forEach(o => { const d = o.closedByGround && ds.openings.doors[doorKey(o, L)]; if (!d) return;
-      const st = Door.build(Door.compute(ds.nominal, S, o, d), d, DOOR_SECTION, Joinery.resolve(d.joints)); if (st) out.push(st); });
-    return out;
-  }
-  const DOOR_SECTION = { w: 0.045, d: 0.07 };   // 45 × 70 mm, en attendant les vraies sections (aperçu 🟠)
-  function doorsChanged(){ updateOpeningsReadout(); baseFor = null; if (window.CoverDesign) window.CoverDesign.domeChanged(); if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
-  function doorClick(ev){
-    const t = ev.target, add = t.getAttribute && t.getAttribute('data-door-add'), del = t.getAttribute && t.getAttribute('data-door-del');
-    const fiche = t.getAttribute && t.getAttribute('data-joint-fiche');
-    if (fiche) { ev.preventDefault(); doorFiche = doorFiche === fiche ? null : fiche; updateOpeningsReadout(); return; }
-    if (add) { ds.openings.doors[add] = { width: 0.9, height: 2, offset: 0, setback: 0 }; doorsChanged(); }
-    else if (del) { delete ds.openings.doors[del]; doorsChanged(); }
-  }
-  function doorChange(ev){
-    const t = ev.target, k = t.getAttribute && t.getAttribute('data-door-key'), f = t.getAttribute('data-door-f');
-    if (!k || !ds.openings.doors[k]) return;
-    const dd = ds.openings.doors[k];
-    doorFiche = DoorUI.apply(dd, f, t.value, t.tagName) || doorFiche;
-    doorsChanged();
-  }
+  // Portes, sas et plancher (NOMAD-2026-005 à 007) : commandes et calculs dans src/ui/openings-ctl.js
+  const OC = OpeningsCtl.create({ ds, $id, readout: () => updateOpeningsReadout(),
+    redraw: () => { baseFor = null; if (window.CoverDesign) window.CoverDesign.domeChanged(); if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); } });
+  const { doorBlock, doorClick, doorChange, doorStructures, floorScene, updateFloorReadout } = OC;
   function pickStrut(evtX, evtY){
     const P = canvas._projected; if (!P) return null;
     const rect = canvas.getBoundingClientRect();
@@ -11306,6 +11509,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       if (selectedPiece) { const sp = pieceByName(selectedPiece); if (sp) selFaces = new Set(sp.chain); }
     }
 
+    OC.drawCover3D(ctx, p => { const rp = project(p); return { x: cx + rp.x * scale, y: cy - rp.y * scale, z: rp.z }; }, Math.min(...ds.nominal.points.map(p => p.y)), devicePixelRatio, 'back');
     faceDepth.forEach(({ f, pts }) => {
       const P = f.pointIds.map(id => ds.dome.pointById.get(id));
       const e1 = { x: P[1].x-P[0].x, y: P[1].y-P[0].y, z: P[1].z-P[0].z };
@@ -11383,6 +11587,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     });
 
     drawOpenings(projected);
+    OC.drawCover3D(ctx, p => { const rp = project(p); return { x: cx + rp.x * scale, y: cy - rp.y * scale, z: rp.z }; }, Math.min(...ds.nominal.points.map(p => p.y)), devicePixelRatio, 'front');
     canvas._projected = projected;
     canvas._faceDepth = faceDepth;
   }
@@ -12794,7 +12999,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       ds.nominal.edgeClasses.map(g => { const t = ds.dome.offset ? ds.dome.edgeClasses.find(c => c.name === g.name) : null;
         return '<tr><td><b>' + g.name + '</b></td><td>×' + g.count + '</td><td>' + (g.length*1000).toFixed(2) + '</td>' + (t ? '<td>' + (t.length*1000).toFixed(1) + '</td>' : '') + '</tr>'; }).join('') +
       '</table>' + (ds.dome.offset ? '<div class="offset-info" style="margin-top:8px">' + offsetInfoHtml() + '</div>' : '') + '</section>';
-    h += DoorUI.summary(doorStructures(), ds.floor && Floor.layout(ds.nominal, ds.floor), 'info');
+    h += OC.summary('info');
     h += '<section class="info-card"><h3>Comprendre les options et réglages</h3>' + CoverInfo.helpHtml() + '</section>';
     el.innerHTML = h;
     openIds.forEach(id => { const d = document.getElementById(id); if (d) d.open = true; });

@@ -290,56 +290,13 @@
     if (!ds.openings.labels.length) { ec.style.display = 'none'; return; }
     ec.style.display = '';
     ec.innerHTML = '<div class="sheet-head"><b>Ouvertures</b><button id="opGoBase" class="ghost">Modifier dans l\'onglet Base</button>' +
-      '<span class="muted">les triangles ouverts sont retirés de toutes les découpes · numéros de triangles renumérotés (' + ds.dome.faces.length + ' △)</span></div>' + body(false) + DoorUI.summary(doorStructures(), ds.floor && Floor.layout(ds.nominal, ds.floor), 'cover');
+      '<span class="muted">les triangles ouverts sont retirés de toutes les découpes · numéros de triangles renumérotés (' + ds.dome.faces.length + ' △)</span></div>' + body(false) + OC.summary('cover');
     $id('opGoBase').onclick = () => showView('base');
   }
-  // Porte d'aplomb (NOMAD-2026-005) : une porte par ouverture fermée par le sol, repérée par son seuil
-  const doorKey = (o, L) => o.seuil.map(k => k.split('-').map(id => L.get(+id)).sort().join('–')).sort().join(' ');
-  // Plancher et soubassement (NOMAD-2026-006) : fiche dans l'onglet Base, dessin dans la 3D de Base
-  function updateFloorReadout(){
-    const el = $id('baseFloor'); if (!el) return;
-    el.innerHTML = FloorUI.html(Floor, ds.floor, ds.floor ? Floor.layout(ds.nominal, ds.floor) : null);
-    el.onclick = ev => { const t = ev.target, on = t.getAttribute('data-floor-on'), off = t.getAttribute('data-floor-off');
-      if (on || off) { ds.floor = on ? Floor.choices() : null; floorChanged(); } };
-    el.onchange = ev => { const t = ev.target, f = t.getAttribute('data-floor-f'); if (!f || !ds.floor) return;
-      if (t.tagName === 'SELECT') ds.floor[f] = t.value; else { const v = parseFloat(t.value); if (isFinite(v)) ds.floor[f] = v; }
-      floorChanged(); };
-  }
-  // plancher en 3D, avec les pilotis sous un sas d'entrée extérieur
-  function floorScene(){ if (!ds.floor) return null; const lay = Floor.layout(ds.nominal, ds.floor); return Floor.scene(lay, Floor.extraPiles(lay, doorStructures().flatMap(x => x.groundPoints || []), -0.0225)); }
-  function floorChanged(){ updateFloorReadout(); updateOpeningsReadout(); baseFor = null; if (window.CoverDesign) window.CoverDesign.domeChanged(); if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
-  let doorFiche = null;   // fiche d'assemblage ouverte
-  function doorBlock(o, L){
-    const key = doorKey(o, L), d = ds.openings.doors[key];
-    if (!d) return '<div class="door"><button class="ghost" data-door-add="' + key.replace(/"/g, '&quot;') + '">Ajouter une porte d\'aplomb</button></div>';
-    const r = Door.compute(ds.nominal, Ouvertures.strutIndex(ds.nominal), o, d);
-    const deep = r.ok ? Math.max(0, -Math.min(...r.nodes.map(p => p.depth - d.setback))) : 0;
-    return DoorUI.html(Joinery, { key, door: d, result: r, structure: r.ok && Door.build(r, d, DOOR_SECTION, Joinery.resolve(d.joints)), joints: Joinery.resolve(d.joints), fiche: doorFiche, deep });
-  }
-  // structures 3D des portes qui passent (affichées dans la 3D de l'onglet Base)
-  function doorStructures(){
-    const res = ds.openings.result; if (!(res && res.ok)) return [];
-    const L = Ouvertures.nodeLabels(ds.nominal), S = Ouvertures.strutIndex(ds.nominal), out = [];
-    res.openings.forEach(o => { const d = o.closedByGround && ds.openings.doors[doorKey(o, L)]; if (!d) return;
-      const st = Door.build(Door.compute(ds.nominal, S, o, d), d, DOOR_SECTION, Joinery.resolve(d.joints)); if (st) out.push(st); });
-    return out;
-  }
-  const DOOR_SECTION = { w: 0.045, d: 0.07 };   // 45 × 70 mm, en attendant les vraies sections (aperçu 🟠)
-  function doorsChanged(){ updateOpeningsReadout(); baseFor = null; if (window.CoverDesign) window.CoverDesign.domeChanged(); if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
-  function doorClick(ev){
-    const t = ev.target, add = t.getAttribute && t.getAttribute('data-door-add'), del = t.getAttribute && t.getAttribute('data-door-del');
-    const fiche = t.getAttribute && t.getAttribute('data-joint-fiche');
-    if (fiche) { ev.preventDefault(); doorFiche = doorFiche === fiche ? null : fiche; updateOpeningsReadout(); return; }
-    if (add) { ds.openings.doors[add] = { width: 0.9, height: 2, offset: 0, setback: 0 }; doorsChanged(); }
-    else if (del) { delete ds.openings.doors[del]; doorsChanged(); }
-  }
-  function doorChange(ev){
-    const t = ev.target, k = t.getAttribute && t.getAttribute('data-door-key'), f = t.getAttribute('data-door-f');
-    if (!k || !ds.openings.doors[k]) return;
-    const dd = ds.openings.doors[k];
-    doorFiche = DoorUI.apply(dd, f, t.value, t.tagName) || doorFiche;
-    doorsChanged();
-  }
+  // Portes, sas et plancher (NOMAD-2026-005 à 007) : commandes et calculs dans src/ui/openings-ctl.js
+  const OC = OpeningsCtl.create({ ds, $id, readout: () => updateOpeningsReadout(),
+    redraw: () => { baseFor = null; if (window.CoverDesign) window.CoverDesign.domeChanged(); if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); } });
+  const { doorBlock, doorClick, doorChange, doorStructures, floorScene, updateFloorReadout } = OC;
   function pickStrut(evtX, evtY){
     const P = canvas._projected; if (!P) return null;
     const rect = canvas.getBoundingClientRect();
@@ -456,6 +413,7 @@
       if (selectedPiece) { const sp = pieceByName(selectedPiece); if (sp) selFaces = new Set(sp.chain); }
     }
 
+    OC.drawCover3D(ctx, p => { const rp = project(p); return { x: cx + rp.x * scale, y: cy - rp.y * scale, z: rp.z }; }, Math.min(...ds.nominal.points.map(p => p.y)), devicePixelRatio, 'back');
     faceDepth.forEach(({ f, pts }) => {
       const P = f.pointIds.map(id => ds.dome.pointById.get(id));
       const e1 = { x: P[1].x-P[0].x, y: P[1].y-P[0].y, z: P[1].z-P[0].z };
@@ -533,6 +491,7 @@
     });
 
     drawOpenings(projected);
+    OC.drawCover3D(ctx, p => { const rp = project(p); return { x: cx + rp.x * scale, y: cy - rp.y * scale, z: rp.z }; }, Math.min(...ds.nominal.points.map(p => p.y)), devicePixelRatio, 'front');
     canvas._projected = projected;
     canvas._faceDepth = faceDepth;
   }
@@ -1944,7 +1903,7 @@
       ds.nominal.edgeClasses.map(g => { const t = ds.dome.offset ? ds.dome.edgeClasses.find(c => c.name === g.name) : null;
         return '<tr><td><b>' + g.name + '</b></td><td>×' + g.count + '</td><td>' + (g.length*1000).toFixed(2) + '</td>' + (t ? '<td>' + (t.length*1000).toFixed(1) + '</td>' : '') + '</tr>'; }).join('') +
       '</table>' + (ds.dome.offset ? '<div class="offset-info" style="margin-top:8px">' + offsetInfoHtml() + '</div>' : '') + '</section>';
-    h += DoorUI.summary(doorStructures(), ds.floor && Floor.layout(ds.nominal, ds.floor), 'info');
+    h += OC.summary('info');
     h += '<section class="info-card"><h3>Comprendre les options et réglages</h3>' + CoverInfo.helpHtml() + '</section>';
     el.innerHTML = h;
     openIds.forEach(id => { const d = document.getElementById(id); if (d) d.open = true; });
