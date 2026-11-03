@@ -70,9 +70,41 @@ Statuts : 💡 idée · ❓ questions ouvertes · ⏸ en suspens · 🛠 en cour
 1. Sections réelles : largeur et épaisseur des lattes, section des montants (pour passer de l'aperçu à la liste de débit).
 2. Définition des motifs goma, rindō, kikkō.
 
+## 4. Ouvertures « intelligentes » : porte d'aplomb, sas, tunnel géodésique, efforts, menuiserie — 🛠 étape 1 en cours (01/11/2026)
+Outil **didactique** : chaque calcul explique ce qu'il fait (retour de connaissances).
+
+**Décidé (Nathan, 01–02/11/2026)**
+- « Ajouter une porte » : porte posée **d'aplomb** (verticale), alignée sur la structure ; calcul de la structure **à l'aplomb du haut de la porte** (linteau → montants du dôme) pour créer sas, raccord ou fermeture.
+- Deux options par porte : **sas vers l'intérieur** du dôme, ou **avant-corps vers l'extérieur** ; l'extérieur peut aller jusqu'à un **sas vestiaire** (ex. 2,50 m).
+- **Tunnel géodésique** : on « tire » la forme de l'ouverture choisie (ex. pentagone) comme le pousser-tirer de SketchUp → prisme droit, longueur réglable, dehors ou dedans.
+- **Efforts** calculés, affichés 🟠 indicatifs (pas une note d'ingénieur).
+- **Bibliothèque de menuiserie** didactique.
+- Le **kit d'essai** n'est pas à faire.
+
+**Plan** : 1) porte d'aplomb + cadre jusqu'aux montants (NOMAD-2026-005) · 2) tirer l'ouverture en tunnel · 3) montants, toile et raccords du tunnel · 4) efforts indicatifs et bibliothèque de menuiserie.
+
+**Étape 1 — premiers résultats (moteur `src/geometry/door.js`, 26 tests)**
+- Sur la référence 3V Ø 5 m, une porte 0,90 × 2,00 m demande une ouverture de 9 triangles (seuil d'un seul montant B, 956 mm). Hauteur maxi pour 0,90 de large : 2,37 m.
+- Au-dessus du linteau, le cadre du dôme est **en retrait d'environ 0,90 m** derrière le plan de la porte (la paroi penche) : la fermeture n'est donc pas un simple tympan plat, c'est un petit « toit » de 0,9 m de profondeur — ou bien on recule la porte (sas intérieur).
+
+**Structure 3D de la porte (demande du 02/11/2026)** — modélisée dans la 3D de l'onglet Base, aperçu 🟠, section 45 × 70 mm en attendant les vraies : huisserie, chevêtre posé sur le linteau avec ses 2 appuis jusqu'au dôme, potelets, rampants (bord haut dans le plan de porte), chevrons horizontaux jusqu'aux montants du dôme, toit de l'avant-corps. Chaque chevron et appui finit sur un montant du cadre (vérifié par test). Longueurs d'axe, sans les coupes d'assemblage.
+
+**Choix constructifs, raccords, bibliothèque (demande du 02–03/11/2026)**
+- Tenue de l'avant-corps au choix : poteaux d'angle + lisses basses (défaut) · parois latérales fermées · porte-à-faux (⛔ déconseillé, avertissement, pas de document de fabrication).
+- Accroche au dôme au choix, pièce par pièce : appuis et chevrons « sur le montant » (n'importe où) ou « sur un nœud seulement » (contrefiches).
+- **Aucune pièce volante** : chaque bout de pièce est classé (sol, nœud du dôme, montant du dôme, autre pièce : angle, T, oblique, posé sur) ; le logiciel vérifie que chaque pièce rejoint le sol ou le dôme par une chaîne de raccords (testé sur 72 combinaisons : 2 diamètres × 3 reculs × 3 tenues × 2 × 2 accroches).
+- Bibliothèque `src/fabrication/joinery.js` : 14 fiches didactiques 🟠 (analogie, quand, limites, outillage, étapes, schéma) — bois-bois (tenon-mortaise, mi-bois, embrèvement, entaille), quincaillerie (sabot, équerre, vis structurelle, boulon), dôme (platine sur nœud, moisage, cale biaise), sol (pied de poteau, platine sur plancher, lisse ancrée). Un assemblage choisi par famille de raccord ; les moises se dessinent en 3D.
+- Questions : sections réelles ; type de connecteur des nœuds (pour la platine) ; ancrage au sol réel (dalle, plots, terrasse).
+
+**Questions ouvertes ❓**
+1. ✅ Position du plan de porte : réglée porte par porte (curseur de recul) — décision du 02/11/2026.
+2. ✅ « Ajouter une porte » dans l'onglet Base, sous chaque ouverture fermée par le sol — décision du 02/11/2026.
+3. Sections des bois de l'huisserie (dormant, linteau, potelets).
+
 ---
 
 ## Fait
+- ✅ 0.9.16 — Porte d'aplomb (NOMAD-2026-005, étape 1) : calcul, structure 3D, choix constructifs, raccords sans pièce volante, bibliothèque de 14 assemblages (aperçu 🟠).
 - ✅ 0.9.15 — Kumiko dans le Design, aperçu (NOMAD-2026-002 moteur, NOMAD-2026-003 interface) : pose triangle par triangle dans la 3D, tableau et plan du panneau, statut 🟠.
 - ✅ 0.9.14 — M1 : données sûres dans l'aménagement Design (imports .json et .glb contrôlés, texte échappé, sauvegarde illisible mise de côté).
 - ✅ 0.9.13 — A10 : architecture restructurée (objet dôme unique, calculs dans des modules testés, interface < 2 000 lignes) ; Ø affiché = Ø calculé.

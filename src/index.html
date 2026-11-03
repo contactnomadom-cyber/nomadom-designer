@@ -177,6 +177,16 @@
   .op-card{ border-top: 1px solid var(--line); padding-top: 6px; margin-top: 8px; }
   .op-card dl{ display:grid; grid-template-columns: auto 1fr; gap: 2px 14px; margin: 4px 0 0; }
   .op-card dt{ color: var(--ink-dim); } .op-card dd{ margin: 0; }
+  .door{ margin-top: 8px; padding: 6px 8px; border-left: 3px solid #2b5a8a; background: rgba(43,90,138,.05); }
+  .door-head{ display:flex; gap:10px; align-items:center; justify-content:space-between; }
+  .door-in{ display:flex; flex-wrap:wrap; gap: 6px 14px; margin: 6px 0; } .door-in input[type=number]{ width: 5em; }
+  .door dl{ display:grid; grid-template-columns: auto 1fr; gap: 2px 14px; margin: 4px 0; }
+  .door-note{ color: var(--ink-dim); font-size: .92em; margin-top: 4px; }
+  .door-choice{ display:flex; flex-wrap:wrap; gap: 6px 14px; align-items:center; margin: 8px 0 4px; } .door-choice .door-note{ flex-basis:100%; }
+  .door-joints table{ border-collapse: collapse; margin: 4px 0; } .door-joints td, .door-joints th{ padding: 2px 8px; border-bottom: 1px solid var(--line); text-align:left; }
+  .jfiche{ display:flex; gap: 12px; align-items:flex-start; margin: 8px 0; padding: 8px; background: #fbf7f0; border: 1px solid var(--line); }
+  .jfiche-svg{ flex: 0 0 160px; } .jfiche p{ margin: 4px 0; } .jfiche ol{ margin: 4px 0 0 18px; padding: 0; }
+  .door-lib{ margin: 6px 0; } .door-lib div{ margin: 3px 0; }
   .op-legend{ display:flex; flex-wrap:wrap; gap: 4px 14px; color: var(--ink-dim); font-size: 11px; margin-top: 6px; }
   .op-legend i{ display:inline-block; width:18px; height:3px; vertical-align:middle; margin-right:4px; }
   td.down{ color:#b23a2f; font-weight:600; }
@@ -202,7 +212,7 @@
 <body>
 
 <header>
-  <h1>NOMAD'OM <span style="font-weight:400;opacity:.75">DESIGNER</span> <span class="beta-badge" title="Version bêta 0.9.15 du 01/11/2026">BETA</span></h1>
+  <h1>NOMAD'OM <span style="font-weight:400;opacity:.75">DESIGNER</span> <span class="beta-badge" title="Version bêta 0.9.16 du 03/11/2026">BETA</span></h1>
   <nav class="tabs">
     <button id="tabBase">Base</button>
     <button id="tabCover" class="active">Cover+</button>
@@ -465,7 +475,7 @@
 </main>
 
 <footer>
-  Nomad'Om Designer Beta · version bêta 0.9.15 du 01/11/2026 · Kumiko dans le Design (aperçu) · étanchéité avant tout · Quadrisphère · moteur géométrique porté d'ACIDOME CALC 221027 et validé contre lui (571 combinaisons identiques)
+  Nomad'Om Designer Beta · version bêta 0.9.16 du 03/11/2026 · Porte d'aplomb et assemblages (aperçu) · étanchéité avant tout · Quadrisphère · moteur géométrique porté d'ACIDOME CALC 221027 et validé contre lui (571 combinaisons identiques)
 </footer>
 <script id="threekit-src">{{MODULE:threekit-src}}</script>
 <script id="dome-engine-src">{{MODULE:dome-engine-src}}</script>
@@ -487,6 +497,9 @@
 <script id="design3d-three-src">{{MODULE:design3d-three-src}}</script>
 <script id="view2d-src">{{MODULE:view2d-src}}</script>
 <script id="ouvertures-src">{{MODULE:ouvertures-src}}</script>
+<script id="door-src">{{MODULE:door-src}}</script>
+<script id="joinery-src">{{MODULE:joinery-src}}</script>
+<script id="door-ui-src">{{MODULE:door-ui-src}}</script>
 <script id="unfold-src">{{MODULE:unfold-src}}</script>
 <script>{{MODULE:main}}</script>
 <script id="designui-src">{{MODULE:designui-src}}</script>

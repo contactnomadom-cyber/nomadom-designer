@@ -7,6 +7,15 @@
 
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
+## 0.9.16 — 03/11/2026 (NOMAD-2026-005 : porte d'aplomb, structure 3D, assemblages)
+- Onglet Base : sous chaque ouverture qui touche le sol, **« Ajouter une porte d'aplomb »**. Largeur, hauteur, décalage et recul vers l'intérieur (réglé porte par porte). L'outil dit si la porte passe (🟡) ou non (🔴, avec la hauteur et la largeur maxi), donne l'huisserie, les potelets, la surface à fermer et l'ébrasement.
+- **Structure de la porte en 3D** (aperçu 🟠, section provisoire 45 × 70 mm) : huisserie, chevêtre posé sur le linteau et ses appuis, potelets, rampants, chevrons jusqu'au cadre du dôme, toit de l'avant-corps.
+- **Choix constructifs** : tenue de l'avant-corps (poteaux d'angle et lisses basses · parois latérales · porte-à-faux ⛔ déconseillé, sans document de fabrication) ; accroche au dôme des appuis et des chevrons (sur le montant ou sur un nœud seulement, avec contrefiches).
+- **Aucune pièce volante** : chaque raccord est classé (sol, nœud, montant du dôme, angle, T, biais, posé sur) et l'outil vérifie que chaque pièce rejoint le sol ou le dôme par une chaîne de raccords.
+- **Bibliothèque d'assemblages** didactique (14 fiches 🟠 : schéma, analogie, quand, limites, outillage, étapes) : tenon-mortaise, mi-bois, embrèvement, entaille, sabot, équerre, vis structurelle, boulon, platine sur nœud, moisage, cale biaise, pied de poteau, platine sur plancher, lisse ancrée. Un assemblage au choix par type de raccord ; les moises se dessinent en 3D.
+- Efforts et sections réelles pas encore calculés (étapes suivantes).
+- Contrôles : nouvelles suites `door` (43), `joinery` (56) et `t_door` (navigateur, 21). 28 suites au total.
+
 ## 0.9.15 — 01/11/2026 (NOMAD-2026-002 et 003 : Kumiko dans le Design, aperçu)
 - Onglet Design : nouvelle barre **Kumiko**. On choisit un motif (asa-no-ha ou mitsukude), une densité (1 à 6) et le centre du motif, puis « Poser des panneaux » : un clic sur un triangle du rendu 3D pose un panneau, un second clic le retire.
 - Les lattes apparaissent dans le rendu 3D (côté intérieur, sous les montants). Un tableau liste les panneaux (triangle, motif, cadre, lattes, tsukeko, longueurs, biseaux) et montre le plan du panneau choisi, vu de l'intérieur.

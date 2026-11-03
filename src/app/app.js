@@ -110,7 +110,7 @@
     const h = (parseFloat(document.getElementById('paramSupportH').value) || 0) / 1000;
     ds.cloth = (gk && h > 0) ? Toile.offsetDome(ds.nominal, h) : ds.nominal;
     const forKey = JSON.stringify([bp.detail, bp.subdivMethod, bp.symmetry, bp.partial, bp.alignTheBase]);
-    if (ds.openings.forKey !== forKey) { ds.openings.labels = []; ds.openings.forKey = forKey; }  // autre géométrie : le contour n'a plus de sens
+    if (ds.openings.forKey !== forKey) { ds.openings.labels = []; ds.openings.doors = {}; ds.openings.forKey = forKey; }  // autre géométrie : le contour n'a plus de sens
     computeOpenings();
     updateOpeningsReadout();
     ds.gen++;
@@ -270,7 +270,7 @@
           '<dt>Ourlet ou renfort de contour</dt><dd>' + mm(o.frameLength) + '</dd>' +
           '<dt>Montants retirés</dt><dd>' + cls(o.removedByClass) + '</dd>' +
           (o.closedByGround ? '<dt>Seuil au sol retiré</dt><dd>' + cls(o.seuilByClass) + ' · ' + mm(o.groundLength) + '</dd>' : '') +
-          '</dl></div>';
+          '</dl>' + (editable && o.closedByGround ? doorBlock(o, L) : '') + '</div>';
       });
       if (editable) {
         h += '<h4>Contour tracé (' + ds.openings.labels.length + ' montants)</h4><div class="small-ids">' + (openKeys().map(lab).join(' · ') || '—') + '</div>';
@@ -283,7 +283,8 @@
     eb.innerHTML = '<div class="sheet-head"><b>Ouvertures</b>' +
       (ds.openings.labels.length ? '<button id="opClear" class="ghost">Effacer toutes les ouvertures</button>' : '') +
       '<span class="muted">porte, fenêtre, coupole : on trace le contour sur les montants</span></div>' + body(true);
-    if ($id('opClear')) $id('opClear').onclick = () => { ds.openings.labels = []; openingsChanged(); };
+    if ($id('opClear')) $id('opClear').onclick = () => { ds.openings.labels = []; ds.openings.doors = {}; openingsChanged(); };
+    eb.onclick = doorClick; eb.onchange = doorChange;
     // Cover+ : lecture seule
     const ec = $id('openingsReadout');
     if (!ds.openings.labels.length) { ec.style.display = 'none'; return; }
@@ -291,6 +292,43 @@
     ec.innerHTML = '<div class="sheet-head"><b>Ouvertures</b><button id="opGoBase" class="ghost">Modifier dans l\'onglet Base</button>' +
       '<span class="muted">les triangles ouverts sont retirés de toutes les découpes · numéros de triangles renumérotés (' + ds.dome.faces.length + ' △)</span></div>' + body(false);
     $id('opGoBase').onclick = () => showView('base');
+  }
+  // Porte d'aplomb (NOMAD-2026-005) : une porte par ouverture fermée par le sol, repérée par son seuil
+  const doorKey = (o, L) => o.seuil.map(k => k.split('-').map(id => L.get(+id)).sort().join('–')).sort().join(' ');
+  let doorFiche = null;   // fiche d'assemblage ouverte
+  const doorOpts = d => ({ support: d.support, attachAppui: d.attachAppui, attachChevron: d.attachChevron, joints: Joinery.resolve(d.joints) });
+  function doorBlock(o, L){
+    const key = doorKey(o, L), d = ds.openings.doors[key];
+    if (!d) return '<div class="door"><button class="ghost" data-door-add="' + key.replace(/"/g, '&quot;') + '">Ajouter une porte d\'aplomb</button></div>';
+    const r = Door.compute(ds.nominal, Ouvertures.strutIndex(ds.nominal), o, d);
+    const deep = r.ok ? Math.max(0, -Math.min(...r.nodes.map(p => p.depth - d.setback))) : 0;
+    return DoorUI.html(Joinery, { key, door: d, result: r, structure: r.ok && Door.structure(r, DOOR_SECTION, doorOpts(d)), joints: Joinery.resolve(d.joints), fiche: doorFiche, deep });
+  }
+  // structures 3D des portes qui passent (affichées dans la 3D de l'onglet Base)
+  function doorStructures(){
+    const res = ds.openings.result; if (!(res && res.ok)) return [];
+    const L = Ouvertures.nodeLabels(ds.nominal), S = Ouvertures.strutIndex(ds.nominal), out = [];
+    res.openings.forEach(o => { const d = o.closedByGround && ds.openings.doors[doorKey(o, L)]; if (!d) return;
+      const st = Door.structure(Door.compute(ds.nominal, S, o, d), DOOR_SECTION, doorOpts(d)); if (st) out.push(st); });
+    return out;
+  }
+  const DOOR_SECTION = { w: 0.045, d: 0.07 };   // 45 × 70 mm, en attendant les vraies sections (aperçu 🟠)
+  function doorsChanged(){ updateOpeningsReadout(); baseFor = null; if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
+  function doorClick(ev){
+    const t = ev.target, add = t.getAttribute && t.getAttribute('data-door-add'), del = t.getAttribute && t.getAttribute('data-door-del');
+    const fiche = t.getAttribute && t.getAttribute('data-joint-fiche');
+    if (fiche) { ev.preventDefault(); doorFiche = doorFiche === fiche ? null : fiche; updateOpeningsReadout(); return; }
+    if (add) { ds.openings.doors[add] = { width: 0.9, height: 2, offset: 0, setback: 0 }; doorsChanged(); }
+    else if (del) { delete ds.openings.doors[del]; doorsChanged(); }
+  }
+  function doorChange(ev){
+    const t = ev.target, k = t.getAttribute && t.getAttribute('data-door-key'), f = t.getAttribute('data-door-f');
+    if (!k || !ds.openings.doors[k]) return;
+    const dd = ds.openings.doors[k];
+    if (f.startsWith('joint:')) { dd.joints = Object.assign({}, dd.joints, { [f.slice(6)]: t.value }); doorFiche = t.value; }
+    else if (t.tagName === 'SELECT') dd[f] = t.value;
+    else { const v = parseFloat(t.value); if (isFinite(v)) dd[f] = v; }
+    doorsChanged();
   }
   function pickStrut(evtX, evtY){
     const P = canvas._projected; if (!P) return null;
@@ -1695,8 +1733,9 @@
     if (!baseCam) baseCam = { yaw: 0.7, pitch: 0.38, dist: model.radius * 3.8, target: [0, model.height * 0.45, 0] };
     if (baseFor !== SD) {
       const st = Design.defaultState();
-      if (baseEng.isThree) baseEng.update(Design, model, st, { style: 'real', toile: 'verre', openings: [] }, () => baseEng.render(baseCam, false));
-      else baseEng.setScene(Design3D.buildScene(Design, model, st, { style: 'real', toile: 'verre', openings: [] }));
+      const o3 = { style: 'real', toile: 'verre', openings: [], doors: doorStructures() };
+      if (baseEng.isThree) baseEng.update(Design, model, st, o3, () => baseEng.render(baseCam, false));
+      else baseEng.setScene(Design3D.buildScene(Design, model, st, o3));
       baseFor = SD;
     }
     baseEng.render(baseCam, false);
@@ -1920,7 +1959,9 @@
   document.getElementById('tabDesign').addEventListener('click', () => showView('design'));
   document.getElementById('tabBase').addEventListener('click', () => showView('base'));
   // accès du module Design (onglet séparé) au dôme courant
-  window.CoverApp = { dome: () => ds.struct || ds.nominal, labels: () => Ouvertures.nodeLabels(ds.nominal), label: domeLabel, showView };
+  window.CoverApp = { dome: () => ds.struct || ds.nominal, labels: () => Ouvertures.nodeLabels(ds.nominal), label: domeLabel, showView,
+    // contour d'ouvertures donné en étiquettes [['N1', 'N2'], …] (scénarios de test, reprise d'un projet)
+    setOpenings: pairs => { ds.openings.labels = pairs.map(p => p.slice().sort()); openingsChanged(); } };
   // « ? » à côté de chaque réglage : ouvre l'explication correspondante
   Object.keys(CoverInfo.HELP_FOR).forEach(id => {
     const input = document.getElementById(id);
