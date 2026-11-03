@@ -36,10 +36,11 @@ const suites = [
   { key: 'kumiko', name: 'Panneaux Kumiko (moteur)', cmd: ['node', [N('kumiko.test.js'), MODS]] },
   { key: 'kumiko_layout', name: 'Kumiko posé sur le dôme (NOMAD-2026-003)', cmd: ['node', [N('kumiko-layout.test.js'), MODS]] },
   { key: 'door', name: 'Porte d\'aplomb (NOMAD-2026-005)', cmd: ['node', [N('door.test.js'), MODS]] },
-  { key: 'joinery', name: 'Bibliothèque d\'assemblages (NOMAD-2026-005)', cmd: ['node', [N('joinery.test.js'), MODS]] }
+  { key: 'joinery', name: 'Bibliothèque d\'assemblages (NOMAD-2026-005)', cmd: ['node', [N('joinery.test.js'), MODS]] },
+  { key: 'floor', name: 'Plancher et soubassement (NOMAD-2026-006)', cmd: ['node', [N('floor.test.js'), MODS]] }
 ];
 const browser = quick ? ['t_beta.py', 't_status.py', 't_names.py']
-  : ['t_beta.py', 't_status.py', 't_names.py', 't_cleanup.py', 't_laize.py', 't_bottom.py', 't_kruschke_align.py', 't_stale_optim.py', 't_smoke_quadri.py', 't_axes_block.py', 't_openings.py', 't_diameter.py', 't_design_import.py', 't_kumiko.py', 't_door.py'];
+  : ['t_beta.py', 't_status.py', 't_names.py', 't_cleanup.py', 't_laize.py', 't_bottom.py', 't_kruschke_align.py', 't_stale_optim.py', 't_smoke_quadri.py', 't_axes_block.py', 't_openings.py', 't_diameter.py', 't_design_import.py', 't_kumiko.py', 't_door.py', 't_floor.py'];
 if (!noBrowser) browser.forEach(b => suites.push({ key: b.replace(/\.py$/, ''), name: 'Navigateur · ' + b, browser: true,
   cmd: ['python3', b === 't_beta.py' ? [W(b), html, path.join(CHECK, 'beta')] : [W(b), html]] }));
 

@@ -451,10 +451,19 @@
     const opaque = new Builder(), glassB = new Builder(), toileB = new Builder(), draws = [];
     // sol extérieur
     const Rg = model.radius * 4, gp = []; for (let k = 0; k < 48; k++) { const t = k / 48 * 2 * Math.PI; gp.push({ x: Rg * Math.cos(t), z: Rg * Math.sin(t) }); }
-    slab(opaque, gp, -0.08, -0.06, C('ground'), C('ground'), 7, false);
+    const fl = opts.floor;   // plancher et soubassement (NOMAD-2026-006, aperçu) : Floor.scene
+    const gy = fl ? fl.groundY : -0.06;
+    slab(opaque, gp, gy - 0.02, gy, C('ground'), C('ground'), 7, false);
     // plancher
     const base = Z.section(model, 0);
-    slab(opaque, base, -0.06, 0, C('floor'), C('floorSide'), 1, false);
+    if (!fl) slab(opaque, base, -0.06, 0, C('floor'), C('floorSide'), 1, false);
+    else {
+      const FC = { centre: 'woodDark', plein: 'floor' };
+      fl.panels.forEach((pn, i) => slab(opaque, pn.pts, pn.y0, pn.y1, C(FC[pn.kind] || (pn.typeIdx ? 'floor' : 'wood')), C('floorSide'), 1, false));
+      fl.beams.forEach(b => beam(opaque, b.a, b.b, b.w, b.d, null, C(b.kind === 'solive' ? 'wood' : 'woodDark'), 2));
+      const BC = { gravier: [168, 162, 150], bloc29: [150, 150, 146], bloc19: [162, 162, 158], cale: [118, 82, 52] };
+      fl.boxes.forEach(bx => box(opaque, new Frame(bx.x, bx.y - bx.h / 2, bx.z, bx.rot), 0, bx.h / 2, 0, bx.l, bx.h, bx.w, c255(BC[bx.kind]), bx.kind === 'cale' ? 2 : 7));
+    }
     // structure : montants (bois) et nœuds
     const strutR = 0.022;
     const F0 = new Frame(0, 0, 0, 0);

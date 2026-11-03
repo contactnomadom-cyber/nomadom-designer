@@ -186,6 +186,8 @@
   .door-joints table{ border-collapse: collapse; margin: 4px 0; } .door-joints td, .door-joints th{ padding: 2px 8px; border-bottom: 1px solid var(--line); text-align:left; }
   .jfiche{ display:flex; gap: 12px; align-items:flex-start; margin: 8px 0; padding: 8px; background: #fbf7f0; border: 1px solid var(--line); }
   .jfiche-svg{ flex: 0 0 160px; } .jfiche p{ margin: 4px 0; } .jfiche ol{ margin: 4px 0 0 18px; padding: 0; }
+  .floor-t{ border-collapse: collapse; margin: 4px 0; } .floor-t td, .floor-t th{ padding: 1px 8px; border-bottom: 1px solid var(--line); text-align: right; }
+  .floor-plan{ margin: 8px 0; } .floor-plan svg{ background: #fff; border: 1px solid var(--line); max-width: 100%; height: auto; }
   .door-lib{ margin: 6px 0; } .door-lib div{ margin: 3px 0; }
   .op-legend{ display:flex; flex-wrap:wrap; gap: 4px 14px; color: var(--ink-dim); font-size: 11px; margin-top: 6px; }
   .op-legend i{ display:inline-block; width:18px; height:3px; vertical-align:middle; margin-right:4px; }
@@ -276,6 +278,7 @@
     <section class="pane"><h2><span>CHIFFRES CLÉS</span></h2><div class="body" id="baseKpis" style="padding:10px 14px;font-family:var(--mono);font-size:12px;overflow:auto;max-height:560px"></div></section>
   </div>
   <div class="selection-readout" id="baseOpenings"></div>
+  <div class="selection-readout" id="baseFloor"></div>
   <div class="selection-readout" id="baseStruts"></div>
   <div class="selection-readout" id="baseTris"></div>
 </div>
@@ -500,6 +503,8 @@
 <script id="door-src">{{MODULE:door-src}}</script>
 <script id="joinery-src">{{MODULE:joinery-src}}</script>
 <script id="door-ui-src">{{MODULE:door-ui-src}}</script>
+<script id="floor-src">{{MODULE:floor-src}}</script>
+<script id="floor-ui-src">{{MODULE:floor-ui-src}}</script>
 <script id="unfold-src">{{MODULE:unfold-src}}</script>
 <script>{{MODULE:main}}</script>
 <script id="designui-src">{{MODULE:designui-src}}</script>

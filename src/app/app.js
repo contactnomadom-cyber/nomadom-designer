@@ -295,6 +295,17 @@
   }
   // Porte d'aplomb (NOMAD-2026-005) : une porte par ouverture fermée par le sol, repérée par son seuil
   const doorKey = (o, L) => o.seuil.map(k => k.split('-').map(id => L.get(+id)).sort().join('–')).sort().join(' ');
+  // Plancher et soubassement (NOMAD-2026-006) : fiche dans l'onglet Base, dessin dans la 3D de Base
+  function updateFloorReadout(){
+    const el = $id('baseFloor'); if (!el) return;
+    el.innerHTML = FloorUI.html(Floor, ds.floor, ds.floor ? Floor.layout(ds.nominal, ds.floor) : null);
+    el.onclick = ev => { const t = ev.target, on = t.getAttribute('data-floor-on'), off = t.getAttribute('data-floor-off');
+      if (on || off) { ds.floor = on ? Floor.choices() : null; floorChanged(); } };
+    el.onchange = ev => { const t = ev.target, f = t.getAttribute('data-floor-f'); if (!f || !ds.floor) return;
+      if (t.tagName === 'SELECT') ds.floor[f] = t.value; else { const v = parseFloat(t.value); if (isFinite(v)) ds.floor[f] = v; }
+      floorChanged(); };
+  }
+  function floorChanged(){ updateFloorReadout(); baseFor = null; if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
   let doorFiche = null;   // fiche d'assemblage ouverte
   const doorOpts = d => ({ support: d.support, attachAppui: d.attachAppui, attachChevron: d.attachChevron, joints: Joinery.resolve(d.joints) });
   function doorBlock(o, L){
@@ -1733,7 +1744,7 @@
     if (!baseCam) baseCam = { yaw: 0.7, pitch: 0.38, dist: model.radius * 3.8, target: [0, model.height * 0.45, 0] };
     if (baseFor !== SD) {
       const st = Design.defaultState();
-      const o3 = { style: 'real', toile: 'verre', openings: [], doors: doorStructures() };
+      const o3 = { style: 'real', toile: 'verre', openings: [], doors: doorStructures(), floor: ds.floor ? Floor.scene(Floor.layout(ds.nominal, ds.floor)) : null };
       if (baseEng.isThree) baseEng.update(Design, model, st, o3, () => baseEng.render(baseCam, false));
       else baseEng.setScene(Design3D.buildScene(Design, model, st, o3));
       baseFor = SD;
@@ -1744,6 +1755,7 @@
     if (!ds.nominal) return;
     if (openTrace) renderBaseTrace(); else draw3DBase();
     updateOpeningsReadout();
+    updateFloorReadout();
     const D = ds.struct || ds.nominal, model = Design.domeModel(D), stt = Design.stats(model, Design.defaultState());
     const R = D.params.radius, fr = (v, n) => v.toFixed(n === undefined ? 2 : n).replace('.', ',');
     const d3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);

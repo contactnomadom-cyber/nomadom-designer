@@ -60,7 +60,9 @@
       // Le contour est mémorisé en étiquettes de nœuds (N1–N6…) : les identifiants
       // internes changent à chaque calcul, les étiquettes non (même dôme, autre Ø).
       // portes d'aplomb (NOMAD-2026-005) : { [seuil en étiquettes] : { width, height, offset, setback } } (m)
-      openings: { labels: [], forKey: null, result: null, doors: {} }
+      openings: { labels: [], forKey: null, result: null, doors: {} },
+      // plancher et soubassement (NOMAD-2026-006) : null = sans, sinon les choix (voir Floor.DEFAULTS)
+      floor: null
     };
   }
 

@@ -1,0 +1,46 @@
+# NOMAD-2026-006 — Plancher et soubassement dans l'onglet Base : ajouter, choisir, lire, dessin 3D, retirer.
+# Usage : python3 tests/browser/t_floor.py dist/nomadom-designer.html
+import sys, os
+from playwright.sync_api import sync_playwright
+APP = 'file://' + os.path.abspath(sys.argv[1])
+fails = []
+def check(c, m):
+    print(('OK   ' if c else 'ÉCHEC ') + m)
+    if not c: fails.append(m)
+with sync_playwright() as p:
+    b = p.chromium.launch(args=["--use-gl=swiftshader", "--enable-webgl", "--ignore-gpu-blocklist"])
+    pg = b.new_page(viewport={'width': 1400, 'height': 1000})
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.goto(APP); pg.wait_for_timeout(1500)
+    pg.click('#tabBase'); pg.wait_for_timeout(1200)
+    txt = lambda: pg.inner_text('#baseFloor')
+    shot = lambda: pg.eval_on_selector('#base3d', 'c => c.toDataURL()')
+    check(pg.query_selector('[data-floor-on]') is not None, 'bouton « Ajouter un plancher sur pilotis »')
+    img0 = shot()
+    pg.click('[data-floor-on]'); pg.wait_for_timeout(1500)
+    t = txt()
+    check('23 (15 sous les nœuds de base + 8 en 2ᵉ rangée)' in t, 'par défaut pentagone : 23 pilotis sur 2 rangées')
+    check('5 côtés de 2887 mm' in t and '3 côtés de 1039 mm' in t, 'pentagone 5 × 2887 mm, triangle 3 × 1039 mm')
+    check('2 modèles : 5 sur côté de 956 mm · 10 sur côté de 1054 mm' in t and 'pièce centrale Ø 900 mm' in t, 'étoile : 2 modèles de triangles + pièce centrale')
+    check('380 mm' in t and '🟠' in t and 'kPa' in t, 'vide ventilé 380 mm, portance, aperçu 🟠')
+    check(pg.query_selector('#baseFloor svg') is not None, 'plan vu de dessus')
+    check(shot() != img0, 'plancher et pilotis dessinés en 3D')
+    pg.select_option('[data-floor-f="support"]', 'pilotis'); pg.wait_for_timeout(1200)
+    check('18 (15 sous les nœuds de base + 3 en 2ᵉ rangée)' in txt() and 'Pentagone\n' not in txt(), 'pilotis seuls : 18 pilotis, pas de pentagone')
+    pg.select_option('[data-floor-f="support"]', 'pentagone'); pg.select_option('[data-floor-f="deck"]', 'plein'); pg.wait_for_timeout(1200)
+    check('Entraxe solives' in txt() and 'direction' in txt() and 'Panneaux en triangle' not in txt(), 'plancher plein : entraxe, direction des solives')
+    pg.select_option('[data-floor-f="deck"]', 'etoile'); pg.wait_for_timeout(800)
+    pg.fill('[data-floor-f="slope"]', '10'); pg.dispatch_event('[data-floor-f="slope"]', 'change'); pg.wait_for_timeout(1200)
+    pg.click('#baseFloor details summary'); pg.wait_for_timeout(200)
+    check('1 + 3' in txt() or '1 + 2' in txt(), 'pente 10 % : des pilotis montent à plusieurs blocs de 19')
+    pg.select_option('[data-floor-f="soil"]', 'argile'); pg.wait_for_timeout(800)
+    check('Argile ferme : 100 kPa' in txt(), 'sol d\'assise : argile ferme, 100 kPa')
+    # autre diamètre : le plancher suit
+    pg.eval_on_selector('#paramDiameter', 'e => { e.value = "6.20"; e.dispatchEvent(new Event("change")); }'); pg.wait_for_timeout(1500)
+    check('Retirer le plancher' in txt() and '23 (' in txt(), 'Ø 6,20 m : le plancher suit le dôme')
+    pg.click('[data-floor-off]'); pg.wait_for_timeout(1200)
+    check(pg.query_selector('[data-floor-on]') is not None, 'plancher retiré')
+    check(not errs, 'aucune erreur JavaScript' + (' : ' + '; '.join(errs[:3]) if errs else ''))
+    b.close()
+print('RÉSULTAT :', 'OK' if not fails else 'ÉCHEC (' + str(len(fails)) + ')')
+sys.exit(1 if fails else 0)

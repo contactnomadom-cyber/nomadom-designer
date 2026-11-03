@@ -103,24 +103,27 @@ Outil **didactique** : chaque calcul explique ce qu'il fait (retour de connaissa
 
 ---
 
-## 5. Plancher et soubassement du dôme — ❓ à préciser (03/11/2026)
-Demande de Nathan : ajouter l'option plancher, avec plusieurs choix.
+## 5. Plancher et soubassement du dôme — 🛠 aperçu fait (NOMAD-2026-006, 03/11/2026)
+Demande de Nathan : l'option plancher, avec des choix combinables.
 
-**Soubassement (ce qui porte le plancher)**
-- **Pilotis**.
-- **Structure de soutènement en pentagone avec un triangle au milieu** : poutraison en pentagone sous le plancher, avec un triangle de poutres au centre qui reprend les portées (précisé le 03/11/2026).
+**Décidé (Nathan, 03/11/2026)**
+- Soubassement **pilotis** : 15 pilotis sous les nœuds de base (rangée extérieure) + **calcul de charge et de portance**.
+- Soubassement **pentagone + triangle central** : un sommet du pentagone tous les 3 nœuds de base ; 2ᵉ rangée de pilotis au milieu de chaque côté du pentagone et sous les 3 pointes du triangle ; le petit triangle (cercle de Ø 1 à 1,5 m) reprend les charges de tout le « camembert ».
+- Plancher **plein** ; plancher **en étoile** (triangles qui suivent la géodésie, 2 modèles, pièce centrale pleine de Ø 0,80 à 1 m).
+- Plancher **en diaphragme** : plus tard.
+- Toutes les combinaisons soubassement × plancher.
+- Fondations, procédé de Nathan : décaisser 15 à 30 cm jusqu'au sol rocheux, géotextile, gravier de nivellement, bloc béton 39 × 29 × 19 couché, puis blocs 39 × 19 × 19 selon le terrain ; **toujours au moins 30 cm de vide ventilé**.
 
-**Plancher**
-- **Plein**.
-- **En triangles, « en étoile »**, qui suivent la structure géodésique : deux types de triangles différents, et une **pièce centrale pleine de Ø 0,80 à 1 m** (moyeu où les solives rayonnantes s'appuient — précisé le 03/11/2026).
-- **En diaphragme** : la phrase de Nathan s'est coupée (« c'est-à-dire qu'il y aura… ») — à reprendre.
+**Fait dans l'aperçu** (`src/products/habitat/floor.js`, fiche dans l'onglet Base, dessin 3D)
+- Plan vu de dessus, quantités, empilement de blocs par pilotis selon la pente (blocs entiers au point le plus haut, calage ailleurs), charges par zone d'influence (dôme, neige, plancher, occupation, blocs) et pression sous le bloc de 39 × 29 comparée à un sol choisi (roche, grave, argile) — 🟠 ordres de grandeur.
+- Plancher plein : les solives parallèles ont une portée libre de 3,9 à 4,7 m sur le dôme de référence → signalé ; il faudra une poutre de reprise.
 
 **Questions ouvertes ❓**
-1. Plancher en diaphragme : que contient-il ?
-2. Pilotis : sous chaque nœud de base, ou un autre maillage ? Hauteur au-dessus du sol ?
-3. Pentagone : ses 5 sommets sous quels nœuds de base (le dôme 3V 7/12 a 15 nœuds au sol) ? Les 3 pointes du triangle central : vers quels sommets ?
-4. Combinaisons : chaque plancher avec chaque soubassement, ou des couples imposés ?
-5. Sections (solives, poutres, pilotis) et matériau des panneaux.
+1. Sections réelles : poutres (ceinture, pentagone, triangle), solives, panneaux ; aujourd'hui 75 × 195 et 45 × 145 provisoires.
+2. Plancher plein : quelle poutre de reprise (sous quel axe, sur quels pilotis) ?
+3. Charges à retenir : neige du site, poids réel du dôme (section des montants, toile), occupation.
+4. Porte + plancher sur pilotis : les poteaux de l'avant-corps doivent descendre sur leurs propres pilotis (pas encore relié).
+5. Plancher en diaphragme.
 
 ---
 

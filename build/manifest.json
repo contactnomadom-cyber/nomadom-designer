@@ -25,6 +25,8 @@
     "door-src":           "src/geometry/door.js",
     "joinery-src":        "src/fabrication/joinery.js",
     "door-ui-src":        "src/ui/door-ui.js",
+    "floor-src":          "src/products/habitat/floor.js",
+    "floor-ui-src":       "src/ui/floor-ui.js",
     "unfold-src":         "src/geometry/unfold.js",
     "designui-src":       "src/products/habitat/designui.js",
     "quadri-geom-src":    "src/products/quadrisphere/quadri-geom.js",
