@@ -103,6 +103,27 @@ Outil **didactique** : chaque calcul explique ce qu'il fait (retour de connaissa
 
 ---
 
+## 5. Plancher et soubassement du dôme — ❓ à préciser (03/11/2026)
+Demande de Nathan : ajouter l'option plancher, avec plusieurs choix.
+
+**Soubassement (ce qui porte le plancher)**
+- **Pilotis**.
+- **Structure de soutènement en pentagone avec un triangle au milieu** : poutraison en pentagone sous le plancher, avec un triangle de poutres au centre qui reprend les portées (précisé le 03/11/2026).
+
+**Plancher**
+- **Plein**.
+- **En triangles, « en étoile »**, qui suivent la structure géodésique : deux types de triangles différents, et une **pièce centrale pleine de Ø 0,80 à 1 m** (moyeu où les solives rayonnantes s'appuient — précisé le 03/11/2026).
+- **En diaphragme** : la phrase de Nathan s'est coupée (« c'est-à-dire qu'il y aura… ») — à reprendre.
+
+**Questions ouvertes ❓**
+1. Plancher en diaphragme : que contient-il ?
+2. Pilotis : sous chaque nœud de base, ou un autre maillage ? Hauteur au-dessus du sol ?
+3. Pentagone : ses 5 sommets sous quels nœuds de base (le dôme 3V 7/12 a 15 nœuds au sol) ? Les 3 pointes du triangle central : vers quels sommets ?
+4. Combinaisons : chaque plancher avec chaque soubassement, ou des couples imposés ?
+5. Sections (solives, poutres, pilotis) et matériau des panneaux.
+
+---
+
 ## Fait
 - ✅ 0.9.16 — Porte d'aplomb (NOMAD-2026-005, étape 1) : calcul, structure 3D, choix constructifs, raccords sans pièce volante, bibliothèque de 14 assemblages (aperçu 🟠).
 - ✅ 0.9.15 — Kumiko dans le Design, aperçu (NOMAD-2026-002 moteur, NOMAD-2026-003 interface) : pose triangle par triangle dans la 3D, tableau et plan du panneau, statut 🟠.
