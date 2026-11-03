@@ -8672,6 +8672,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     (opts.doors || []).forEach(dr => {
       dr.pieces.forEach(p => beam(opaque, p.a, p.b, dr.section.w, dr.section.d, p.up, C(p.kind === 'huisserie' || p.kind === 'chevetre' ? 'woodDark' : 'wood'), 2));
       (dr.extras || []).forEach(p => beam(opaque, p.a, p.b, 0.12, 0.022, p.up, C('woodDark'), 2));   // moises : 22 mm d'épaisseur, 120 mm de large
+      if (dr.kind === 'sas') {   // sas : toit et parois en toile (comme le dôme), plancher en bois
+        dr.panels.forEach(pn => { const P = pn.pts.map(p => [p.x, p.y, p.z]);
+          if (pn.kind === 'plancher-sas') opaque.quad(P[0], P[1], P[2], P[3], C('floor'), 1, false);
+          else if (opts.toile !== 'fil') toileB.quad(P[0], P[1], P[2], P[3], C('toile'), 5, opts.toile === 'coupe'); });
+        return;
+      }
       (dr.panels || dr.roof.map(pts => ({ kind: 'toit', pts }))).forEach(pn => { const lift = pn.kind === 'toit' ? dr.section.d / 2 : 0;
         const P = pn.pts.map(p => [p.x, p.y + lift, p.z]); opaque.quad(P[0], P[1], P[2], P[3], C(pn.kind === 'toit' ? 'floorSide' : 'wood'), pn.kind === 'toit' ? 1 : 2, false); });
     });
@@ -9747,6 +9753,86 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     return res;
   }
 
+  // Raccords d'un ensemble de pièces (portes, sas) : chaque bout de pièce est classé (sol, nœud du dôme,
+  // montant du dôme, autre pièce : angle, T, oblique, posé sur) ; « volant » = bout qui ne touche rien ;
+  // « non portée » = pièce qui ne rejoint ni le sol ni le dôme par une chaîne de raccords.
+  function analyseJoints(pieces, panels, node3, struts, sec, joints, MIN) {
+    const dist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    joints = joints || {};
+    // ---- raccords ----
+    const segDist = (p, a, b) => { const ab = [b.x - a.x, b.y - a.y, b.z - a.z], ap = [p.x - a.x, p.y - a.y, p.z - a.z], L2 = ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2;
+      const k = L2 < 1e-12 ? 0 : Math.max(0, Math.min(1, (ab[0] * ap[0] + ab[1] * ap[1] + ab[2] * ap[2]) / L2));
+      return { d: Math.hypot(ap[0] - k * ab[0], ap[1] - k * ab[1], ap[2] - k * ab[2]), k }; };
+    const dir = p => { const v = [p.b.x - p.a.x, p.b.y - p.a.y, p.b.z - p.a.z], l = Math.hypot(...v); return v.map(x => x / l); };
+    const cosAng = (p, q) => { const a = dir(p), b = dir(q); return Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2]); };
+    const TOL = 1e-6, connections = [], floating = [];
+    const link = new Map(pieces.map((_, i) => [i, new Set()])), anchored = new Set();
+    const pushC = (family, at, list, extra) => connections.push(Object.assign({ family, at, pieces: list, joint: joints[family] || null }, extra || {}));
+    // 1) regrouper les bouts de pièces par point (un raccord = un endroit où des pièces se rencontrent)
+    const clusters = [];
+    pieces.forEach((p, i) => [p.a, p.b].forEach((E, end) => {
+      let c = clusters.find(c => dist(c.at, E) < TOL); if (!c) { c = { at: E, ends: [] }; clusters.push(c); }
+      c.ends.push({ i, end });
+    }));
+    clusters.forEach(c => {
+      const E = c.at, ids = [...new Set(c.ends.map(e => e.i))];
+      // pièces qui passent par ce point sans y finir (assemblage en T)
+      const through = pieces.map((q, j) => j).filter(j => !ids.includes(j) && (() => { const sd = segDist(E, pieces[j].a, pieces[j].b); return sd.d < TOL && sd.k > 1e-6 && sd.k < 1 - 1e-6; })());
+      const all = ids.concat(through);
+      all.forEach(a => all.forEach(b => { if (a !== b) link.get(a).add(b); }));
+      const nd = node3.find(q => dist(q.p, E) < TOL), st = !nd && struts.find(([a, b]) => segDist(E, a, b).d < TOL), gr = !nd && E.y < TOL;
+      if (nd || st || gr) all.forEach(k => anchored.add(k));
+      if (nd) pushC('dome-noeud', E, all, { node: nd.id });
+      else if (st) { const v = [st[1].x - st[0].x, st[1].y - st[0].y, st[1].z - st[0].z], l = Math.hypot(...v); pushC('dome-montant', E, all, { strutDir: v.map(x => x / l) }); }
+      else if (gr) pushC('sol', E, all);
+      if (all.length >= 2) {
+        let fam;
+        if (through.length) fam = through.some(j => ids.some(i => cosAng(pieces[i], pieces[j]) < 0.17)) ? 'T' : 'oblique';
+        else fam = ids.some(i => ids.some(j => i !== j && cosAng(pieces[i], pieces[j]) < 0.17)) ? 'angle' : 'oblique';
+        if (!(nd || st)) pushC(fam, E, all);   // sur le dôme, l'assemblage au dôme fait aussi la liaison entre pièces
+      }
+      if (!nd && !st && !gr && all.length < 2) c.ends.forEach(e => floating.push({ piece: e.i, kind: pieces[e.i].kind, end: e.end, at: E }));
+    });
+    // 1 bis) nœud du dôme traversé par une pièce (une panne qui passe par le nœud) : raccord au nœud
+    node3.forEach(nd => {
+      if (clusters.some(c => dist(c.at, nd.p) < TOL)) return;
+      const thr = pieces.map((q, j) => j).filter(j => { const sd = segDist(nd.p, pieces[j].a, pieces[j].b); return sd.d < TOL; });
+      if (!thr.length) return;
+      thr.forEach(k => anchored.add(k)); thr.forEach(a => thr.forEach(b => { if (a !== b) link.get(a).add(b); }));
+      pushC('dome-noeud', nd.p, thr, { node: nd.id });
+    });
+    // 2) contacts « posé sur » : pièces parallèles, côte à côte (distance d'axe = une section) et qui se recouvrent
+    pieces.forEach((p, i) => pieces.forEach((q, j) => { if (j <= i || cosAng(p, q) < 0.999) return;
+      const e = dir(p), proj = X => (X.x - p.a.x) * e[0] + (X.y - p.a.y) * e[1] + (X.z - p.a.z) * e[2];
+      const lo = Math.max(0, Math.min(proj(q.a), proj(q.b))), hi = Math.min(p.length, Math.max(proj(q.a), proj(q.b)));
+      if (hi - lo < MIN) return;
+      const m = proj(q.a), Q = { x: p.a.x + e[0] * m, y: p.a.y + e[1] * m, z: p.a.z + e[2] * m }, ld = dist(Q, q.a);
+      if (Math.abs(ld - sec.w) < 1e-6) { link.get(i).add(j); link.get(j).add(i);
+        const mid = (lo + hi) / 2; pushC('pose', { x: p.a.x + e[0] * mid, y: p.a.y + e[1] * mid, z: p.a.z + e[2] * mid }, [i, j]); }
+    }));
+    // moises : deux joues de 300 mm, parallèles au montant du dôme, de part et d'autre (rayon du montant 22 mm)
+    const extras = [];
+    connections.filter(c => c.family === 'dome-montant' && c.joint === 'moise').forEach(c => {
+      const sd = c.strutDir, pd = dir(pieces[c.pieces[0]]);
+      let k = [sd[1] * pd[2] - sd[2] * pd[1], sd[2] * pd[0] - sd[0] * pd[2], sd[0] * pd[1] - sd[1] * pd[0]]; const kl = Math.hypot(...k); if (kl < 1e-9) return; k = k.map(x => x / kl);
+      const off = Math.max(0.022, sec.d / 2) + 0.011;   // de part et d'autre du plus épais des deux, moise de 22 mm
+      [-1, 1].forEach(sg => { const C = { x: c.at.x + k[0] * off * sg, y: c.at.y + k[1] * off * sg, z: c.at.z + k[2] * off * sg };
+        extras.push({ kind: 'moise', a: { x: C.x - sd[0] * 0.15, y: C.y - sd[1] * 0.15, z: C.z - sd[2] * 0.15 }, b: { x: C.x + sd[0] * 0.15, y: C.y + sd[1] * 0.15, z: C.z + sd[2] * 0.15 }, length: 0.3, up: { x: k[0], y: k[1], z: k[2] } }); });
+    });
+    const reach = new Set(anchored), stack = [...anchored];
+    while (stack.length) { const i = stack.pop(); link.get(i).forEach(j => { if (!reach.has(j)) { reach.add(j); stack.push(j); } }); }
+    const unsupported = pieces.map((p, i) => i).filter(i => !reach.has(i));
+
+    const totals = {}; pieces.forEach(p => { const t = totals[p.kind] || (totals[p.kind] = { count: 0, length: 0 }); t.count++; t.length += p.length; });
+    const areas = {}; panels.forEach(pn => { areas[pn.kind] = (areas[pn.kind] || 0) + polyArea3(pn.pts); });
+    const byFamily = {}; connections.forEach(c => { byFamily[c.family] = (byFamily[c.family] || 0) + 1; });
+    return { connections, extras, byFamily, floating, unsupported, totals, areas, ok: !floating.length && !unsupported.length };
+  }
+  // aire d'un polygone 3D plan (somme des triangles en éventail)
+  function polyArea3(q) { let A = 0; for (let k = 1; k + 1 < q.length; k++) { const a = q[0], b = q[k], c = q[k + 1];
+    const e = [b.x - a.x, b.y - a.y, b.z - a.z], f = [c.x - a.x, c.y - a.y, c.z - a.z];
+    A += Math.hypot(e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]) / 2; } return A; }
+
   // Structure 3D qui porte la porte (aperçu 🟠 : axes des pièces, section sec = { w, d } en m, w = côté « à plat »).
   // Entrée : résultat de compute() quand la porte passe. Points { x, y, z } : y = hauteur depuis le sol.
   // opts (choix constructifs, tous facultatifs) :
@@ -9837,75 +9923,90 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       } else warnings.push('Porte-à-faux : les bouts du chevêtre et le toit ne tiennent que par les appuis sur le dôme. Déconseillé — pas de document de fabrication.');
     } else warnings.push('Bord haut de l\'ouverture trop découpé : seule l\'huisserie est dessinée.');
 
-    // ---- raccords ----
-    const segDist = (p, a, b) => { const ab = [b.x - a.x, b.y - a.y, b.z - a.z], ap = [p.x - a.x, p.y - a.y, p.z - a.z], L2 = ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2;
-      const k = L2 < 1e-12 ? 0 : Math.max(0, Math.min(1, (ab[0] * ap[0] + ab[1] * ap[1] + ab[2] * ap[2]) / L2));
-      return { d: Math.hypot(ap[0] - k * ab[0], ap[1] - k * ab[1], ap[2] - k * ab[2]), k }; };
-    const dir = p => { const v = [p.b.x - p.a.x, p.b.y - p.a.y, p.b.z - p.a.z], l = Math.hypot(...v); return v.map(x => x / l); };
-    const cosAng = (p, q) => { const a = dir(p), b = dir(q); return Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2]); };
-    const TOL = 1e-6, joints = opts.joints || {}, connections = [], floating = [];
-    const link = new Map(pieces.map((_, i) => [i, new Set()])), anchored = new Set();
-    const pushC = (family, at, list, extra) => connections.push(Object.assign({ family, at, pieces: list, joint: joints[family] || null }, extra || {}));
-    // 1) regrouper les bouts de pièces par point (un raccord = un endroit où des pièces se rencontrent)
-    const clusters = [];
-    pieces.forEach((p, i) => [p.a, p.b].forEach((E, end) => {
-      let c = clusters.find(c => dist(c.at, E) < TOL); if (!c) { c = { at: E, ends: [] }; clusters.push(c); }
-      c.ends.push({ i, end });
-    }));
-    clusters.forEach(c => {
-      const E = c.at, ids = [...new Set(c.ends.map(e => e.i))];
-      // pièces qui passent par ce point sans y finir (assemblage en T)
-      const through = pieces.map((q, j) => j).filter(j => !ids.includes(j) && (() => { const sd = segDist(E, pieces[j].a, pieces[j].b); return sd.d < TOL && sd.k > 1e-6 && sd.k < 1 - 1e-6; })());
-      const all = ids.concat(through);
-      all.forEach(a => all.forEach(b => { if (a !== b) link.get(a).add(b); }));
-      const nd = node3.find(q => dist(q.p, E) < TOL), st = !nd && struts.find(([a, b]) => segDist(E, a, b).d < TOL), gr = !nd && E.y < TOL;
-      if (nd || st || gr) all.forEach(k => anchored.add(k));
-      if (nd) pushC('dome-noeud', E, all, { node: nd.id });
-      else if (st) { const v = [st[1].x - st[0].x, st[1].y - st[0].y, st[1].z - st[0].z], l = Math.hypot(...v); pushC('dome-montant', E, all, { strutDir: v.map(x => x / l) }); }
-      else if (gr) pushC('sol', E, all);
-      if (all.length >= 2) {
-        let fam;
-        if (through.length) fam = through.some(j => ids.some(i => cosAng(pieces[i], pieces[j]) < 0.17)) ? 'T' : 'oblique';
-        else fam = ids.some(i => ids.some(j => i !== j && cosAng(pieces[i], pieces[j]) < 0.17)) ? 'angle' : 'oblique';
-        if (!(nd || st)) pushC(fam, E, all);   // sur le dôme, l'assemblage au dôme fait aussi la liaison entre pièces
-      }
-      if (!nd && !st && !gr && all.length < 2) c.ends.forEach(e => floating.push({ piece: e.i, kind: pieces[e.i].kind, end: e.end, at: E }));
-    });
-    // 2) contacts « posé sur » : pièces parallèles, côte à côte (distance d'axe = une section) et qui se recouvrent
-    pieces.forEach((p, i) => pieces.forEach((q, j) => { if (j <= i || cosAng(p, q) < 0.999) return;
-      const e = dir(p), proj = X => (X.x - p.a.x) * e[0] + (X.y - p.a.y) * e[1] + (X.z - p.a.z) * e[2];
-      const lo = Math.max(0, Math.min(proj(q.a), proj(q.b))), hi = Math.min(p.length, Math.max(proj(q.a), proj(q.b)));
-      if (hi - lo < MIN) return;
-      const m = proj(q.a), Q = { x: p.a.x + e[0] * m, y: p.a.y + e[1] * m, z: p.a.z + e[2] * m }, ld = dist(Q, q.a);
-      if (Math.abs(ld - sec.w) < 1e-6) { link.get(i).add(j); link.get(j).add(i);
-        const mid = (lo + hi) / 2; pushC('pose', { x: p.a.x + e[0] * mid, y: p.a.y + e[1] * mid, z: p.a.z + e[2] * mid }, [i, j]); }
-    }));
-    // moises : deux joues de 300 mm, parallèles au montant du dôme, de part et d'autre (rayon du montant 22 mm)
-    const extras = [];
-    connections.filter(c => c.family === 'dome-montant' && c.joint === 'moise').forEach(c => {
-      const sd = c.strutDir, pd = dir(pieces[c.pieces[0]]);
-      let k = [sd[1] * pd[2] - sd[2] * pd[1], sd[2] * pd[0] - sd[0] * pd[2], sd[0] * pd[1] - sd[1] * pd[0]]; const kl = Math.hypot(...k); if (kl < 1e-9) return; k = k.map(x => x / kl);
-      const off = Math.max(0.022, sec.d / 2) + 0.011;   // de part et d'autre du plus épais des deux, moise de 22 mm
-      [-1, 1].forEach(sg => { const C = { x: c.at.x + k[0] * off * sg, y: c.at.y + k[1] * off * sg, z: c.at.z + k[2] * off * sg };
-        extras.push({ kind: 'moise', a: { x: C.x - sd[0] * 0.15, y: C.y - sd[1] * 0.15, z: C.z - sd[2] * 0.15 }, b: { x: C.x + sd[0] * 0.15, y: C.y + sd[1] * 0.15, z: C.z + sd[2] * 0.15 }, length: 0.3, up: { x: k[0], y: k[1], z: k[2] } }); });
-    });
-    const reach = new Set(anchored), stack = [...anchored];
-    while (stack.length) { const i = stack.pop(); link.get(i).forEach(j => { if (!reach.has(j)) { reach.add(j); stack.push(j); } }); }
-    const unsupported = pieces.map((p, i) => i).filter(i => !reach.has(i));
-
-    const totals = {}; pieces.forEach(p => { const t = totals[p.kind] || (totals[p.kind] = { count: 0, length: 0 }); t.count++; t.length += p.length; });
-    const area4 = q => { let A = 0; [[0, 1, 2], [0, 2, 3]].forEach(([i, j, k]) => { const a = q[i], b = q[j], c = q[k];
-      const e = [b.x - a.x, b.y - a.y, b.z - a.z], f = [c.x - a.x, c.y - a.y, c.z - a.z];
-      A += Math.hypot(e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]) / 2; }); return A; };
-    const areas = {}; panels.forEach(pn => { areas[pn.kind] = (areas[pn.kind] || 0) + area4(pn.pts); });
-    const byFamily = {}; connections.forEach(c => { byFamily[c.family] = (byFamily[c.family] || 0) + 1; });
-    return { section: sec, support, attachAppui: attA, attachChevron: attC, pieces, panels, roof: panels.filter(p => p.kind === 'toit').map(p => p.pts),
-      roofArea: areas.toit || 0, areas, totals, connections, extras, byFamily, floating, unsupported,
-      complete: !!chain && !floating.length && !unsupported.length, closed: !!chain, warnings,
-      advised: support !== 'porte-a-faux' };
+    const an = analyseJoints(pieces, panels, node3, struts, sec, opts.joints, MIN);
+    return Object.assign(an, { section: sec, support, attachAppui: attA, attachChevron: attC, pieces, panels, roof: panels.filter(p => p.kind === 'toit').map(p => p.pts),
+      roofArea: an.areas.toit || 0, complete: !!chain && an.ok, closed: !!chain, warnings,
+      advised: support !== 'porte-a-faux' });
   }
 
-  const Door = { SUPPORTS, ATTACH, compute, structure, contourLoop, plumbPlane, fits, inside, clipT, area2, topAt };
+  // ---------------------------------------------------------
+  // Sas d'entrée (NOMAD-2026-007) : l'ouverture « tirée » en tunnel, comme le pousser-tirer de SketchUp.
+  // Prisme droit : la section est le contour de l'ouverture ramené sur le plan de la porte, prolongé
+  // à l'horizontale (perpendiculaire à la porte) sur une longueur L, vers l'extérieur ou vers l'intérieur.
+  // Porte 1 : au plan de la porte (recul compris). Porte 2 : au bout du sas, même contour.
+  // Pièces : pannes (une par nœud du contour, du nœud du dôme jusqu'au bout du sas), cadres de section
+  // (contour complet, aux deux portes et tous les ≤ spacing m), huisserie + chevêtre + potelets de chaque porte.
+  // Faces : toit (pentes ≤ 45°), parois, plancher du sas, pignon (bout) et cloison (porte 1).
+  // opts = { direction: 'exterieur' | 'interieur', length, spacing, door2: { width, height, offset }, joints }
+  const SAS_DIRS = ['exterieur', 'interieur'];
+  function sas(r, sec, opts) {
+    if (!r || !r.ok || !r.fits) return null;
+    sec = sec || { w: 0.045, d: 0.07 }; opts = opts || {};
+    const dirn = SAS_DIRS.includes(opts.direction) ? opts.direction : 'exterieur', g = dirn === 'exterieur' ? 1 : -1;
+    const Ls = Math.max(0.6, Math.min(6, +opts.length || 2.5)), spacing = Math.max(0.4, Math.min(1.5, +opts.spacing || 1.2));
+    const { s0, width: w, height: h, setback: sb } = r.door, Lo = r.plane.origin, u = r.plane.along, n = r.plane.normal;
+    const P = (s, t, d) => ({ x: Lo.x + u.x * s + n.x * ((d || 0) - sb), y: t, z: Lo.z + u.z * s + n.z * ((d || 0) - sb) });
+    const dist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    const pieces = [], panels = [], MIN = 0.005, errors = [], warnings = [];
+    const add = (kind, a, b, up) => { const l = dist(a, b); if (l > MIN) pieces.push({ kind, a, b, length: l, up }); };
+    const V = { x: 0, y: 1, z: 0 };
+    const loop = r.nodes, poly = r.contour, m = loop.length;
+    const dEnd = g * Ls;
+    // une porte dans un plan de section (profondeur d) : huisserie, chevêtre, potelets
+    const doorAt = (d, sd, wd, hd, tag) => {
+      add('huisserie', P(sd, 0, d), P(sd, hd, d), n); add('huisserie', P(sd + wd, 0, d), P(sd + wd, hd, d), n);
+      add('huisserie', P(sd, hd, d), P(sd + wd, hd, d), n);
+      const hc = hd + sec.w, cl = clipT(poly, hc, true);
+      const xs = []; poly.forEach((p, i) => { const q = poly[(i + 1) % poly.length]; if ((p.t - hc) * (q.t - hc) > 0 || Math.abs(q.t - p.t) < 1e-12) return; xs.push(p.s + (hc - p.t) / (q.t - p.t) * (q.s - p.s)); });
+      if (cl.length > 2 && xs.length >= 2) {
+        xs.sort((a, b) => a - b); add('chevetre', P(xs[0], hc, d), P(xs[xs.length - 1], hc, d), n);
+        [sd, sd + wd / 2, sd + wd].forEach(s => { const tp = topAt(poly, s, hc); if (tp) add('potelet', P(s, hc, d), P(s, tp.t, d), n); });
+      } else warnings.push(tag + ' : bord haut trop découpé au-dessus du linteau.');
+    };
+    // porte 2 : doit passer dans le même contour
+    const d2 = Object.assign({ width: w, height: h, offset: 0 }, opts.door2 || {});
+    const s02 = r.plane.width / 2 + (d2.offset || 0) - d2.width / 2;
+    const fit2 = fits(poly, s02, d2.width, d2.height);
+    if (!fit2) errors.push('La porte 2 (' + Math.round(d2.width * 1000) + ' × ' + Math.round(d2.height * 1000) + ' mm) ne passe pas dans la section du sas.');
+    // plans de section (cadres) : porte 1, intermédiaires, porte 2
+    const nk = Math.ceil(Ls / spacing - 1e-9), planes = []; for (let k = 0; k <= nk; k++) planes.push(dEnd * k / nk);
+    planes.forEach((d, k) => { for (let i = 0; i < m; i++) { const p = poly[i], q = poly[(i + 1) % m];
+      add(p.t < 1e-7 && q.t < 1e-7 ? 'lisse-cadre' : 'cadre', P(p.s, p.t, d), P(q.s, q.t, d), n); } });
+    doorAt(0, s0, w, h, 'Porte 1'); if (fit2) doorAt(dEnd, s02, d2.width, d2.height, 'Porte 2');
+    // pannes : chaque nœud du contour, du nœud du dôme jusqu'au bout du sas (en passant par les cadres)
+    loop.forEach((p, i) => {
+      const a = g > 0 ? Math.min(p.depth, 0) : Math.max(p.depth, 0), b = g > 0 ? Math.max(dEnd, p.depth) : Math.min(dEnd, p.depth);
+      add(p.t < 1e-7 ? 'lisse-basse' : 'panne', P(p.s, p.t, a), P(p.s, p.t, b), p.t < 1e-7 ? n : V);
+      if (g < 0 && p.depth < dEnd - 1e-9) warnings.push('Le nœud ' + p.id + ' est plus loin que le bout du sas : la panne va jusqu\'au nœud.');
+    });
+    // faces du tunnel (de la face du dôme jusqu'au bout) — toit si la pente est ≤ 45°, sinon paroi
+    for (let i = 0; i < m; i++) { const p = loop[i], q = loop[(i + 1) % m];
+      const da = g > 0 ? Math.min(p.depth, 0) : Math.max(p.depth, 0), db = g > 0 ? Math.min(q.depth, 0) : Math.max(q.depth, 0);
+      const pts = [P(p.s, p.t, da), P(q.s, q.t, db), P(q.s, q.t, dEnd), P(p.s, p.t, dEnd)];
+      const kind = p.t < 1e-7 && q.t < 1e-7 ? 'plancher-sas' : (Math.abs(q.t - p.t) <= Math.abs(q.s - p.s) ? 'toit' : 'paroi');
+      panels.push({ kind, pts });
+    }
+    // pignon (bout) et cloison (porte 1) : contour moins la porte
+    const aC = Math.abs(area2(poly));
+    const node3 = r.nodes.map(p => ({ id: p.id, p: P(p.s, p.t, p.depth) })), struts = [];
+    loop.forEach((p, i) => { const q = loop[(i + 1) % m]; if (p.t < 1e-7 && q.t < 1e-7) return; struts.push([P(p.s, p.t, p.depth), P(q.s, q.t, q.depth)]); });
+    const an = analyseJoints(pieces, panels, node3, struts, sec, opts.joints, MIN);
+    an.areas.pignon = Math.max(0, aC - (fit2 ? d2.width * d2.height : 0)); an.areas.cloison = Math.max(0, aC - w * h);
+    const cover = (an.areas.toit || 0) + (an.areas.paroi || 0);
+    return Object.assign(an, { kind: 'sas', direction: dirn, length: Ls, spacing, frames: planes.length, section: sec, pieces, panels,
+      door2: { s0: s02, width: d2.width, height: d2.height, fits: fit2 }, coverArea: cover, floorArea: an.areas['plancher-sas'] || 0,
+      inside: { width: r.plane.width, height: Math.max(...poly.map(p => p.t)), volume: aC * Ls },
+      groundPoints: planes.filter(d => g > 0 && d > 1e-9).flatMap(d => loop.filter(p => p.t < 1e-7).map(p => P(p.s, 0, d))),
+      errors, warnings, ok: an.ok && !errors.length, complete: an.ok && !errors.length });
+  }
+
+  // structure d'une porte selon ses réglages : sas d'entrée s'il y en a un, sinon avant-corps
+  function build(r, d, sec, joints) {
+    return d.sas ? sas(r, sec, Object.assign({}, d.sas, { joints }))
+      : structure(r, sec, { support: d.support, attachAppui: d.attachAppui, attachChevron: d.attachChevron, joints });
+  }
+
+  const Door = { SUPPORTS, ATTACH, SAS_DIRS, compute, structure, sas, build, analyseJoints, contourLoop, plumbPlane, fits, inside, clipT, area2, topAt };
   if (typeof module !== 'undefined' && module.exports) module.exports = Door;
   else global.Door = Door;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -10055,19 +10156,24 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
 (function (global) {
   'use strict';
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const mm = v => Math.round(v * 1000) + ' mm', m2 = v => v.toFixed(2) + ' m²';
+  const mm = v => Math.round(v * 1000) + ' mm', m2 = v => v.toFixed(2).replace('.', ',') + ' m²';
   const PIECES = { huisserie: 'Huisserie (montants, linteau, seuil)', chevetre: 'Chevêtre (posé sur le linteau)', appui: 'Appuis du chevêtre (jusqu\'au montant du dôme)',
-    contrefiche: 'Contrefiches (du chevêtre au nœud du dôme)', potelet: 'Potelets', rampant: 'Rampants (bord haut, plan de porte)', chevron: 'Chevrons du toit (jusqu\'au dôme)',
+    contrefiche: 'Contrefiches (du chevêtre au nœud du dôme)', panne: 'Pannes du sas (du nœud du dôme au bout)', 'lisse-basse': 'Lisses basses du sas', cadre: 'Cadres de section', 'lisse-cadre': 'Traverses basses des cadres', potelet: 'Potelets', rampant: 'Rampants (bord haut, plan de porte)', chevron: 'Chevrons du toit (jusqu\'au dôme)',
     poteau: 'Poteaux d\'angle', lisse: 'Lisses basses (jusqu\'au seuil du dôme)', traverse: 'Traverses des parois' };
   const SUPPORT = { poteaux: 'Poteaux d\'angle au sol + lisses basses', parois: 'Poteaux + parois latérales fermées', 'porte-a-faux': '⛔ Porte-à-faux (déconseillé)' };
   const SUPPORT_WHY = {
     poteaux: 'Comme les pieds d\'une table : les bouts du chevêtre descendent au sol par un poteau, et une lisse basse relie chaque pied au seuil du dôme.',
     parois: 'Comme une cabane accolée : les poteaux reçoivent des traverses qui ferment les côtés jusqu\'au cadre du dôme ; l\'avant-corps devient une petite pièce.',
     'porte-a-faux': 'Comme une étagère sans équerre : tout le poids du toit pend sur les appuis vissés au dôme. Gardé pour comparer, sans document de fabrication.' };
+  const SAS = { aucun: 'aucun (avant-corps)', exterieur: 'vers l\'extérieur', interieur: 'vers l\'intérieur' };
+  const SAS_WHY = 'Comme un tiroir qu\'on tire hors de la commode : la forme de l\'ouverture est prolongée tout droit, à l\'horizontale. Une panne part de chaque nœud du cadre de l\'ouverture, des cadres de la même forme la tiennent à intervalle régulier, et une deuxième porte ferme le bout. Deux portes = un sas : on n\'ouvre jamais directement l\'intérieur sur le dehors (chaleur, vent, pluie).';
   const ATTACH = { montant: 'sur le montant (n\'importe où)', noeud: 'sur un nœud seulement' };
   const sel = (key, f, cur, opts) => '<select data-door-key="' + esc(key) + '" data-door-f="' + f + '">' +
     Object.keys(opts).map(k => '<option value="' + k + '"' + (k === cur ? ' selected' : '') + '>' + esc(opts[k]) + '</option>').join('') + '</select>';
 
+  // longueurs regroupées : « 8 × 943 mm, 4 × 1088 mm »
+  const group = list => { const c = new Map(); list.forEach(p => { const k = Math.round(p.length * 1000); c.set(k, (c.get(k) || 0) + 1); });
+    return [...c].sort((a, b) => a[0] - b[0]).map(([k, n]) => (n > 1 ? n + ' × ' : '') + k + ' mm').join(', '); };
   function fiche(J, id) {
     const f = J.LIBRARY[id]; if (!f) return '';
     return '<div class="jfiche" data-fiche="' + id + '"><div class="jfiche-svg">' + f.svg + '</div><div><b>' + esc(f.name) + '</b> <span class="muted">🟠 fiche didactique, à valider en atelier</span>' +
@@ -10089,17 +10195,31 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     if (!r.fits) return h + '</div>';
     const post = (n, p) => p ? '<dt>Potelet ' + n + '</dt><dd>monte de ' + mm(p.rise) + ' au-dessus du linteau, puis ' + (Math.abs(p.depth) < 0.005 ? 'touche le cadre' : (p.depth < 0 ? 'recule' : 'avance') + ' de ' + mm(Math.abs(p.depth)) + ' jusqu\'au montant du dôme') + '</dd>' : '';
     h += '<dl><dt>Huisserie (axes)</dt><dd>2 montants de ' + mm(d.height) + ' · linteau et seuil de ' + mm(d.width) + '</dd>' +
-      post('gauche', r.parts.posts[0]) + post('du milieu', r.parts.posts[1]) + post('droit', r.parts.posts[2]) + '</dl>';
+      (d.sas ? '' : post('gauche', r.parts.posts[0]) + post('du milieu', r.parts.posts[1]) + post('droit', r.parts.posts[2])) + '</dl>';
     h += '<dl><dt>Fermeture autour de la porte</dt><dd>' + m2(r.infill.total) + ' (au-dessus du linteau ' + m2(r.infill.tympan) + ' · sur les côtés ' + m2(r.infill.sides) + ')</dd>' +
       '<dt>Ébrasement (écart porte ↔ cadre)</dt><dd>de ' + mm(r.reveal.min) + ' à ' + mm(r.reveal.max) + ' (négatif = derrière la porte, côté intérieur)</dd></dl>';
     if (!sk) return h + '</div>';
-    // choix constructifs
-    h += '<div class="door-choice"><b>Choix constructifs</b>' +
+    // sas d'entrée ou avant-corps
+    const isSas = sk.kind === 'sas', sv = d.sas || {}, d2 = sv.door2 || {};
+    h += '<div class="door-choice"><b>Entrée</b><label>Sas ' + sel(key, 'sas', isSas ? sk.direction : 'aucun', SAS) + '</label>' +
+      (isSas ? num('sas.length', 'Longueur du sas (m)', sk.length, 0.6, 6, 0.05) + num('sas.spacing', 'Cadres tous les (m)', sk.spacing, 0.4, 1.5, 0.05) +
+        '<span><b>Porte 2</b></span>' + num('sas.door2.width', 'Largeur (m)', d2.width !== undefined ? d2.width : d.width, 0.5, 3, 0.01) +
+        num('sas.door2.height', 'Hauteur (m)', d2.height !== undefined ? d2.height : d.height, 1.5, 3, 0.01) + num('sas.door2.offset', 'Décalage (m)', d2.offset || 0, -2, 2, 0.01) : '') +
+      '<div class="door-note">' + esc(isSas ? SAS_WHY : 'Sans sas : la porte s\'ouvre directement dehors, sous un avant-corps.') + '</div></div>';
+    if (!isSas) h += '<div class="door-choice"><b>Choix constructifs</b>' +
       '<label>Tenue de l\'avant-corps ' + sel(key, 'support', sk.support, SUPPORT) + '</label>' +
       '<label>Appuis du chevêtre ' + sel(key, 'attachAppui', sk.attachAppui, ATTACH) + '</label>' +
       '<label>Chevrons ' + sel(key, 'attachChevron', sk.attachChevron, ATTACH) + '</label>' +
       '<div class="door-note">' + esc(SUPPORT_WHY[sk.support]) + '</div></div>';
+    (sk.errors || []).forEach(w => { h += '<div class="op-status err">🔴 ' + esc(w) + '</div>'; });
     sk.warnings.forEach(w => { h += '<div class="op-status err">⚠ ' + esc(w) + '</div>'; });
+    if (isSas) h += '<div class="door-3d"><b>Sas</b> <span class="muted">🟠 aperçu · prisme droit de la forme de l\'ouverture</span><dl>' +
+      '<dt>Section</dt><dd>' + mm(sk.inside.width) + ' au sol · ' + mm(sk.inside.height) + ' sous le faîte · ' + sk.frames + ' cadres</dd>' +
+      '<dt>Volume</dt><dd>' + sk.inside.volume.toFixed(2).replace('.', ',') + ' m³</dd>' +
+      '<dt>Couverture (toit + parois)</dt><dd>' + m2(sk.coverArea) + ' (toit ' + m2(sk.areas.toit || 0) + ' · parois ' + m2(sk.areas.paroi || 0) + ')</dd>' +
+      '<dt>Plancher du sas</dt><dd>' + m2(sk.floorArea) + '</dd>' +
+      '<dt>Pignon (bout, sans la porte 2) · cloison (porte 1)</dt><dd>' + m2(sk.areas.pignon) + ' · ' + m2(sk.areas.cloison) + '</dd>' +
+      '<dt>Porte 2</dt><dd>' + (sk.door2.fits ? '🟡 passe (' + mm(sk.door2.width) + ' × ' + mm(sk.door2.height) + ')' : '🔴 ne passe pas') + '</dd></dl></div>';
     // raccords : rien de volant
     h += sk.complete
       ? '<div class="op-status ok">✅ Aucune pièce volante : ' + sk.connections.length + ' raccords, chaque pièce rejoint le sol ou le dôme par une chaîne d\'assemblages.</div>'
@@ -10108,9 +10228,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     // pièces
     h += '<div class="door-3d"><b>Pièces (dessinées en 3D)</b> <span class="muted">🟠 aperçu · section 45 × 70 mm · longueurs d\'axe, sans les coupes d\'assemblage</span><dl>' +
       Object.keys(PIECES).filter(k => sk.totals[k]).map(k => '<dt>' + PIECES[k] + '</dt><dd>' + sk.totals[k].count + ' · ' +
-        sk.pieces.filter(p => p.kind === k).map(p => mm(p.length)).join(', ') + '</dd>').join('') +
-      '<dt>Toit de l\'avant-corps</dt><dd>' + m2(sk.areas.toit || 0) + '</dd>' +
-      (sk.areas.paroi ? '<dt>Parois latérales · façade</dt><dd>' + m2(sk.areas.paroi) + ' · ' + m2(sk.areas.facade || 0) + '</dd>' : '') +
+        group(sk.pieces.filter(p => p.kind === k)) + '</dd>').join('') +
+      (isSas ? '' : '<dt>Toit de l\'avant-corps</dt><dd>' + m2(sk.areas.toit || 0) + '</dd>') +
+      (sk.areas.paroi && !isSas ? '<dt>Parois latérales · façade</dt><dd>' + m2(sk.areas.paroi) + ' · ' + m2(sk.areas.facade || 0) + '</dd>' : '') +
       (sk.byFamily['dome-montant'] && o.joints['dome-montant'] === 'moise' ? '<dt>Moises (2 par raccord sur montant)</dt><dd>' + 2 * sk.byFamily['dome-montant'] + ' · 300 mm</dd>' : '') + '</dl></div>';
     // raccords et assemblages
     h += '<div class="door-joints"><b>Raccords et assemblages</b> <span class="muted">cliquer un nom pour ouvrir sa fiche</span><table><tr><th>Raccord</th><th>Nombre</th><th>Assemblage</th></tr>' +
@@ -10129,7 +10249,18 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     return h + '</div>';
   }
 
-  const DoorUI = { html, fiche, PIECES, SUPPORT };
+  // modifie les réglages d'une porte (champ data-door-f) ; renvoie l'id de fiche à ouvrir, s'il y en a une
+  function apply(dd, f, value, tag) {
+    if (f.startsWith('joint:')) { dd.joints = Object.assign({}, dd.joints, { [f.slice(6)]: value }); return value; }
+    if (f === 'sas') { dd.sas = value === 'aucun' ? null : Object.assign({ length: 2.5, spacing: 1.2, door2: { width: dd.width, height: dd.height, offset: 0 } }, dd.sas, { direction: value }); return null; }
+    const v = parseFloat(value);
+    if (f.startsWith('sas.') && dd.sas) { const path = f.split('.').slice(1); if (!isFinite(v)) return null;
+      if (path[0] === 'door2') dd.sas.door2 = Object.assign({}, dd.sas.door2, { [path[1]]: v }); else dd.sas[path[0]] = v; return null; }
+    if (tag === 'SELECT') dd[f] = value; else if (isFinite(v)) dd[f] = v;
+    return null;
+  }
+
+  const DoorUI = { html, apply, fiche, PIECES, SUPPORT };
   if (typeof module !== 'undefined' && module.exports) module.exports = DoorUI;
   else global.DoorUI = DoorUI;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -10354,7 +10485,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       ok: !errors.length, errors, warnings, support, deck, options: o, ring, poly, area,
       beams, joists, piles, panels, sectorTypes, triangle: tri, pentagon: pIdx,
       levels: { deckTop: 0, joistTop: -o.deckThickness, beamTop: yBeamTop, beamBottom: yBeamBot },
-      voidMin, floorAboveHighGround, maxJoistSpan: maxSpan, joistAngle,
+      voidMin, floorAboveHighGround, maxJoistSpan: maxSpan, joistAngle, groundAt: p => ground(p) - lift,
       loads: { domeG, snowS, floorArea: area, soil, pmax, ratio, totalEls: piles.reduce((s, p) => s + p.loads.els, 0) },
       qty
     };
@@ -10364,15 +10495,23 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   const choices = () => ({ support: DEFAULTS.support, deck: DEFAULTS.deck, triangleDiameter: DEFAULTS.triangleDiameter, hubDiameter: DEFAULTS.hubDiameter,
     joistSpacing: DEFAULTS.joistSpacing, slope: 0, slopeDir: 0, soil: DEFAULTS.soil });
 
+  // Pilotis supplémentaires (sous un sas d'entrée, NOMAD-2026-007) : mêmes blocs, même terrain, tête à topY.
+  function extraPiles(res, pts, topY) {
+    if (!res || !res.ok || !pts.length) return [];
+    const B1 = res.options.blocks.first, B2 = res.options.blocks.next;
+    return pts.map(at => { const gr = res.groundAt(at), H = topY - gr, nx = Math.max(0, Math.floor((H - B1.h) / B2.h + 1e-9));
+      return { row: 'sas', at: { x: at.x, z: at.z }, ground: gr, stack: { height: H, first: 1, next: nx, shim: H - B1.h - nx * B2.h, void: H }, tooLow: H < B1.h }; });
+  }
+
   // Pièces 3D pour le rendu (repère du Design, plancher fini à y = 0) : poutres, solives, blocs, panneaux.
-  function scene(res) {
+  function scene(res, extra) {
     if (!res || !res.ok) return null;
     const o = res.options, lv = res.levels, beams = [], boxes = [], panels = [];
     const P3 = (p, y) => ({ x: p.x, y, z: p.z });
     res.beams.forEach(b => beams.push({ kind: b.kind, a: P3(b.a, lv.beamBottom + o.beam.d / 2), b: P3(b.b, lv.beamBottom + o.beam.d / 2), w: o.beam.w, d: o.beam.d }));
     res.joists.forEach(j => beams.push({ kind: 'solive', a: P3(j.a, lv.beamTop + o.joist.d / 2), b: P3(j.b, lv.beamTop + o.joist.d / 2), w: o.joist.w, d: o.joist.d }));
     const B1 = o.blocks.first, B2 = o.blocks.next;
-    res.piles.forEach(p => {
+    res.piles.concat(extra || []).forEach(p => {
       const rot = Math.atan2(p.at.z, p.at.x) * 180 / Math.PI + 90;   // bloc couché le long de la ceinture
       let y = p.ground;
       boxes.push({ kind: 'gravier', x: p.at.x, y: y - 0.025, z: p.at.z, l: B1.l + 0.2, w: B1.w + 0.2, h: 0.05, rot });
@@ -10384,7 +10523,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     return { beams, boxes, panels, groundY: Math.min(...res.piles.map(p => p.ground)) - 0.05 };
   }
 
-  const Floor = { SUPPORTS, DECKS, SOILS, DEFAULTS, layout, scene, choices, baseRing, pentagonIdx, polyArea, segX };
+  const Floor = { SUPPORTS, DECKS, SOILS, DEFAULTS, layout, scene, choices, extraPiles, baseRing, pentagonIdx, polyArea, segX };
   if (typeof module !== 'undefined' && module.exports) module.exports = Floor;
   else global.Floor = Floor;
 })(typeof window !== 'undefined' ? window : globalThis);
@@ -10988,22 +11127,23 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
       if (t.tagName === 'SELECT') ds.floor[f] = t.value; else { const v = parseFloat(t.value); if (isFinite(v)) ds.floor[f] = v; }
       floorChanged(); };
   }
+  // plancher en 3D, avec les pilotis sous un sas d'entrée extérieur
+  function floorScene(){ if (!ds.floor) return null; const lay = Floor.layout(ds.nominal, ds.floor); return Floor.scene(lay, Floor.extraPiles(lay, doorStructures().flatMap(x => x.groundPoints || []), -0.0225)); }
   function floorChanged(){ updateFloorReadout(); baseFor = null; if (window.CoverDesign) window.CoverDesign.domeChanged(); if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
   let doorFiche = null;   // fiche d'assemblage ouverte
-  const doorOpts = d => ({ support: d.support, attachAppui: d.attachAppui, attachChevron: d.attachChevron, joints: Joinery.resolve(d.joints) });
   function doorBlock(o, L){
     const key = doorKey(o, L), d = ds.openings.doors[key];
     if (!d) return '<div class="door"><button class="ghost" data-door-add="' + key.replace(/"/g, '&quot;') + '">Ajouter une porte d\'aplomb</button></div>';
     const r = Door.compute(ds.nominal, Ouvertures.strutIndex(ds.nominal), o, d);
     const deep = r.ok ? Math.max(0, -Math.min(...r.nodes.map(p => p.depth - d.setback))) : 0;
-    return DoorUI.html(Joinery, { key, door: d, result: r, structure: r.ok && Door.structure(r, DOOR_SECTION, doorOpts(d)), joints: Joinery.resolve(d.joints), fiche: doorFiche, deep });
+    return DoorUI.html(Joinery, { key, door: d, result: r, structure: r.ok && Door.build(r, d, DOOR_SECTION, Joinery.resolve(d.joints)), joints: Joinery.resolve(d.joints), fiche: doorFiche, deep });
   }
   // structures 3D des portes qui passent (affichées dans la 3D de l'onglet Base)
   function doorStructures(){
     const res = ds.openings.result; if (!(res && res.ok)) return [];
     const L = Ouvertures.nodeLabels(ds.nominal), S = Ouvertures.strutIndex(ds.nominal), out = [];
     res.openings.forEach(o => { const d = o.closedByGround && ds.openings.doors[doorKey(o, L)]; if (!d) return;
-      const st = Door.structure(Door.compute(ds.nominal, S, o, d), DOOR_SECTION, doorOpts(d)); if (st) out.push(st); });
+      const st = Door.build(Door.compute(ds.nominal, S, o, d), d, DOOR_SECTION, Joinery.resolve(d.joints)); if (st) out.push(st); });
     return out;
   }
   const DOOR_SECTION = { w: 0.045, d: 0.07 };   // 45 × 70 mm, en attendant les vraies sections (aperçu 🟠)
@@ -11019,9 +11159,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     const t = ev.target, k = t.getAttribute && t.getAttribute('data-door-key'), f = t.getAttribute('data-door-f');
     if (!k || !ds.openings.doors[k]) return;
     const dd = ds.openings.doors[k];
-    if (f.startsWith('joint:')) { dd.joints = Object.assign({}, dd.joints, { [f.slice(6)]: t.value }); doorFiche = t.value; }
-    else if (t.tagName === 'SELECT') dd[f] = t.value;
-    else { const v = parseFloat(t.value); if (isFinite(v)) dd[f] = v; }
+    doorFiche = DoorUI.apply(dd, f, t.value, t.tagName) || doorFiche;
     doorsChanged();
   }
   function pickStrut(evtX, evtY){
@@ -12427,7 +12565,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
     if (!baseCam) baseCam = { yaw: 0.7, pitch: 0.38, dist: model.radius * 3.8, target: [0, model.height * 0.45, 0] };
     if (baseFor !== SD) {
       const st = Design.defaultState();
-      const o3 = { style: 'real', toile: 'verre', openings: [], doors: doorStructures(), floor: ds.floor ? Floor.scene(Floor.layout(ds.nominal, ds.floor)) : null };
+      const o3 = { style: 'real', toile: 'verre', openings: [], doors: doorStructures(), floor: floorScene() };
       if (baseEng.isThree) baseEng.update(Design, model, st, o3, () => baseEng.render(baseCam, false));
       else baseEng.setScene(Design3D.buildScene(Design, model, st, o3));
       baseFor = SD;
@@ -12654,7 +12792,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = makeEtages
   document.getElementById('tabDesign').addEventListener('click', () => showView('design'));
   document.getElementById('tabBase').addEventListener('click', () => showView('base'));
   // accès du module Design (onglet séparé) au dôme courant
-  window.CoverApp = { dome: () => ds.struct || ds.nominal, labels: () => Ouvertures.nodeLabels(ds.nominal), label: domeLabel, showView, doorScenes: () => doorStructures(), floorScene: () => ds.floor ? Floor.scene(Floor.layout(ds.nominal, ds.floor)) : null,
+  window.CoverApp = { dome: () => ds.struct || ds.nominal, labels: () => Ouvertures.nodeLabels(ds.nominal), label: domeLabel, showView, doorScenes: () => doorStructures(), floorScene,
     // contour d'ouvertures donné en étiquettes [['N1', 'N2'], …] (scénarios de test, reprise d'un projet)
     setOpenings: pairs => { ds.openings.labels = pairs.map(p => p.slice().sort()); openingsChanged(); } };
   // « ? » à côté de chaque réglage : ouvre l'explication correspondante

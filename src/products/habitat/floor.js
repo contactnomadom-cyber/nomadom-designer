@@ -218,7 +218,7 @@
       ok: !errors.length, errors, warnings, support, deck, options: o, ring, poly, area,
       beams, joists, piles, panels, sectorTypes, triangle: tri, pentagon: pIdx,
       levels: { deckTop: 0, joistTop: -o.deckThickness, beamTop: yBeamTop, beamBottom: yBeamBot },
-      voidMin, floorAboveHighGround, maxJoistSpan: maxSpan, joistAngle,
+      voidMin, floorAboveHighGround, maxJoistSpan: maxSpan, joistAngle, groundAt: p => ground(p) - lift,
       loads: { domeG, snowS, floorArea: area, soil, pmax, ratio, totalEls: piles.reduce((s, p) => s + p.loads.els, 0) },
       qty
     };
@@ -228,15 +228,23 @@
   const choices = () => ({ support: DEFAULTS.support, deck: DEFAULTS.deck, triangleDiameter: DEFAULTS.triangleDiameter, hubDiameter: DEFAULTS.hubDiameter,
     joistSpacing: DEFAULTS.joistSpacing, slope: 0, slopeDir: 0, soil: DEFAULTS.soil });
 
+  // Pilotis supplémentaires (sous un sas d'entrée, NOMAD-2026-007) : mêmes blocs, même terrain, tête à topY.
+  function extraPiles(res, pts, topY) {
+    if (!res || !res.ok || !pts.length) return [];
+    const B1 = res.options.blocks.first, B2 = res.options.blocks.next;
+    return pts.map(at => { const gr = res.groundAt(at), H = topY - gr, nx = Math.max(0, Math.floor((H - B1.h) / B2.h + 1e-9));
+      return { row: 'sas', at: { x: at.x, z: at.z }, ground: gr, stack: { height: H, first: 1, next: nx, shim: H - B1.h - nx * B2.h, void: H }, tooLow: H < B1.h }; });
+  }
+
   // Pièces 3D pour le rendu (repère du Design, plancher fini à y = 0) : poutres, solives, blocs, panneaux.
-  function scene(res) {
+  function scene(res, extra) {
     if (!res || !res.ok) return null;
     const o = res.options, lv = res.levels, beams = [], boxes = [], panels = [];
     const P3 = (p, y) => ({ x: p.x, y, z: p.z });
     res.beams.forEach(b => beams.push({ kind: b.kind, a: P3(b.a, lv.beamBottom + o.beam.d / 2), b: P3(b.b, lv.beamBottom + o.beam.d / 2), w: o.beam.w, d: o.beam.d }));
     res.joists.forEach(j => beams.push({ kind: 'solive', a: P3(j.a, lv.beamTop + o.joist.d / 2), b: P3(j.b, lv.beamTop + o.joist.d / 2), w: o.joist.w, d: o.joist.d }));
     const B1 = o.blocks.first, B2 = o.blocks.next;
-    res.piles.forEach(p => {
+    res.piles.concat(extra || []).forEach(p => {
       const rot = Math.atan2(p.at.z, p.at.x) * 180 / Math.PI + 90;   // bloc couché le long de la ceinture
       let y = p.ground;
       boxes.push({ kind: 'gravier', x: p.at.x, y: y - 0.025, z: p.at.z, l: B1.l + 0.2, w: B1.w + 0.2, h: 0.05, rot });
@@ -248,7 +256,7 @@
     return { beams, boxes, panels, groundY: Math.min(...res.piles.map(p => p.ground)) - 0.05 };
   }
 
-  const Floor = { SUPPORTS, DECKS, SOILS, DEFAULTS, layout, scene, choices, baseRing, pentagonIdx, polyArea, segX };
+  const Floor = { SUPPORTS, DECKS, SOILS, DEFAULTS, layout, scene, choices, extraPiles, baseRing, pentagonIdx, polyArea, segX };
   if (typeof module !== 'undefined' && module.exports) module.exports = Floor;
   else global.Floor = Floor;
 })(typeof window !== 'undefined' ? window : globalThis);

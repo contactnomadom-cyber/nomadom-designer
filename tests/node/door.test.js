@@ -117,5 +117,29 @@ const sM = D.structure(r, null, { joints: J.resolve({}) }), nM = sM.connections.
 check(nM > 0 && sM.extras.length === 2 * nM && sM.connections.every(c => c.joint === J.resolve({})[c.family]), 'moisage par défaut : 2 moises par raccord sur montant, assemblage recopié sur chaque raccord');
 check(D.structure(r, null, { joints: J.resolve({ 'dome-montant': 'sabot' }) }).extras.length === 0, 'sabot choisi : pas de moise dessinée');
 
+// 9. sas d'entrée (NOMAD-2026-007) : l'ouverture prolongée en prisme droit, deuxième porte au bout
+const sx = D.sas(r, null, { direction: 'exterieur', length: 2.5 }), si = D.sas(r, null, { direction: 'interieur', length: 2.5 });
+check(sx.ok && sx.complete && si.ok && si.complete, 'sas extérieur et intérieur : aucune pièce volante');
+const nodeIds = r.nodes.map(p => p.id), noeuds = c => new Set(c.connections.filter(x => x.family === 'dome-noeud').map(x => x.node));
+check(nodeIds.every(id => noeuds(sx).has(id)) && nodeIds.every(id => noeuds(si).has(id)), 'chaque nœud du contour de l\'ouverture est relié au sas (extérieur et intérieur)');
+const pn = sx.pieces.filter(p => p.kind === 'panne' || p.kind === 'lisse-basse');
+check(pn.length === r.nodes.length && pn.every(p => near(p.a.y, p.b.y)), 'une panne (ou lisse basse) par nœud, horizontale');
+const nn = r.plane.normal, depth = q => (q.x - r.plane.origin.x) * nn.x + (q.z - r.plane.origin.z) * nn.z;
+check(pn.every(p => near(Math.max(depth(p.a), depth(p.b)), 2.5)) && si.pieces.filter(p => p.kind === 'panne').every(p => near(Math.min(depth(p.a), depth(p.b)), -2.5) || Math.min(depth(p.a), depth(p.b)) < -2.5),
+  'le sas va jusqu\'à 2,50 m du plan de la porte 1 (dehors ou dedans)');
+check(pn.every(p => { const v = [p.b.x - p.a.x, p.b.z - p.a.z], l = Math.hypot(...v); return near(Math.abs(v[0] * nn.x + v[1] * nn.z) / l, 1, 1e-9); }), 'prisme droit : pannes perpendiculaires au plan de la porte');
+check(sx.frames === 4 && sx.totals.cadre.count === 4 * (r.nodes.length - 1) && sx.totals['lisse-cadre'].count === 4, '4 cadres de section (porte 1, 2 intermédiaires, porte 2), contour complet');
+check(sx.totals.huisserie.count === 6 && sx.door2.fits, 'deux portes (huisserie × 2), la porte 2 passe');
+check(near(sx.inside.volume, Math.abs(D.area2(r.contour)) * 2.5) && near(sx.floorArea, r.plane.width * 2.5, 1e-9), 'volume = section × longueur ; plancher du sas = seuil × longueur');
+check(sx.coverArea > 0 && sx.areas.toit > 0 && sx.areas.paroi > 0 && near(sx.areas.pignon, Math.abs(D.area2(r.contour)) - 1.8), 'couverture (toit + parois) et pignon (contour − porte 2)');
+const s2 = D.sas(r, null, { direction: 'exterieur', length: 2.5, door2: { width: 1.3, height: 2 } });
+check(!s2.ok && !s2.door2.fits && s2.errors[0].includes('porte 2'), 'porte 2 trop large : refusée');
+check(sx.groundPoints.length === 6 && si.groundPoints.length === 0, 'sas extérieur : 6 points d\'appui au sol hors du dôme (3 cadres × 2) ; intérieur : aucun');
+const s5 = D.sas(D.compute(dome, S, op, { width: 0.9, height: 2, setback: 0.5 }), null, { direction: 'exterieur', length: 1.5 });
+check(s5.ok && nodeIds.every(id => noeuds(s5).has(id)), 'porte reculée de 0,50 m + sas de 1,50 m : tout relié');
+check(D.build(r, { sas: { direction: 'exterieur', length: 2 } }, null, {}).kind === 'sas' && !D.build(r, {}, null, {}).kind, 'build : sas si demandé, sinon avant-corps');
+const sB = D.sas(rB, null, { direction: 'exterieur', length: 5 });
+check(sB.ok && near(sB.inside.volume, 8 * sx.inside.volume, 1e-6), 'Ø 10 m, sas 5 m : volume × 8');
+
 if (fails.length) { console.log('ÉCHEC ' + fails.length + '/' + n); fails.forEach(x => console.log('  ' + x)); process.exit(1); }
 console.log('OK ' + n + '/' + n);

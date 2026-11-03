@@ -82,5 +82,12 @@ const h = UI.html(F, F.choices(), P);
 check(h.includes('<svg') && h.includes('2ᵉ rangée') && h.includes('🟠') && h.includes('kPa') && h.includes('géotextile'), 'fiche : plan, rangées, aperçu 🟠, portance, procédé');
 check(UI.html(F, null, null).includes('data-floor-on'), 'sans plancher : bouton « Ajouter »');
 
+// 9. pilotis sous un sas d'entrée (NOMAD-2026-007)
+const ex = F.extraPiles(P, [{ x: 3.5, y: 0, z: 0 }, { x: 4, y: 0, z: 0.5 }], -0.0225);
+check(ex.length === 2 && ex.every(p => p.row === 'sas' && p.stack.shim >= -1e-9 && p.stack.shim < 0.19 + 1e-9 && near(p.stack.height, -0.0225 - p.ground)), 'pilotis du sas : mêmes blocs, calage < 190 mm, jusqu\'à la lisse');
+const exs = F.extraPiles(F.layout(dome, { slope: 10 }), [{ x: 3.5, y: 0, z: 0 }], -0.0225);
+check(exs[0].ground !== ex[0].ground, 'pilotis du sas : suit la pente du terrain');
+check(F.scene(P, ex).boxes.filter(b => b.kind === 'bloc29').length === 25 && F.extraPiles(P, [], 0).length === 0, 'scène : 23 + 2 assises');
+
 if (fails.length) { console.log('ÉCHEC ' + fails.length + '/' + n); fails.forEach(x => console.log('  ' + x)); process.exit(1); }
 console.log('OK ' + n + '/' + n);

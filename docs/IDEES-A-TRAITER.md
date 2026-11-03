@@ -103,6 +103,22 @@ Outil **didactique** : chaque calcul explique ce qu'il fait (retour de connaissa
 
 ---
 
+## 6. Sas d'entrée : l'ouverture prolongée en tunnel — 🛠 aperçu fait (NOMAD-2026-007, 03/11/2026)
+Demande de Nathan : l'option sas d'entrée, avec une deuxième porte ; le sas doit pouvoir être un prolongement de l'ouverture faite dans la structure du dôme (étape 2 du plan « ouvertures intelligentes »).
+
+**Fait (aperçu 🟠)** — dans la fiche porte (onglet Base), choix « Sas : aucun · vers l'extérieur · vers l'intérieur »
+- Prisme droit : la forme de l'ouverture (ramenée sur le plan de la porte) est prolongée à l'horizontale, perpendiculaire à la porte, sur une longueur réglable (2,50 m par défaut, 0,60 à 6 m).
+- Une panne part de chaque nœud du contour de l'ouverture (raccord au nœud du dôme) jusqu'au bout du sas ; cadres de la même forme tous les 1,20 m (réglable) ; huisserie, chevêtre et potelets pour chaque porte ; porte 2 réglable (largeur, hauteur, décalage) et vérifiée dans la section.
+- Quantités : section, volume, couverture (toit + parois), plancher du sas, pignon et cloison. Toujours « aucune pièce volante » (raccords contrôlés).
+- Toit et parois dessinés en toile ; avec un plancher sur pilotis, des pilotis sous chaque cadre du sas extérieur.
+
+**Questions ouvertes ❓**
+1. Forme : avec une ouverture étroite au sol (9 triangles, seuil de 956 mm), le sas s'évase vers le haut — garder cette forme exacte, ou proposer aussi un sas rectangulaire calé sur l'ouverture ?
+2. Toile du sas et raccord étanche avec la toile du dôme (étape 3).
+3. Charges du sas (neige, vent) et pilotis comptés dans la portance.
+
+---
+
 ## 5. Plancher et soubassement du dôme — 🛠 aperçu fait (NOMAD-2026-006, 03/11/2026)
 Demande de Nathan : l'option plancher, avec des choix combinables.
 

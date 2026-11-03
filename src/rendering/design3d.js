@@ -486,6 +486,12 @@
     (opts.doors || []).forEach(dr => {
       dr.pieces.forEach(p => beam(opaque, p.a, p.b, dr.section.w, dr.section.d, p.up, C(p.kind === 'huisserie' || p.kind === 'chevetre' ? 'woodDark' : 'wood'), 2));
       (dr.extras || []).forEach(p => beam(opaque, p.a, p.b, 0.12, 0.022, p.up, C('woodDark'), 2));   // moises : 22 mm d'épaisseur, 120 mm de large
+      if (dr.kind === 'sas') {   // sas : toit et parois en toile (comme le dôme), plancher en bois
+        dr.panels.forEach(pn => { const P = pn.pts.map(p => [p.x, p.y, p.z]);
+          if (pn.kind === 'plancher-sas') opaque.quad(P[0], P[1], P[2], P[3], C('floor'), 1, false);
+          else if (opts.toile !== 'fil') toileB.quad(P[0], P[1], P[2], P[3], C('toile'), 5, opts.toile === 'coupe'); });
+        return;
+      }
       (dr.panels || dr.roof.map(pts => ({ kind: 'toit', pts }))).forEach(pn => { const lift = pn.kind === 'toit' ? dr.section.d / 2 : 0;
         const P = pn.pts.map(p => [p.x, p.y + lift, p.z]); opaque.quad(P[0], P[1], P[2], P[3], C(pn.kind === 'toit' ? 'floorSide' : 'wood'), pn.kind === 'toit' ? 1 : 2, false); });
     });

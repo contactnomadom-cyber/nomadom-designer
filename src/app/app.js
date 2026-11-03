@@ -305,22 +305,23 @@
       if (t.tagName === 'SELECT') ds.floor[f] = t.value; else { const v = parseFloat(t.value); if (isFinite(v)) ds.floor[f] = v; }
       floorChanged(); };
   }
+  // plancher en 3D, avec les pilotis sous un sas d'entrée extérieur
+  function floorScene(){ if (!ds.floor) return null; const lay = Floor.layout(ds.nominal, ds.floor); return Floor.scene(lay, Floor.extraPiles(lay, doorStructures().flatMap(x => x.groundPoints || []), -0.0225)); }
   function floorChanged(){ updateFloorReadout(); baseFor = null; if (window.CoverDesign) window.CoverDesign.domeChanged(); if (!openTrace && $id('viewBase').style.display !== 'none') draw3DBase(); }
   let doorFiche = null;   // fiche d'assemblage ouverte
-  const doorOpts = d => ({ support: d.support, attachAppui: d.attachAppui, attachChevron: d.attachChevron, joints: Joinery.resolve(d.joints) });
   function doorBlock(o, L){
     const key = doorKey(o, L), d = ds.openings.doors[key];
     if (!d) return '<div class="door"><button class="ghost" data-door-add="' + key.replace(/"/g, '&quot;') + '">Ajouter une porte d\'aplomb</button></div>';
     const r = Door.compute(ds.nominal, Ouvertures.strutIndex(ds.nominal), o, d);
     const deep = r.ok ? Math.max(0, -Math.min(...r.nodes.map(p => p.depth - d.setback))) : 0;
-    return DoorUI.html(Joinery, { key, door: d, result: r, structure: r.ok && Door.structure(r, DOOR_SECTION, doorOpts(d)), joints: Joinery.resolve(d.joints), fiche: doorFiche, deep });
+    return DoorUI.html(Joinery, { key, door: d, result: r, structure: r.ok && Door.build(r, d, DOOR_SECTION, Joinery.resolve(d.joints)), joints: Joinery.resolve(d.joints), fiche: doorFiche, deep });
   }
   // structures 3D des portes qui passent (affichées dans la 3D de l'onglet Base)
   function doorStructures(){
     const res = ds.openings.result; if (!(res && res.ok)) return [];
     const L = Ouvertures.nodeLabels(ds.nominal), S = Ouvertures.strutIndex(ds.nominal), out = [];
     res.openings.forEach(o => { const d = o.closedByGround && ds.openings.doors[doorKey(o, L)]; if (!d) return;
-      const st = Door.structure(Door.compute(ds.nominal, S, o, d), DOOR_SECTION, doorOpts(d)); if (st) out.push(st); });
+      const st = Door.build(Door.compute(ds.nominal, S, o, d), d, DOOR_SECTION, Joinery.resolve(d.joints)); if (st) out.push(st); });
     return out;
   }
   const DOOR_SECTION = { w: 0.045, d: 0.07 };   // 45 × 70 mm, en attendant les vraies sections (aperçu 🟠)
@@ -336,9 +337,7 @@
     const t = ev.target, k = t.getAttribute && t.getAttribute('data-door-key'), f = t.getAttribute('data-door-f');
     if (!k || !ds.openings.doors[k]) return;
     const dd = ds.openings.doors[k];
-    if (f.startsWith('joint:')) { dd.joints = Object.assign({}, dd.joints, { [f.slice(6)]: t.value }); doorFiche = t.value; }
-    else if (t.tagName === 'SELECT') dd[f] = t.value;
-    else { const v = parseFloat(t.value); if (isFinite(v)) dd[f] = v; }
+    doorFiche = DoorUI.apply(dd, f, t.value, t.tagName) || doorFiche;
     doorsChanged();
   }
   function pickStrut(evtX, evtY){
@@ -1744,7 +1743,7 @@
     if (!baseCam) baseCam = { yaw: 0.7, pitch: 0.38, dist: model.radius * 3.8, target: [0, model.height * 0.45, 0] };
     if (baseFor !== SD) {
       const st = Design.defaultState();
-      const o3 = { style: 'real', toile: 'verre', openings: [], doors: doorStructures(), floor: ds.floor ? Floor.scene(Floor.layout(ds.nominal, ds.floor)) : null };
+      const o3 = { style: 'real', toile: 'verre', openings: [], doors: doorStructures(), floor: floorScene() };
       if (baseEng.isThree) baseEng.update(Design, model, st, o3, () => baseEng.render(baseCam, false));
       else baseEng.setScene(Design3D.buildScene(Design, model, st, o3));
       baseFor = SD;
@@ -1971,7 +1970,7 @@
   document.getElementById('tabDesign').addEventListener('click', () => showView('design'));
   document.getElementById('tabBase').addEventListener('click', () => showView('base'));
   // accès du module Design (onglet séparé) au dôme courant
-  window.CoverApp = { dome: () => ds.struct || ds.nominal, labels: () => Ouvertures.nodeLabels(ds.nominal), label: domeLabel, showView, doorScenes: () => doorStructures(), floorScene: () => ds.floor ? Floor.scene(Floor.layout(ds.nominal, ds.floor)) : null,
+  window.CoverApp = { dome: () => ds.struct || ds.nominal, labels: () => Ouvertures.nodeLabels(ds.nominal), label: domeLabel, showView, doorScenes: () => doorStructures(), floorScene,
     // contour d'ouvertures donné en étiquettes [['N1', 'N2'], …] (scénarios de test, reprise d'un projet)
     setOpenings: pairs => { ds.openings.labels = pairs.map(p => p.slice().sort()); openingsChanged(); } };
   // « ? » à côté de chaque réglage : ouvre l'explication correspondante
