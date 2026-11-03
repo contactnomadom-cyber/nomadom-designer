@@ -151,6 +151,22 @@ Demande de Nathan : l'option plancher, avec des choix combinables.
 
 ---
 
+## 7. Refonte de l'interface : mode Atelier + mode Présentation — ❓ maquettes à valider (03/11/2026)
+Demande de Nathan : « une version orientée UI, une belle interface », sur toute l'application, avant de valider la 0.9.17.
+
+**Décidé (03/11/2026)** : deux modes, avec un bouton pour passer de l'un à l'autre.
+- **A — Atelier bois** (pour travailler) : bandeau de navigation en noyer à gauche (onglets = outils), fond contreplaqué clair, actions en vert forêt ; 3D en grand au centre avec un **mètre pliant** gradué (échelle réelle) ; réglages à droite en sections dépliables ; chiffres clés en bandeau sous la vue. Police Barlow (embarquée, hors ligne).
+- **C — Vitrine client** (pour montrer) : 3D plein écran, une phrase et trois chiffres parlants, options en pastilles, « Préparer le devis » ; les réglages techniques sont masqués.
+- B (Pro technique) écarté.
+- Maquettes : `docs/maquettes/ui-2026-11/` (A1 Base, A2 Cover+, A3 Design, C1 Votre dôme, C2 Aménagement, B pour mémoire).
+
+**Questions ouvertes ❓**
+1. Validation des maquettes A et C (écrans Base, Cover+, Design ; Quadrisphère et Informations suivront le même modèle).
+2. Mode Présentation : quels onglets montrer au client (Votre dôme, Toile, Aménagement, Pavillon) et le bouton « Préparer le devis » (le devis n'existe pas encore : idée n° 2).
+3. Revue visuelle Gemini (gouvernance ADR-0003) : maintenant ou plus tard ?
+
+---
+
 ## Fait
 - ✅ 0.9.16 — Porte d'aplomb (NOMAD-2026-005, étape 1) : calcul, structure 3D, choix constructifs, raccords sans pièce volante, bibliothèque de 14 assemblages (aperçu 🟠).
 - ✅ 0.9.15 — Kumiko dans le Design, aperçu (NOMAD-2026-002 moteur, NOMAD-2026-003 interface) : pose triangle par triangle dans la 3D, tableau et plan du panneau, statut 🟠.
