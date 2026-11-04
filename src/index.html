@@ -44,6 +44,36 @@
   nav.tabs button[disabled]{ opacity: 0.45; }
 
   main{ padding: 14px 16px 40px; max-width: 1320px; margin: 0 auto; }
+  /* NOMAD-2026-008 Lot 1 : vue fixe à gauche, réglages qui défilent à droite, cadres réglables */
+  .split{ --split-view: 58%; display:flex; align-items:flex-start; gap:0; }
+  .split > .split-view{ flex: 0 0 var(--split-view); min-width:0; position: sticky; top: 8px; align-self:flex-start; }
+  .split > .split-opts{ flex: 1 1 0; min-width:0; padding-left: 4px; }
+  .split > .split-view .pane{ display:flex; flex-direction:column; }
+  .split > .split-view canvas{ height: calc(100vh - 92px) !important; min-height: 260px; }
+  .split-handle{ flex: 0 0 14px; align-self: stretch; position: sticky; top: 8px; height: calc(100vh - 16px);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+    cursor: col-resize; touch-action:none; user-select:none; outline:none; }
+  .split-handle:focus-visible .split-grip{ background: var(--accent); }
+  .split-grip{ width:4px; height:56px; border-radius:2px; background: var(--line); }
+  .split-handle:hover .split-grip, .split.dragging .split-grip{ background: var(--accent); }
+  .split-fold{ width:14px; height:28px; padding:0; border:1px solid var(--line); border-radius:3px; background: var(--panel);
+    color: var(--ink-dim); font-size:9px; line-height:1; cursor:pointer; }
+  .split-fold:hover{ color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+  .split.dragging{ cursor: col-resize; user-select:none; }
+  .split.dragging canvas{ pointer-events:none; }
+  .split.fold-view > .split-view, .split.fold-opts > .split-opts{ display:none; }
+  .split.fold-opts > .split-view{ flex: 1 1 auto; }
+  .split.fold-view > .split-handle, .split.fold-opts > .split-handle{ cursor: default; }
+  .split.fold-view .split-grip, .split.fold-opts .split-grip{ display:none; }
+  .split > .split-opts > .toolbar:first-child{ margin-top:0; }
+  @media (max-width: 900px){
+    .split{ flex-direction:column; align-items:stretch; }
+    .split > .split-view{ flex:none; width:100%; top:0; z-index:5; background: var(--bg); }
+    .split > .split-view canvas{ height: 42vh !important; }
+    .split-handle{ position:static; height:auto; flex-direction:row; flex:none; padding:4px 0; cursor:default; }
+    .split-grip{ display:none; }
+    .split > .split-opts{ padding-left:0; }
+  }
 
   .toolbar{
     display:flex; flex-wrap: wrap; align-items:center; gap: 18px;
@@ -231,6 +261,12 @@
 <main>
 <div id="viewBase" style="display:none">
   <div class="info-head"><h2>Base — géométrie et structure du dôme</h2><span class="stat">Tout ce qui est réglé ici s'applique à Cover+ (toile) et à Design (aménagement).</span></div>
+  <div class="split" data-split="base" id="baseSplit">
+  <div class="split-view" id="baseSplitView">
+  <section class="pane"><h2><span>DÔME 3D</span><span id="baseInfo3d"></span></h2><div class="body"><canvas id="base3d"></canvas><canvas id="baseTrace" style="display:none;cursor:crosshair;touch-action:none;height:560px"></canvas><div class="hint" id="baseHint">glisser = tourner · molette = zoom · double-clic = recadrer</div></div></section>
+  </div>
+  <div class="split-handle" id="baseSplitHandle"></div>
+  <div class="split-opts" id="baseSplitOpts">
   <div class="toolbar">
     <span class="group-title">Dôme</span>
     <label>Polyèdre de base
@@ -275,14 +311,13 @@
   </div>
   <div id="baseWarn"></div>
   <div id="domeStatus"></div>
-  <div class="panes">
-    <section class="pane"><h2><span>DÔME 3D</span><span id="baseInfo3d"></span></h2><div class="body"><canvas id="base3d"></canvas><canvas id="baseTrace" style="display:none;cursor:crosshair;touch-action:none;height:560px"></canvas><div class="hint" id="baseHint">glisser = tourner · molette = zoom · double-clic = recadrer</div></div></section>
-    <section class="pane"><h2><span>CHIFFRES CLÉS</span></h2><div class="body" id="baseKpis" style="padding:10px 14px;font-family:var(--mono);font-size:12px;overflow:auto;max-height:560px"></div></section>
-  </div>
+  <section class="pane"><h2><span>CHIFFRES CLÉS</span></h2><div class="body" id="baseKpis" style="padding:10px 14px;font-family:var(--mono);font-size:12px;overflow:auto;max-height:560px"></div></section>
   <div class="selection-readout" id="baseOpenings"></div>
   <div class="selection-readout" id="baseFloor"></div>
   <div class="selection-readout" id="baseStruts"></div>
   <div class="selection-readout" id="baseTris"></div>
+  </div>
+  </div>
 </div>
 <div id="viewCover">
 
@@ -510,6 +545,7 @@
 <script id="sas-toile-src">{{MODULE:sas-toile-src}}</script>
 <script id="openings-ctl-src">{{MODULE:openings-ctl-src}}</script>
 <script id="unfold-src">{{MODULE:unfold-src}}</script>
+<script id="split-layout-src">{{MODULE:split-layout-src}}</script>
 <script>{{MODULE:main}}</script>
 <script id="designui-src">{{MODULE:designui-src}}</script>
 <script id="quadri-geom-src">{{MODULE:quadri-geom-src}}</script>

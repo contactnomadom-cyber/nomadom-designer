@@ -1696,6 +1696,13 @@
     cv.addEventListener('wheel', e => { e.preventDefault(); baseCam.dist = Math.max(1.5, Math.min(60, baseCam.dist * (e.deltaY < 0 ? 0.92 : 1.08))); baseEng.render(baseCam, false); }, { passive: false });
     cv.addEventListener('dblclick', () => { baseCam = null; draw3DBase(); });
   }
+  // NOMAD-2026-008 Lot 1 : redessiner la vue Base quand son cadre change de taille (poignée, repli, fenêtre).
+  function relayoutBase(){
+    if (!ds.nominal || $id('viewBase').style.display === 'none') return;
+    if (openTrace) renderBaseTrace(); else if (baseEng && baseCam) baseEng.render(baseCam, false);
+  }
+  window.addEventListener('nomadom:layout', relayoutBase);
+  window.addEventListener('resize', relayoutBase);
   function draw3DBase(){
     initBase3D(); if (!baseEng) { $id('baseInfo3d').textContent = 'rendu 3D indisponible sur cet appareil'; return; }
     const SD = ds.struct || ds.nominal, model = Design.domeModel(SD);

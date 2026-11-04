@@ -30,6 +30,7 @@
     "sas-toile-src":      "src/textile/sas-toile.js",
     "openings-ctl-src":   "src/ui/openings-ctl.js",
     "unfold-src":         "src/geometry/unfold.js",
+    "split-layout-src":   "src/ui/split-layout.js",
     "designui-src":       "src/products/habitat/designui.js",
     "quadri-geom-src":    "src/products/quadrisphere/quadri-geom.js",
     "quadri-ui-src":      "src/products/quadrisphere/quadri-ui.js",
