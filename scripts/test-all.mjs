@@ -41,7 +41,7 @@ const suites = [
   { key: 'sas_toile', name: 'Toile et charges du sas (NOMAD-2026-007)', cmd: ['node', [N('sas-toile.test.js'), MODS]] }
 ];
 const browser = quick ? ['t_beta.py', 't_status.py', 't_names.py']
-  : ['t_beta.py', 't_status.py', 't_names.py', 't_cleanup.py', 't_laize.py', 't_bottom.py', 't_kruschke_align.py', 't_stale_optim.py', 't_smoke_quadri.py', 't_axes_block.py', 't_openings.py', 't_diameter.py', 't_design_import.py', 't_kumiko.py', 't_door.py', 't_floor.py', 't_ui_levels.py'];
+  : ['t_beta.py', 't_status.py', 't_names.py', 't_cleanup.py', 't_laize.py', 't_bottom.py', 't_kruschke_align.py', 't_stale_optim.py', 't_smoke_quadri.py', 't_axes_block.py', 't_openings.py', 't_diameter.py', 't_design_import.py', 't_kumiko.py', 't_door.py', 't_floor.py', 't_ui_levels.py', 't_photo.py'];
 if (!noBrowser) browser.forEach(b => suites.push({ key: b.replace(/\.py$/, ''), name: 'Navigateur · ' + b, browser: true,
   cmd: ['python3', b === 't_beta.py' ? [W(b), html, path.join(CHECK, 'beta')] : [W(b), html]] }));
 

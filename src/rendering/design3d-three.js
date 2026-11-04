@@ -145,6 +145,7 @@
 
     // construit toute la scène à partir de l'aménagement
     function update(Z, model, st, opts, onAsync) {
+      photoStop();
       style = opts.style;
       const maq = opts.style === 'maquette';
       scene.remove(content); dispose(content); content = new T.Group(); scene.add(content);
@@ -183,7 +184,86 @@
       sun.shadow.camera.near = 1; sun.shadow.camera.far = 60; sun.shadow.camera.updateProjectionMatrix();
     }
 
-    function render(cam, cut) {
+    // ---------------- rendu photo (lancer de rayons, three-gpu-pathtracer) ----------------
+    // Calcule l'image progressivement (échantillons successifs) sur la même scène.
+    // Limites : le plan de coupe n'est pas pris en compte (toile vue entière),
+    // le ciel physique (shader) est remplacé par un ciel en dégradé.
+    let pt = null, ptRaf = 0, photo = null;
+    const envTexs = {};
+    function photoEnv(maq) {
+      const key = maq ? 'maq' : 'real';
+      if (envTexs[key]) return envTexs[key];
+      const t = new K.ProceduralEquirectTexture(512, 256);
+      const zen = new T.Color(0.20, 0.40, 0.85), hor = new T.Color(0.80, 0.86, 0.95), gnd = new T.Color(0.25, 0.22, 0.17);
+      const white = new T.Color(0.93, 0.93, 0.92), grey = new T.Color(0.55, 0.55, 0.54);
+      t.generationCallback = (polar, uv, coord, c) => {
+        const y = -Math.cos(polar.phi); // 1 = zénith, -1 = nadir (convention du path tracer)
+        if (maq) c.lerpColors(grey, white, Math.min(1, (y + 1) * 0.8));
+        else if (y >= 0) c.lerpColors(hor, zen, Math.pow(y, 0.6));
+        else c.lerpColors(hor, gnd, Math.min(1, -y * 5));
+      };
+      t.update();
+      return (envTexs[key] = t);
+    }
+    // Les tampons de design3d ont des normales justes mais un sens de rotation des
+    // triangles parfois inversé. Le rendu 3D (double face) s'en accommode, pas le lancer
+    // de rayons (surfaces noires) : copie corrigée, utilisée seulement pendant la photo.
+    function fixWinding(g) {
+      const P = g.attributes.position, N = g.attributes.normal;
+      if (g.index || !P || !N) return null;
+      const p = P.array, n = N.array, flip = [];
+      for (let t = 0; t < P.count / 3; t++) {
+        const a = t * 9, ux = p[a + 3] - p[a], uy = p[a + 4] - p[a + 1], uz = p[a + 5] - p[a + 2], vx = p[a + 6] - p[a], vy = p[a + 7] - p[a + 1], vz = p[a + 8] - p[a + 2];
+        const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+        if (cx * (n[a] + n[a + 3] + n[a + 6]) + cy * (n[a + 1] + n[a + 4] + n[a + 7]) + cz * (n[a + 2] + n[a + 5] + n[a + 8]) < 0) flip.push(t);
+      }
+      if (!flip.length) return null;
+      const c = g.clone();
+      Object.values(c.attributes).forEach(at => { const s = at.itemSize, arr = at.array;
+        flip.forEach(t => { const i1 = (t * 3 + 1) * s, i2 = (t * 3 + 2) * s; for (let k = 0; k < s; k++) { const x = arr[i1 + k]; arr[i1 + k] = arr[i2 + k]; arr[i2 + k] = x; } }); });
+      return c;
+    }
+    function photoStop() {
+      if (ptRaf) cancelAnimationFrame(ptRaf); ptRaf = 0;
+      if (photo) { scene.background = photo.bg; scene.environment = photo.env; sky.visible = photo.sky; hemi.visible = true;
+        photo.swaps.forEach(([m, g]) => { m.geometry.dispose(); m.geometry = g; }); photo = null; }
+    }
+    // cb : { samples, onProgress(n, total), onDone(), onError(err) }
+    function photoStart(cam, cut, cb) {
+      cb = cb || {};
+      photoStop();
+      draw(cam, cut); // place caméra, soleil et taille du canevas
+      try {
+        if (!pt) {
+          pt = new K.WebGLPathTracer(renderer);
+          pt.tiles.set(2, 2); pt.minSamples = 1; pt.renderDelay = 0; pt.fadeDuration = 400;
+          pt.bounces = 6; pt.transmissiveBounces = 6; pt.filterGlossyFactor = 0.5;
+        }
+        const maq = style === 'maquette';
+        photo = { bg: scene.background, env: scene.environment, sky: sky.visible, swaps: [] };
+        content.traverse(o => { if (o.isMesh && !o.userData.keepMat) { const g = fixWinding(o.geometry); if (g) { photo.swaps.push([o, o.geometry]); o.geometry = g; } } });
+        sky.visible = false; hemi.visible = false; // non gérés par le lancer de rayons
+        const env = photoEnv(maq);
+        scene.environment = env; scene.background = maq ? new T.Color(0xeeeeec) : env;
+        pt.setScene(scene, camera);
+      } catch (err) { photoStop(); if (cb.onError) cb.onError(err); return false; }
+      const total = cb.samples || 256;
+      const tick = () => {
+        if (!photo) return;
+        try { pt.renderSample(); } catch (err) { photoStop(); if (cb.onError) cb.onError(err); return; }
+        const n = Math.floor(pt.samples);
+        if (cb.onProgress) cb.onProgress(Math.min(n, total), total);
+        if (n >= total) { ptRaf = 0; if (cb.onDone) cb.onDone(); return; }
+        ptRaf = requestAnimationFrame(tick);
+      };
+      ptRaf = requestAnimationFrame(tick);
+      return true;
+    }
+    // image PNG du canevas (le rendu photo reste affiché tant qu'on ne bouge pas la vue)
+    function snapshot() { return canvas.toDataURL('image/png'); }
+
+    function render(cam, cut) { photoStop(); draw(cam, cut); }
+    function draw(cam, cut) {
       const r = canvas.getBoundingClientRect(), dpr = Math.min(2, global.devicePixelRatio || 1);
       const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
       if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
@@ -201,7 +281,7 @@
       su.sunPosition.value.copy(d);
       renderer.render(scene, camera);
     }
-    return { isThree: true, update, render, setQuality(v) { hiQ = v; sun.castShadow = v; renderer.shadowMap.type = v ? T.PCFSoftShadowMap : T.BasicShadowMap; renderer.shadowMap.needsUpdate = true; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); canvas.width = 0; }, renderer };
+    return { isThree: true, update, render, photoStart, photoStop, snapshot, photoBusy: () => !!ptRaf, canPhoto: !!K.WebGLPathTracer, setQuality(v) { hiQ = v; sun.castShadow = v; renderer.shadowMap.type = v ? T.PCFSoftShadowMap : T.BasicShadowMap; renderer.shadowMap.needsUpdate = true; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); canvas.width = 0; }, renderer };
   }
 
   global.Design3DThree = { create };

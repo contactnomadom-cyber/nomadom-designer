@@ -169,6 +169,22 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 
 ---
 
+## 8. Rendus plus esthétiques : rendu photo et ambiances — 🛠 rendu photo fait (branche feature/rendu-photo, 04/11/2026)
+
+**Besoin** : des images plus belles pour les devis, le site nomadom.be et la présentation client ; Nathan trouve que la Quadrisphère « manque de classe », dans sa forme comme dans son rendu.
+
+**Décidé**
+- Rendu photo par lancer de rayons (three-gpu-pathtracer, hors ligne) dans l'onglet Design : bouton « 📷 Rendu photo », progression en %, export PNG ; bouger la vue revient à la 3D.
+- Réutiliser des briques existantes (GitHub, npm) plutôt que tout développer.
+
+**Questions ouvertes ❓**
+1. Temps de calcul acceptable sur la tablette de présentation ? Faut-il un réglage Rapide / Normal / Soigné ?
+2. Ambiances à proposer (matin, coucher de soleil, nuit éclairée de l'intérieur) ?
+3. Étendre le rendu photo à la Quadrisphère et à Nomad Vision ; revoir la forme de la Quadrisphère.
+4. La coupe « voir dedans » n'est pas encore rendue en photo : à traiter ?
+
+---
+
 ## Fait
 - ✅ 0.9.16 — Porte d'aplomb (NOMAD-2026-005, étape 1) : calcul, structure 3D, choix constructifs, raccords sans pièce volante, bibliothèque de 14 assemblages (aperçu 🟠).
 - ✅ 0.9.15 — Kumiko dans le Design, aperçu (NOMAD-2026-002 moteur, NOMAD-2026-003 interface) : pose triangle par triangle dans la 3D, tableau et plan du panneau, statut 🟠.
