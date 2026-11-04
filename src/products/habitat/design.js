@@ -292,7 +292,7 @@
     return { id: 'i' + Date.now().toString(36) + Math.floor(Math.random() * 1e4), type, name: L.label, x: x || 0, z: z || 0, rot: 0, w: L.w, d: L.d, h: L.h, level: level || 0 };
   }
   function defaultState() {
-    return { version: 1, items: [], openings: [], mezz: { on: false, h: 2.2, thick: 0.15, shape: 'demi', depth: 2.0, angle: 140, width: 3.0, orient: 90 }, style: 'nb', site: { city: 'beauraing', north: 0 } };
+    return { version: 1, items: [], openings: [], mezz: { on: false, h: 2.2, thick: 0.15, shape: 'demi', depth: 2.0, angle: 140, width: 3.0, orient: 90 }, style: 'nb', site: { city: 'beauraing', north: 0 }, vent: { target: 5, open: {} } };
   }
 
   const Design = { domeModel, section, ceilingAt, mezzPolygon, clipConvex, clipHalf, area, pointIn, LIBRARY, OPENINGS, libOf, itemPolygon, symbolOps, checkItem, stats, newItem, defaultState };

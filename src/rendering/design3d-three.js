@@ -100,6 +100,8 @@
     // course du soleil (sun.js) : arcs du 21 décembre et du 21 juin, soleil réel, carte des faces
     let sunGroup = new T.Group(); scene.add(sunGroup);
     let sunOv = null, sunBase = 2.6;
+    // aération (vent.js) : flèches d'air, entrées en bleu, sortie par la coupole en orange
+    let ventGroup = new T.Group(); scene.add(ventGroup);
     const clip = new T.Plane(new T.Vector3(0, 0, -1), 1e6);
     let hiQ = true;
     const tex = { real: null, maq: null };
@@ -222,6 +224,21 @@
       sunBase = sun.intensity;
     }
 
+    // arrows = [{ from: {x,y,z}, to: {x,y,z}, color }]
+    function setVent(arrows) {
+      scene.remove(ventGroup); dispose(ventGroup); ventGroup = new T.Group(); scene.add(ventGroup);
+      (arrows || []).forEach(a => {
+        const A = new T.Vector3(a.from.x, a.from.y, a.from.z), B = new T.Vector3(a.to.x, a.to.y, a.to.z), d = B.clone().sub(A), L = d.length();
+        if (L < 1e-3) return;
+        const mat = new T.MeshBasicMaterial({ color: a.color, transparent: true, opacity: 0.9, depthTest: false, toneMapped: false }), head = Math.min(0.25, L * 0.35);
+        const shaft = new T.Mesh(new T.CylinderGeometry(0.025, 0.025, L - head, 10), mat), cone = new T.Mesh(new T.ConeGeometry(0.075, head, 14), mat);
+        shaft.position.y = (L - head) / 2; cone.position.y = L - head / 2;
+        const g = new T.Group(); g.add(shaft); g.add(cone); g.position.copy(A);
+        g.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), d.normalize());
+        g.renderOrder = 5; shaft.renderOrder = cone.renderOrder = 5; ventGroup.add(g);
+      });
+    }
+
     // s = { arcs: [{ kind, pts: [{x,y,z}] }], radius, now: { dir, elevation }, faces: [{ pts, normal, color }] } ou null
     function setSun(s) {
       scene.remove(sunGroup); dispose(sunGroup); sunGroup = new T.Group(); scene.add(sunGroup);
@@ -280,7 +297,7 @@
       su.sunPosition.value.copy(d);
       renderer.render(scene, camera);
     }
-    return { isThree: true, update, render, setSun, setQuality(v) { hiQ = v; sun.castShadow = v; renderer.shadowMap.type = v ? T.PCFSoftShadowMap : T.BasicShadowMap; renderer.shadowMap.needsUpdate = true; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); canvas.width = 0; }, renderer };
+    return { isThree: true, update, render, setSun, setVent, setQuality(v) { hiQ = v; sun.castShadow = v; renderer.shadowMap.type = v ? T.PCFSoftShadowMap : T.BasicShadowMap; renderer.shadowMap.needsUpdate = true; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); canvas.width = 0; }, renderer };
   }
 
   global.Design3DThree = { create, AMBIANCES };

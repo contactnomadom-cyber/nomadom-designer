@@ -107,6 +107,13 @@ check(V(old).ok && V(old).state.site.north === 0, 'ancien aménagement sans « s
 refused(st({ site: { city: '<b>' } }), 'lieu balisé', 'lieu');
 refused(st({ site: { north: 'nord' } }), 'nord en texte', 'nord');
 refused(st({ site: 'Namur' }), 'site en texte', 'site');
+// aération
+const vv = V(st({ vent: { target: 8, open: { 'b12.13.14': true, 'do1abc': false } } }));
+check(vv.ok && vv.state.vent.target === 8 && vv.state.vent.open['b12.13.14'] === true && vv.state.vent.open.do1abc === false, 'aération relue');
+check(V(st()).state.vent.target === 5 && Object.keys(V(st()).state.vent.open).length === 0, 'sans aération : objectif 5/h, ouvrables par défaut');
+refused(st({ vent: { target: 500 } }), 'objectif 500/h', 'objectif');
+refused(st({ vent: { open: { '<b>': true } } }), 'ouverture balisée', 'aération');
+refused(st({ vent: { open: { b1: 'oui' } } }), 'ouvrable en texte', 'aération');
 
 if (fails.length) { console.log('ÉCHEC ' + fails.length + '/' + n); fails.slice(0, 25).forEach(x => console.log('  ' + x)); process.exit(1); }
 console.log('OK ' + n + '/' + n);

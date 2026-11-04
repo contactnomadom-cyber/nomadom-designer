@@ -50,7 +50,7 @@
     if (!isObj(raw)) return { ok: false, errors: ['ce n\'est pas un aménagement (objet attendu)'] };
     if (raw.version !== 1) return { ok: false, errors: ['version de format ' + escapeText(raw.version) + ' inconnue (attendue : 1)'] };
     const lib = new Map((library || []).map(l => [l.type, l]));
-    const out = { version: 1, items: [], openings: [], mezz: Object.assign({}, defaults.mezz), style: defaults.style, site: Object.assign({ city: 'beauraing', north: 0 }, defaults.site) };
+    const out = { version: 1, items: [], openings: [], mezz: Object.assign({}, defaults.mezz), style: defaults.style, site: Object.assign({ city: 'beauraing', north: 0 }, defaults.site), vent: { target: defaults.vent ? defaults.vent.target : 5, open: {} } };
 
     // éléments
     const items = raw.items === undefined ? [] : raw.items;
@@ -110,6 +110,21 @@
       else {
         if (raw.site.city !== undefined) { if (typeof raw.site.city !== 'string' || !/^[a-z0-9-]{1,30}$/.test(raw.site.city)) err('lieu du projet invalide'); else out.site.city = raw.site.city; }
         if (raw.site.north !== undefined) { if (!isNum(raw.site.north) || Math.abs(raw.site.north) > 360) err('orientation du nord impossible'); else out.site.north = raw.site.north; }
+      }
+    }
+    // aération : objectif de renouvellements d'air, ouvertures ouvrables
+    if (raw.vent !== undefined) {
+      if (!isObj(raw.vent)) err('« vent » doit être un objet');
+      else {
+        const v = raw.vent;
+        if (v.target !== undefined) { if (!isNum(v.target) || v.target < 0.5 || v.target > 60) err('aération : objectif impossible (0,5 à 60 par heure)'); else out.vent.target = v.target; }
+        if (v.open !== undefined) {
+          if (!isObj(v.open) || Object.keys(v.open).length > 200) err('aération : liste des ouvertures ouvrables invalide');
+          else Object.keys(v.open).forEach(k => {
+            if (!/^[bd][A-Za-z0-9.]{1,300}$/.test(k) || typeof v.open[k] !== 'boolean') err('aération : ouverture « ' + escapeText(k) + ' » invalide');
+            else out.vent.open[k] = v.open[k];
+          });
+        }
       }
     }
 
