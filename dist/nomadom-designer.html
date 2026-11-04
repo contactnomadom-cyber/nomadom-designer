@@ -450,6 +450,12 @@
 </div>
 <section id="viewQuadri" style="display:none">
   <div class="info-head"><h2>Quadrisphère — pavillon événementiel</h2><span class="stat">Dôme sur 4 pieds et 4 arches · base octaèdre · conception Nomad'Om</span></div>
+  <div class="split" data-split="quadri" id="qdSplit">
+  <div class="split-view" id="qdSplitView">
+  <section class="pane"><h2><span>QUADRISPHÈRE 3D</span><span id="qdInfo3d"></span></h2><div class="body"><canvas id="qd3d" style="height:560px"></canvas><div class="hint">glisser = tourner · molette = zoom · double-clic = recadrer</div></div></section>
+  </div>
+  <div class="split-handle" id="qdSplitHandle"></div>
+  <div class="split-opts" id="qdSplitOpts">
   <div class="toolbar">
     <span class="group-title">Pavillon</span>
     <label>Entraxe des pieds (m)
@@ -503,12 +509,11 @@
     </span>
   </div>
   <div id="qdWarn"></div>
-  <div class="panes">
-    <section class="pane"><h2><span>QUADRISPHÈRE 3D</span><span id="qdInfo3d"></span></h2><div class="body"><canvas id="qd3d" style="height:560px"></canvas><div class="hint">glisser = tourner · molette = zoom · double-clic = recadrer</div></div></section>
-    <section class="pane"><h2><span>AVEC OU SANS CONNECTEUR</span></h2><div class="body" id="qdKpis" style="padding:10px 14px;font-family:var(--mono);font-size:12px;overflow:auto;max-height:560px"></div></section>
-  </div>
+  <section class="pane"><h2><span>AVEC OU SANS CONNECTEUR</span></h2><div class="body" id="qdKpis" style="padding:10px 14px;font-family:var(--mono);font-size:12px;overflow:auto;max-height:560px"></div></section>
   <div class="selection-readout" id="qdCut"></div>
   <div class="selection-readout" id="qdNodes"></div>
+  </div>
+  </div>
 </section>
 <section id="viewInfo" style="display:none"></section>
 <section id="viewDesign" style="display:none"></section>
@@ -14427,6 +14432,9 @@ global.QuadriGeom = { computeDome };
     dirty = true;
   }
   function hide() { $q('viewQuadri').style.display = 'none'; $q('tabQuadri').classList.remove('active'); }
+  // NOMAD-2026-008 Lot 1 : redessiner quand le cadre de la vue change de taille
+  global.addEventListener('nomadom:layout', () => { dirty = true; });
+  global.addEventListener('resize', () => { dirty = true; });
   $q('tabQuadri').addEventListener('click', show);
   ['tabBase', 'tabCover', 'tabInfo', 'tabDesign'].forEach(id => { const el = $q(id); if (el) el.addEventListener('click', hide); });
   global.CoverQuadri = { show, state: () => st, dome: () => dome };

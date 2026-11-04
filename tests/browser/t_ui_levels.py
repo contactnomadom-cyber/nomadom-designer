@@ -75,6 +75,21 @@ with sync_playwright() as p:
     check(r[0] >= 0 and r[1] <= vh and r[2] > 250, 'vue de tracé visible pendant le défilement')
     pg.click('#btnBaseOpen'); pg.wait_for_timeout(300)
 
+    # 8. Quadrisphère : mêmes cadres, mémoire séparée de Base
+    pg.evaluate('scrollTo(0, 0)'); pg.click('#tabQuadri'); pg.wait_for_timeout(1500)
+    for i in ['qd3d', 'qdKpis', 'qdCut', 'qdNodes']:
+        check(pg.query_selector('#' + i) is not None, 'Quadrisphère : élément conservé #' + i)
+    qk0 = pg.inner_text('#qdKpis')
+    pg.evaluate("() => document.getElementById('qdNodes').scrollIntoView({block: 'end'})"); pg.wait_for_timeout(300)
+    q = pg.eval_on_selector('#qd3d', 'e => { const r = e.getBoundingClientRect(); return [r.top, r.bottom, r.width, r.height] }')
+    check(q[0] >= 0 and q[1] <= vh and q[3] > 250, 'Quadrisphère : vue 3D visible tout en bas des réglages %s' % [round(x) for x in q])
+    pg.click('#qdSplitHandle .split-fold[data-fold="opts"]'); pg.wait_for_timeout(500)
+    q2 = pg.eval_on_selector('#qd3d', 'e => [e.getBoundingClientRect().width, e.width / e.getBoundingClientRect().width]')
+    check(q2[0] > q[2] + 200 and 0.9 < q2[1] < 2.1, 'Quadrisphère : réglages repliés, vue élargie et redessinée %s' % q2)
+    check(pg.evaluate("() => JSON.parse(localStorage.getItem('nomadom.ui.split.quadri')).fold") == 'opts', 'Quadrisphère : repli mémorisé à part')
+    pg.click('#qdSplitHandle .split-fold:not([hidden])'); pg.wait_for_timeout(300)
+    check(pg.inner_text('#qdKpis') == qk0, 'Quadrisphère : chiffres identiques')
+
     check(not errs, 'aucune erreur JavaScript : ' + str(errs[:3]))
     b.close()
 print('\n' + ('TOUT OK' if not fails else 'ÉCHECS : %d' % len(fails)))

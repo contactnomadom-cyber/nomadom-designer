@@ -281,6 +281,9 @@
     dirty = true;
   }
   function hide() { $q('viewQuadri').style.display = 'none'; $q('tabQuadri').classList.remove('active'); }
+  // NOMAD-2026-008 Lot 1 : redessiner quand le cadre de la vue change de taille
+  global.addEventListener('nomadom:layout', () => { dirty = true; });
+  global.addEventListener('resize', () => { dirty = true; });
   $q('tabQuadri').addEventListener('click', show);
   ['tabBase', 'tabCover', 'tabInfo', 'tabDesign'].forEach(id => { const el = $q(id); if (el) el.addEventListener('click', hide); });
   global.CoverQuadri = { show, state: () => st, dome: () => dome };
