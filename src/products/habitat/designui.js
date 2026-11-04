@@ -15,7 +15,7 @@
   let kmSet = { pattern: 'asanoha', density: 2, center: 'centroid' }, kmPick = false, kmSel = null, kmCache = null;
   let st = load(), model = null, level = 0, sel = null, built = false;
   let rotY = 0.7, rotX = 0.55, zoom3 = 1, view = { zoom: 1, panX: 0, panY: 0 };
-  let toileMode = 'coupe', showZones = true, style3 = 'real', dirty3 = true, eng = null, saveWarn = false;
+  let toileMode = 'coupe', showZones = true, style3 = 'real', amb3 = 'jour', dirty3 = true, eng = null, saveWarn = false;
   let cam = { yaw: 0.7, pitch: 0.55, dist: 9, target: [0, 1.1, 0] };
   const glbCache = new Map();   // id -> modèle .glb lu (Design3D.parseGLB)
   const mm = v => Math.round(v * 1000), cm = v => Math.round(v * 100);
@@ -68,7 +68,7 @@
       <div class="split-view split-stack" id="dsSplitView">
         <section class="pane"><h2><span>PLAN — VUE DU DESSUS</span><span id="dsPlanInfo"></span></h2>
           <div class="body"><canvas id="dsPlan"></canvas><div class="hint">glisser un élément = le déplacer (pas de 5 cm) · poignée ↻ = le faire pivoter (pas de 15°, libre avec Maj) · lâcher hors du dôme ou Suppr = effacer · molette = zoom · double-clic = recadrer</div></div></section>
-        <section class="pane"><h2><span>RENDU 3D</span><span><select id="ds3dStyle" style="font-family:var(--mono);font-size:11px;margin-right:6px"><option value="real">Réaliste</option><option value="maquette">Maquette d'architecte</option></select><select id="dsQual" style="font-family:var(--mono);font-size:11px;margin-right:6px;display:none" title="Haute : ombres douces, pleine résolution. Rapide : sans ombres, pour un ordinateur lent."><option value="1">Qualité haute</option><option value="0">Rapide</option></select><select id="dsToile" style="font-family:var(--mono);font-size:11px"><option value="coupe">Toile en coupe (voir dedans)</option><option value="verre">Toile transparente</option><option value="fil">Structure seule</option></select></span></h2>
+        <section class="pane"><h2><span>RENDU 3D</span><span><select id="ds3dStyle" style="font-family:var(--mono);font-size:11px;margin-right:6px"><option value="real">Réaliste</option><option value="maquette">Maquette d'architecte</option></select><select id="ds3dAmb" style="font-family:var(--mono);font-size:11px;margin-right:6px;display:none" title="Lumière et ciel du rendu réaliste. Tout est calculé : marche sans internet."><option value="jour">Plein jour</option><option value="matin">Matin</option><option value="couchant">Coucher de soleil</option><option value="couvert">Ciel couvert</option><option value="nuit">Nuit</option></select><select id="dsQual" style="font-family:var(--mono);font-size:11px;margin-right:6px;display:none" title="Haute : ombres douces, pleine résolution. Rapide : sans ombres, pour un ordinateur lent."><option value="1">Qualité haute</option><option value="0">Rapide</option></select><select id="dsToile" style="font-family:var(--mono);font-size:11px"><option value="coupe">Toile en coupe (voir dedans)</option><option value="verre">Toile transparente</option><option value="fil">Structure seule</option></select></span></h2>
           <div class="body"><canvas id="ds3d"></canvas><div class="hint" id="ds3dHint">glisser = tourner · clic droit ou Maj + glisser = déplacer · molette = zoom · double-clic = recadrer</div></div></section>
       </div>
       <div class="split-handle" id="dsSplitHandle"></div>
@@ -129,7 +129,8 @@
     $('dsStyle').addEventListener('change', e => { st.style = e.target.value; changed(); });
     $('dsZones').addEventListener('change', e => { showZones = e.target.checked; drawAll(); });
     $('dsToile').addEventListener('change', e => { toileMode = e.target.value; dirty3 = true; draw3D(); });
-    $('ds3dStyle').addEventListener('change', e => { style3 = e.target.value; dirty3 = true; draw3D(); });
+    $('ds3dStyle').addEventListener('change', e => { style3 = e.target.value; showAmb(); dirty3 = true; draw3D(); });
+    $('ds3dAmb').addEventListener('change', e => { amb3 = e.target.value; dirty3 = true; draw3D(); });
     $('dsQual').addEventListener('change', e => { if (eng && eng.setQuality) { eng.setQuality(e.target.value === '1'); draw3D(); } });
     $('dsAdd').addEventListener('click', () => {
       const it = Z.newItem($('dsAddType').value, 0, 0, level);
@@ -167,6 +168,7 @@
     try { eng = window.Design3DThree && Design3DThree.create($('ds3d')); } catch (err) { eng = null; console.warn(err); }
     if (!eng) try { eng = window.Design3D && Design3D.create($('ds3d')); } catch (err) { eng = null; console.warn(err); }
     if (eng && eng.isThree) $('dsQual').style.display = '';
+    showAmb();
     if (eng) events3DGL(); else { events3DCanvas(); $('ds3dHint').textContent = 'WebGL2 indisponible sur cet appareil : rendu simplifié · glisser = tourner · molette = zoom'; }
     (st.models || []).forEach(loadModel);
     $('dsProps').addEventListener('input', onProp); $('dsProps').addEventListener('change', e => { if (e.target.dataset.act === 'glb') { const f = e.target.files[0]; e.target.value = ''; if (f && sel && sel.kind === 'item') importGLB(f, st.items.find(i => i.id === sel.id)); return; } onProp(e); }); $('dsProps').addEventListener('click', onPropClick);
@@ -648,6 +650,8 @@
   // ---------------------------------------------------------
   // Rendu 3D WebGL (design3d.js) : vraie profondeur, ombres, matériaux
   // ---------------------------------------------------------
+  // le choix d'ambiance n'a de sens qu'avec le rendu Three.js en style réaliste
+  function showAmb() { const e = $('ds3dAmb'); if (e) e.style.display = eng && eng.isThree && style3 === 'real' ? '' : 'none'; }
   function draw3D() {
     if (!eng) return draw3DCanvas();
     if (dirty3) {
@@ -655,7 +659,7 @@
       const kumiko = kmSegments();
       // portes d'aplomb et plancher sur pilotis réglés dans l'onglet Base (NOMAD-2026-005 / 006)
       const CA = window.CoverApp, doors = CA && CA.doorScenes ? CA.doorScenes() : [], floor = CA && CA.floorScene ? CA.floorScene() : null;
-      if (eng.isThree) eng.update(Z, model, st, { style: style3, toile: toileMode, openings, kumiko, doors, floor }, () => eng.render(cam, toileMode === 'coupe'));
+      if (eng.isThree) eng.update(Z, model, st, { style: style3, ambiance: amb3, toile: toileMode, openings, kumiko, doors, floor }, () => eng.render(cam, toileMode === 'coupe'));
       else eng.setScene(Design3D.buildScene(Z, model, st, { style: style3, toile: toileMode, models: glbCache, openings, kumiko, doors, floor }));
       cam.target[1] = Math.min(cam.target[1], model.height); dirty3 = false;
     }

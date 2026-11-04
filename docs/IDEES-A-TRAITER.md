@@ -169,6 +169,22 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 
 ---
 
+## 8. Rendus plus beaux : ambiances, aménagement approfondi, ouvertures optimisées — 🛠 étape 1 en cours (04/11/2026)
+
+**Besoin** : des rendus 3D plus esthétiques avec des **choix d'ambiance**, un aménagement intérieur plus poussé (ossature CLS + mobilier, liste de débits et angles « façon SketchUp »), des ouvertures pensées avec le soleil. Réutiliser des briques existantes plutôt que tout développer.
+
+**Décidé**
+- Étape 1 (branche `feature/ambiances-rendu`) : menu « Ambiance » du rendu réaliste — plein jour, matin, coucher de soleil, ciel couvert, nuit (lampe intérieure). Tout calculé avec le ciel Three.js déjà intégré : **aucun fichier d'image**, reste hors ligne (les ciels HDRI Poly Haven auraient ajouté ≈ 1,5 Mo chacun).
+- Matériaux de l'aménagement : CLS sapin blanc raboté (38 × 63 à 38 × 235), OSB, multiplex, Agepan ; fournisseur de référence Bourguignon Bois (longueurs CLS 2,10 à 5,40 m suivant stock).
+- Briques repérées (licences à vérifier) : SunCalc (soleil → ouvertures), three-bvh-csg (découpes 3D), pmndrs postprocessing, three-gpu-pathtracer (images finales), OpenCutList et DomeCalc (débits), Blueprint3D (inspiration).
+
+**Questions ouvertes ❓**
+1. Mémoriser l'ambiance choisie avec l'aménagement ?
+2. Ouvertures : quel critère prime — lumière, vue, chaleur d'été, ventilation ?
+3. Formats exacts des panneaux chez Bourguignon Bois (OSB, multiplex, Agepan).
+
+---
+
 ## Fait
 - ✅ 0.9.16 — Porte d'aplomb (NOMAD-2026-005, étape 1) : calcul, structure 3D, choix constructifs, raccords sans pièce volante, bibliothèque de 14 assemblages (aperçu 🟠).
 - ✅ 0.9.15 — Kumiko dans le Design, aperçu (NOMAD-2026-002 moteur, NOMAD-2026-003 interface) : pose triangle par triangle dans la 3D, tableau et plan du panneau, statut 🟠.
