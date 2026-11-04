@@ -160,6 +160,8 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 - B (Pro technique) écarté.
 - Maquettes : `docs/maquettes/ui-2026-11/` (A1 Base, A2 Cover+, A3 Design, C1 Votre dôme, C2 Aménagement, B pour mémoire).
 
+**Mise à jour (04/11/2026)** : trois niveaux d'interface — **Développeur** (l'actuelle, la plus simple et détaillée ; seul changement : faire défiler les options en gardant le dôme visible, cadres de la vue et des options réglables), **Atelier = maquette B**, **Client = maquette C**. Brouillon de mission : `docs/maquettes/ui-2026-11/NOMAD-2026-008-fiche.md`.
+
 **Questions ouvertes ❓**
 1. Validation des maquettes A et C (écrans Base, Cover+, Design ; Quadrisphère et Informations suivront le même modèle).
 2. Mode Présentation : quels onglets montrer au client (Votre dôme, Toile, Aménagement, Pavillon) et le bouton « Préparer le devis » (le devis n'existe pas encore : idée n° 2).
