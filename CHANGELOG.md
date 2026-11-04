@@ -7,6 +7,13 @@
 
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
+## 0.9.17 — 04/11/2026 (NOMAD-2026-006, 007 et 008 Lot 1 : plancher, sas, cadres réglables)
+- **Plancher et soubassement** (aperçu 🟠, NOMAD-2026-006) : plancher sur pilotis en blocs (pentagone + triangle, étoile, plein), poutres, solives, charges ; visible dans la 3D de Base et du Design.
+- **Sas d'entrée** (aperçu 🟠, NOMAD-2026-007) : l'ouverture prolongée en prisme droit avec une deuxième porte ; **toile du sas** (patrons, rabat sous le dôme, recouvrements) ; charges du sas comptées dans la portance ; sas affiché dans la 3D de Cover+.
+- Porte, sas et plancher visibles dans tous les onglets : plan du Design, récapitulatif Informations, signalement dans Cover+.
+- **Cadres réglables** (NOMAD-2026-008, Lot 1) : dans Base, Cover+, Design et Quadrisphère, la vue reste fixe à l'écran pendant que les réglages défilent à droite. Cover+ : dôme 3D en haut, patron 2D en bas ; Design : plan en haut, rendu 3D en bas. Poignée pour régler la largeur (double-clic = taille par défaut), boutons pour replier un cadre ; taille et repli mémorisés par onglet sur cet ordinateur. Aucun réglage, texte ni chiffre retiré.
+- Contrôles : nouvelles suites `floor`, `sas-toile`, `t_floor` et `t_ui_levels` (navigateur : cadres des quatre onglets, mémoire, mêmes chiffres). 32 suites au total, toutes vertes ; dômes de référence inchangés.
+
 ## 0.9.16 — 03/11/2026 (NOMAD-2026-005 : porte d'aplomb, structure 3D, assemblages)
 - Onglet Base : sous chaque ouverture qui touche le sol, **« Ajouter une porte d'aplomb »**. Largeur, hauteur, décalage et recul vers l'intérieur (réglé porte par porte). L'outil dit si la porte passe (🟡) ou non (🔴, avec la hauteur et la largeur maxi), donne l'huisserie, les potelets, la surface à fermer et l'ébrasement.
 - **Structure de la porte en 3D** (aperçu 🟠, section provisoire 45 × 70 mm) : huisserie, chevêtre posé sur le linteau et ses appuis, potelets, rampants, chevrons jusqu'au cadre du dôme, toit de l'avant-corps.
