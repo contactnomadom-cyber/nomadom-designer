@@ -11,6 +11,7 @@ Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des test
 - Onglet Design : bouton **« 📷 Rendu photo »**. L'image réaliste (ombres douces, reflets, lumière du ciel) se calcule progressivement, avec la progression en % ; bouton **« ⬇ PNG »** pour l'enregistrer (devis, site, présentation client). Bouger la vue revient à la 3D habituelle. Fonctionne hors ligne. La coupe « voir dedans » n'est pas encore rendue en photo (toile entière, avec un avertissement).
 - Moteur 3D : three.js reste en 0.169 ; ajout de three-gpu-pathtracer 0.0.23 dans `vendor/three/` (+ ≈ 180 Ko), recette de régénération dans `vendor/three/README.md`.
 - Contrôles : nouvelle suite navigateur `t_photo` (rendu terminé, image pas noire, retour à la 3D intacte). 33 suites au total ; dômes de référence inchangés.
+- Outillage : `test-all.mjs --parallel=1` (ou `TEST_PARALLEL=1`) lance les tests navigateur un par un, pour les petites machines (2 processeurs) où trois navigateurs en parallèle font dépasser les délais. Par défaut : 3, comme avant.
 
 ## 0.9.17 — 04/11/2026 (NOMAD-2026-006, 007 et 008 Lot 1 : plancher, sas, cadres réglables)
 - **Plancher et soubassement** (aperçu 🟠, NOMAD-2026-006) : plancher sur pilotis en blocs (pentagone + triangle, étoile, plein), poutres, solives, charges ; visible dans la 3D de Base et du Design.

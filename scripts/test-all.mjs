@@ -1,5 +1,5 @@
 // Contrôle complet : assemble le HTML, puis lance TOUTE la batterie sur cet artefact.
-// Usage : node scripts/test-all.mjs [--quick] [--no-browser] [--only engine,arcs,textile,t_names,…]
+// Usage : node scripts/test-all.mjs [--quick] [--no-browser] [--parallel=1..3] [--only engine,arcs,textile,t_names,…]
 //   --quick      : moteur + Arcs + toile 2V/3V + 3 tests navigateur (≈ 3 min)
 //   (par défaut) : tout (≈ 10 min)
 // Code de sortie 0 seulement si tout passe. Écrit build/check/report.md et, si tout passe,
@@ -64,7 +64,9 @@ const run = s => new Promise(res => {
 // Node en série ; navigateur 3 à la fois (au-delà, Chromium ne charge plus la page à temps)
 for (const s of suites.filter(s => !s.browser)) await run(s);
 const queue = suites.filter(s => s.browser);
-await Promise.all([0, 1, 2].map(async () => { while (queue.length) await run(queue.shift()); }));
+// --parallel=N (ou TEST_PARALLEL=N) : 1 sur une petite machine (2 processeurs), sinon des clics dépassent 30 s
+const pi = process.argv.find(a => a.startsWith('--parallel=')), par = Math.max(1, Math.min(3, +(pi ? pi.split('=')[1] : process.env.TEST_PARALLEL || 3) || 3));
+await Promise.all(Array.from({ length: par }, async () => { while (queue.length) await run(queue.shift()); }));
 
 // 4. rapport
 const bad = suites.filter(s => !s.ok);
