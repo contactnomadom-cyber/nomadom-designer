@@ -64,6 +64,15 @@
     const libOpts = cats.map(c => '<optgroup label="' + c + '">' + Z.LIBRARY.filter(l => l.cat === c).map(l => '<option value="' + l.type + '">' + l.label + ' (' + cm(l.w) + '×' + cm(l.d) + ')</option>').join('') + '</optgroup>').join('');
     $('viewDesign').innerHTML = `
       <div class="info-head"><h2>Design — aménagement intérieur</h2><span class="stat" id="dsDome"></span></div>
+      <div class="split" data-split="design" id="dsSplit">
+      <div class="split-view split-stack" id="dsSplitView">
+        <section class="pane"><h2><span>PLAN — VUE DU DESSUS</span><span id="dsPlanInfo"></span></h2>
+          <div class="body"><canvas id="dsPlan"></canvas><div class="hint">glisser un élément = le déplacer (pas de 5 cm) · poignée ↻ = le faire pivoter (pas de 15°, libre avec Maj) · lâcher hors du dôme ou Suppr = effacer · molette = zoom · double-clic = recadrer</div></div></section>
+        <section class="pane"><h2><span>RENDU 3D</span><span><select id="ds3dStyle" style="font-family:var(--mono);font-size:11px;margin-right:6px"><option value="real">Réaliste</option><option value="maquette">Maquette d'architecte</option></select><select id="dsQual" style="font-family:var(--mono);font-size:11px;margin-right:6px;display:none" title="Haute : ombres douces, pleine résolution. Rapide : sans ombres, pour un ordinateur lent."><option value="1">Qualité haute</option><option value="0">Rapide</option></select><select id="dsToile" style="font-family:var(--mono);font-size:11px"><option value="coupe">Toile en coupe (voir dedans)</option><option value="verre">Toile transparente</option><option value="fil">Structure seule</option></select></span></h2>
+          <div class="body"><canvas id="ds3d"></canvas><div class="hint" id="ds3dHint">glisser = tourner · clic droit ou Maj + glisser = déplacer · molette = zoom · double-clic = recadrer</div></div></section>
+      </div>
+      <div class="split-handle" id="dsSplitHandle"></div>
+      <div class="split-opts" id="dsSplitOpts">
       <div class="toolbar">
         <span class="group-title">Plan</span>
         <label>Niveau<select id="dsLevel"><option value="0">Rez-de-chaussée</option><option value="1">Mezzanine</option></select></label>
@@ -91,12 +100,6 @@
         <label>Panneaux<span style="display:flex;gap:4px"><button id="dsKmPick">Poser des panneaux</button><button id="dsKmClear">Tout retirer</button></span></label>
         <label>Aperçu<span class="muted" style="font-size:11px;max-width:260px">🟠 cotes d'axe à axe (lattes sans épaisseur), aucune liste de débit. Cliquer un triangle dans le rendu 3D pour poser ou retirer un panneau.</span></label>
       </div>
-      <div class="panes">
-        <section class="pane"><h2><span>PLAN — VUE DU DESSUS</span><span id="dsPlanInfo"></span></h2>
-          <div class="body"><canvas id="dsPlan"></canvas><div class="hint">glisser un élément = le déplacer (pas de 5 cm) · poignée ↻ = le faire pivoter (pas de 15°, libre avec Maj) · lâcher hors du dôme ou Suppr = effacer · molette = zoom · double-clic = recadrer</div></div></section>
-        <section class="pane"><h2><span>RENDU 3D</span><span><select id="ds3dStyle" style="font-family:var(--mono);font-size:11px;margin-right:6px"><option value="real">Réaliste</option><option value="maquette">Maquette d'architecte</option></select><select id="dsQual" style="font-family:var(--mono);font-size:11px;margin-right:6px;display:none" title="Haute : ombres douces, pleine résolution. Rapide : sans ombres, pour un ordinateur lent."><option value="1">Qualité haute</option><option value="0">Rapide</option></select><select id="dsToile" style="font-family:var(--mono);font-size:11px"><option value="coupe">Toile en coupe (voir dedans)</option><option value="verre">Toile transparente</option><option value="fil">Structure seule</option></select></span></h2>
-          <div class="body"><canvas id="ds3d"></canvas><div class="hint" id="ds3dHint">glisser = tourner · clic droit ou Maj + glisser = déplacer · molette = zoom · double-clic = recadrer</div></div></section>
-      </div>
       <div class="selection-readout ds-props" id="dsProps"></div>
       <div class="selection-readout" id="dsList"></div>
       <div class="selection-readout" id="dsKumiko"></div>
@@ -106,7 +109,10 @@
         <label class="img-btn">Importer (.json)<input type="file" id="dsImport" accept="application/json,.json"></label>
         <button id="dsClear">Tout effacer</button>
         <span class="muted" style="align-self:center;font-family:var(--mono);font-size:11px">L'aménagement est gardé automatiquement dans ce navigateur.</span>
+      </div>
+      </div>
       </div>`;
+    if (window.SplitLayout) window.SplitLayout.mountAll(); // NOMAD-2026-008 Lot 1 : cadres réglables
     syncInputs();
     $('dsLevel').addEventListener('change', e => { level = +e.target.value; sel = null; drawAll(); });
     $('dsKmPattern').addEventListener('change', e => { kmSet.pattern = e.target.value; });
@@ -167,6 +173,7 @@
     $('dsList').addEventListener('click', e => { const tr = e.target.closest('[data-sel]'); if (!tr) return; const [k, id] = tr.dataset.sel.split(':'); sel = { kind: k, id }; if (k === 'item') { level = st.items.find(i => i.id === id).level; $('dsLevel').value = level; } else { level = 0; $('dsLevel').value = 0; } drawAll(); });
     window.addEventListener('keydown', onKey);
     window.addEventListener('resize', () => { if (visible()) drawAll(); });
+    window.addEventListener('nomadom:layout', e => { if (e.detail === 'design' && visible()) drawAll(); });
     built = true;
   }
   function alertBox(t) { $('dsProps').innerHTML = '<span class="ds-warn">' + esc(t) + '</span>'; }

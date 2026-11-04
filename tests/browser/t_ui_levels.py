@@ -90,6 +90,38 @@ with sync_playwright() as p:
     pg.click('#qdSplitHandle .split-fold:not([hidden])'); pg.wait_for_timeout(300)
     check(pg.inner_text('#qdKpis') == qk0, 'Quadrisphère : chiffres identiques')
 
+    # 9. Cover+ : dôme 3D et patron 2D empilés, fixes pendant le défilement
+    pg.evaluate('scrollTo(0, 0)'); pg.click('#tabCover'); pg.wait_for_timeout(1200)
+    pg.click('#btnDevelopEtages'); pg.wait_for_timeout(300)
+    for _ in range(200):
+        if 'morceaux' in pg.inner_text('#dev2dInfo'): break
+        pg.wait_for_timeout(300)
+    info0 = pg.inner_text('#dev2dInfo')
+    check('morceaux' in info0, 'Cover+ : découpe par étages calculée (' + info0 + ')')
+    pg.evaluate("() => document.getElementById('edgeClasses').scrollIntoView({block: 'end'})"); pg.wait_for_timeout(400)
+    c3 = pg.eval_on_selector('#viewer3d', 'e => { const r = e.getBoundingClientRect(); return [r.top, r.bottom, r.height] }')
+    c2 = pg.eval_on_selector('#viewer2d', 'e => { const r = e.getBoundingClientRect(); return [r.top, r.bottom, r.height] }')
+    check(c3[0] >= 0 and c2[1] <= vh and c3[2] > 180 and c2[2] > 180 and c3[1] <= c2[0], 'Cover+ : 3D au-dessus, 2D en dessous, les deux visibles en bas des réglages %s %s' % ([round(x) for x in c3], [round(x) for x in c2]))
+    pg.click('#coverSplitHandle .split-fold[data-fold="opts"]'); pg.wait_for_timeout(600)
+    r2 = pg.eval_on_selector('#viewer2d', 'e => e.width / e.getBoundingClientRect().width')
+    check(not pg.is_visible('#coverSplitOpts') and 0.9 < r2 < 2.1, 'Cover+ : réglages repliés, patron redessiné en grand (%.2f)' % r2)
+    pg.click('#coverSplitHandle .split-fold:not([hidden])'); pg.wait_for_timeout(400)
+    check(pg.inner_text('#dev2dInfo') == info0, 'Cover+ : même résultat de découpe')
+
+    # 10. Design : plan et rendu 3D empilés, fixes pendant le défilement
+    pg.evaluate('scrollTo(0, 0)'); pg.click('#tabDesign'); pg.wait_for_timeout(2000)
+    for i in ['dsPlan', 'ds3d', 'dsProps', 'dsList', 'dsKumiko', 'dsPrint', 'dsLevel', 'dsMezzOn', 'dsKmPattern']:
+        check(pg.query_selector('#' + i) is not None, 'Design : élément conservé #' + i)
+    check(pg.query_selector('#dsSplitHandle .split-fold') is not None, 'Design : poignée en place')
+    pg.evaluate("() => document.querySelector('#viewDesign .ds-actions').scrollIntoView({block: 'end'})"); pg.wait_for_timeout(400)
+    d1 = pg.eval_on_selector('#dsPlan', 'e => { const r = e.getBoundingClientRect(); return [r.top, r.bottom, r.height] }')
+    d2 = pg.eval_on_selector('#ds3d', 'e => { const r = e.getBoundingClientRect(); return [r.top, r.bottom, r.height] }')
+    check(d1[0] >= 0 and d2[1] <= vh and d1[2] > 180 and d2[2] > 180, 'Design : plan et 3D visibles en bas des réglages %s %s' % ([round(x) for x in d1], [round(x) for x in d2]))
+    pg.click('#dsSplitHandle .split-fold[data-fold="opts"]'); pg.wait_for_timeout(600)
+    rp = pg.eval_on_selector('#dsPlan', 'e => e.width / e.getBoundingClientRect().width')
+    check(not pg.is_visible('#dsSplitOpts') and 0.9 < rp < 2.1, 'Design : réglages repliés, plan redessiné en grand (%.2f)' % rp)
+    pg.click('#dsSplitHandle .split-fold:not([hidden])'); pg.wait_for_timeout(300)
+
     check(not errs, 'aucune erreur JavaScript : ' + str(errs[:3]))
     b.close()
 print('\n' + ('TOUT OK' if not fails else 'ÉCHECS : %d' % len(fails)))

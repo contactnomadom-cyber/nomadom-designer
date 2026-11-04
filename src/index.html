@@ -66,6 +66,11 @@
   .split.fold-view > .split-handle, .split.fold-opts > .split-handle{ cursor: default; }
   .split.fold-view .split-grip, .split.fold-opts .split-grip{ display:none; }
   .split > .split-opts > .toolbar:first-child{ margin-top:0; }
+  /* Cover+ : dôme 3D et patron 2D empilés dans le cadre fixe */
+  .split > .split-view.split-stack{ display:flex; flex-direction:column; gap:8px; }
+  .split > .split-view.split-stack canvas{ height: calc((100vh - 140px) / 2) !important; min-height: 200px; }
+  .split > .split-opts > .btnrow:first-child{ margin-top:0; }
+  @media (max-width: 900px){ .split > .split-view.split-stack canvas{ height: 30vh !important; } }
   @media (max-width: 900px){
     .split{ flex-direction:column; align-items:stretch; }
     .split > .split-view{ flex:none; width:100%; top:0; z-index:5; background: var(--bg); }
@@ -321,6 +326,44 @@
 </div>
 <div id="viewCover">
 
+  <div class="split" data-split="cover" id="coverSplit">
+  <div class="split-view split-stack" id="coverSplitView">
+    <section class="pane">
+      <h2><span>DÔME 3D</span><span id="hoverInfo">&nbsp;</span></h2>
+      <div class="body">
+        <canvas id="viewer3d"></canvas>
+        <div class="hint">glisser = rotation · molette = zoom · clic = sélection · maj+clic = multi-sélection</div>
+      </div>
+    </section>
+    <section class="pane">
+      <h2><span>DÉVELOPPEMENT 2D</span><span id="dev2dInfo">&nbsp;</span></h2>
+      <div class="body">
+        <canvas id="viewer2d"></canvas>
+        <button id="btnBackOverview" class="overlay-btn" style="display:none">← Tous les morceaux</button>
+        <label id="peelTypeBox" class="overlay-sel" style="display:none">Type d'ouverture <select id="paramPeelType"><option value="one">1 fente</option></select></label>
+        <div class="hint" id="hint2d">sélectionnez un ou plusieurs triangles dans la vue 3D</div>
+      </div>
+    </section>
+  </div>
+  <div class="split-handle" id="coverSplitHandle"></div>
+  <div class="split-opts" id="coverSplitOpts">
+  <div class="btnrow">
+    <button id="modeTriangle" class="on">Triangle</button>
+    <button id="btnCreatePanel">Créer panneau</button>
+    <button id="btnDevelop">Développer</button>
+    <button id="btnDevelopEtages" title="Une bande par rangée de triangles, découpée en un minimum de morceaux qui tiennent dans la laize utile">Étages (par rangée)</button>
+    <button id="btnRoll" title="Placement des morceaux du mode Étages sur le rouleau (rotation 0/180°, sans retournement)">Plan de coupe (rouleau)</button>
+    <div class="sep"></div>
+    <button id="btnFlat" title="Tous les morceaux exacts de la découpe choisie, posés à plat étage par étage, avec toutes les cotes (molette = zoom)">⇊ Vue aplatie (cotes)</button>
+    <label class="img-btn" title="Plaquer une image (JPG, PNG, GIF) sur le dôme 3D">🖼 Image sur le dôme
+      <input type="file" id="paramDomeImage" accept="image/jpeg,image/png,image/gif,image/webp">
+    </label>
+    <select id="paramImageProj" title="Projection de l'image sur le dôme">
+      <option value="ciel">Vue du ciel (centre = sommet)</option>
+      <option value="panorama">Panorama (tour du dôme)</option>
+    </select>
+    <button id="btnImageOff" title="Retirer l'image" style="display:none">✕ Image</button>
+  </div>
   <div class="toolbar">
     <span class="group-title">Toile</span>
     <label>Laize (mm)
@@ -399,42 +442,6 @@
 
   <div class="offset-info" id="offsetInfo" style="display:none"></div>
 
-  <div class="panes">
-    <section class="pane">
-      <h2><span>DÔME 3D</span><span id="hoverInfo">&nbsp;</span></h2>
-      <div class="body">
-        <canvas id="viewer3d"></canvas>
-        <div class="hint">glisser = rotation · molette = zoom · clic = sélection · maj+clic = multi-sélection</div>
-      </div>
-    </section>
-    <section class="pane">
-      <h2><span>DÉVELOPPEMENT 2D</span><span id="dev2dInfo">&nbsp;</span></h2>
-      <div class="body">
-        <canvas id="viewer2d"></canvas>
-        <button id="btnBackOverview" class="overlay-btn" style="display:none">← Tous les morceaux</button>
-        <label id="peelTypeBox" class="overlay-sel" style="display:none">Type d'ouverture <select id="paramPeelType"><option value="one">1 fente</option></select></label>
-        <div class="hint" id="hint2d">sélectionnez un ou plusieurs triangles dans la vue 3D</div>
-      </div>
-    </section>
-  </div>
-
-  <div class="btnrow">
-    <button id="modeTriangle" class="on">Triangle</button>
-    <button id="btnCreatePanel">Créer panneau</button>
-    <button id="btnDevelop">Développer</button>
-    <button id="btnDevelopEtages" title="Une bande par rangée de triangles, découpée en un minimum de morceaux qui tiennent dans la laize utile">Étages (par rangée)</button>
-    <button id="btnRoll" title="Placement des morceaux du mode Étages sur le rouleau (rotation 0/180°, sans retournement)">Plan de coupe (rouleau)</button>
-    <div class="sep"></div>
-    <button id="btnFlat" title="Tous les morceaux exacts de la découpe choisie, posés à plat étage par étage, avec toutes les cotes (molette = zoom)">⇊ Vue aplatie (cotes)</button>
-    <label class="img-btn" title="Plaquer une image (JPG, PNG, GIF) sur le dôme 3D">🖼 Image sur le dôme
-      <input type="file" id="paramDomeImage" accept="image/jpeg,image/png,image/gif,image/webp">
-    </label>
-    <select id="paramImageProj" title="Projection de l'image sur le dôme">
-      <option value="ciel">Vue du ciel (centre = sommet)</option>
-      <option value="panorama">Panorama (tour du dôme)</option>
-    </select>
-    <button id="btnImageOff" title="Retirer l'image" style="display:none">✕ Image</button>
-  </div>
 
   <div class="selection-readout" id="selectionReadout">
     <span class="muted">Aucun triangle sélectionné — cliquez sur une face du dôme.</span>
@@ -447,6 +454,8 @@
 
   <div class="edge-classes" id="edgeClasses"></div>
 
+  </div>
+  </div>
 </div>
 <section id="viewQuadri" style="display:none">
   <div class="info-head"><h2>Quadrisphère — pavillon événementiel</h2><span class="stat">Dôme sur 4 pieds et 4 arches · base octaèdre · conception Nomad'Om</span></div>

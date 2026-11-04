@@ -104,6 +104,7 @@
 
     apply(false);
     return {
+      root,
       get state() { return { ratio: st.ratio, fold: st.fold }; },
       set(next) { st = { ratio: clamp(next.ratio ?? st.ratio), fold: next.fold ?? st.fold }; apply(true); }
     };
@@ -113,9 +114,10 @@
   function mountAll() {
     document.querySelectorAll('.split[data-split]').forEach(el => {
       const n = el.getAttribute('data-split');
-      if (!api.instances[n]) api.instances[n] = mount(el);
+      if (!api.instances[n] || api.instances[n].root !== el) api.instances[n] = mount(el); // vue reconstruite : on remonte
     });
   }
+  api.mountAll = mountAll;
   if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountAll); else mountAll();
   }

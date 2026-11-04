@@ -93,7 +93,15 @@ Reportée à plus tard (décision de Nathan du 04/11/2026, dans la ligne du 01/1
 1. Onglet Base : la vue 3D est dans un cadre fixe à gauche ; tous les réglages (dôme, structure, chiffres clés, ouvertures, porte, sas, plancher, montants, triangles) sont dans une colonne à droite qui défile. Une poignée entre les deux règle la largeur (double-clic = taille par défaut, flèches ← → au clavier) ; deux petits boutons replient l'un ou l'autre cadre. Taille et repli sont mémorisés sur l'ordinateur. Sur écran étroit (tablette en portrait), la vue passe au-dessus des réglages.
 2. Fichiers : `src/ui/split-layout.js` (nouveau), `src/index.html` (mise en page de Base, styles), `build/manifest.json`, `src/app/app.js` (+7 lignes : redessiner la vue quand son cadre change), `tests/browser/t_ui_levels.py` (nouveau), `scripts/test-all.mjs` (ajout du test).
 3. Tests : `t_beta, t_names, t_openings, t_floor, t_door, t_ui_levels` → OK 6/6. Identifiants existants tous conservés. Comptage de référence inchangé (30 A · 35 B · 80 C · 20 D).
-4. Reste : appliquer les mêmes cadres aux autres onglets (Cover+, Design, Quadrisphère) si Nathan valide ; sélecteur de niveau avec le Lot 2.
+4. Reste : sélecteur de niveau avec le Lot 2.
+
+**Lot 1, suite — 04/11/2026 (« on push et on avance »).** Mêmes cadres dans les quatre onglets à vue :
+- **Quadrisphère** : vue 3D fixe à gauche, réglages à droite (comme Base).
+- **Cover+** : choix de Nathan « 3D + 2D empilées » : dôme 3D en haut, développement 2D en bas, tous deux fixes ; à droite, la rangée de boutons (Triangle, Développer, Étages, Plan de coupe…) en tête, puis toile, coutures, marges, tableaux.
+- **Design** : même principe que Cover+ (plan vu du dessus en haut, rendu 3D en bas).
+- Chaque onglet garde sa propre taille et son propre repli.
+- Fichiers en plus : `src/products/habitat/designui.js` (gabarit de la page Design, affichage seulement), `src/products/quadrisphere/quadri-ui.js` (+3 lignes : redessiner quand le cadre change).
+- Tests : `t_ui_levels` étendu aux quatre onglets ; contrôle complet lancé avant remise.
 
 ## Décision finale de Nathan
 —

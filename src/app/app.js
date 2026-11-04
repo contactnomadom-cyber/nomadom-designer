@@ -1507,6 +1507,7 @@
   }
 
   window.addEventListener('resize', () => { render(); render2D(); });
+  window.addEventListener('nomadom:layout', e => { if (e.detail === 'cover') { render(); render2D(); } }); // NOMAD-2026-008
 
   document.getElementById('btnRegenerate').addEventListener('click', regenerate);
   ['paramDetail', 'paramMethod', 'paramSymmetry', 'paramPartial', 'paramAlign'].forEach(id => $id(id).addEventListener('change', regenerate));
