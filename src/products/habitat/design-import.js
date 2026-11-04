@@ -50,7 +50,7 @@
     if (!isObj(raw)) return { ok: false, errors: ['ce n\'est pas un aménagement (objet attendu)'] };
     if (raw.version !== 1) return { ok: false, errors: ['version de format ' + escapeText(raw.version) + ' inconnue (attendue : 1)'] };
     const lib = new Map((library || []).map(l => [l.type, l]));
-    const out = { version: 1, items: [], openings: [], mezz: Object.assign({}, defaults.mezz), style: defaults.style };
+    const out = { version: 1, items: [], openings: [], mezz: Object.assign({}, defaults.mezz), style: defaults.style, site: Object.assign({ city: 'beauraing', north: 0 }, defaults.site) };
 
     // éléments
     const items = raw.items === undefined ? [] : raw.items;
@@ -104,6 +104,14 @@
       }
     }
     if (raw.style !== undefined) { if (STYLES.indexOf(raw.style) < 0) err('style de plan inconnu'); else out.style = raw.style; }
+    // lieu du projet et orientation du nord (course du soleil)
+    if (raw.site !== undefined) {
+      if (!isObj(raw.site)) err('« site » doit être un objet');
+      else {
+        if (raw.site.city !== undefined) { if (typeof raw.site.city !== 'string' || !/^[a-z0-9-]{1,30}$/.test(raw.site.city)) err('lieu du projet invalide'); else out.site.city = raw.site.city; }
+        if (raw.site.north !== undefined) { if (!isNum(raw.site.north) || Math.abs(raw.site.north) > 360) err('orientation du nord impossible'); else out.site.north = raw.site.north; }
+      }
+    }
 
     // panneaux Kumiko (NOMAD-2026-003) : un panneau par triangle, repéré par ses 3 nœuds
     if (raw.kumiko !== undefined) {

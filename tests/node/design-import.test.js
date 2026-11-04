@@ -98,6 +98,15 @@ refused(st({ kumiko: { panels: [{ face: 'N1-N2"><b>' }] } }), 'Kumiko : triangle
 refused(st({ kumiko: { panels: [{ face: 'N1-N2-N3', density: 9 }] } }), 'Kumiko : densité 9', 'densité');
 refused(st({ kumiko: { panels: [{ face: 'N1-N2-N3', pattern: '<b>' }] } }), 'Kumiko : motif balisé', 'motif');
 refused(st({ kumiko: 'oui' }), 'Kumiko : texte', 'kumiko');
+// lieu du projet et nord (course du soleil)
+const ss = V(st({ site: { city: 'namur', north: 35 } }));
+check(ss.ok && ss.state.site.city === 'namur' && ss.state.site.north === 35, 'lieu et nord relus');
+check(V(st()).ok && V(st()).state.site.city === 'beauraing' && V(st()).state.site.north === 0, 'sans lieu : Beauraing, nord en haut');
+const old = st(); delete old.site;
+check(V(old).ok && V(old).state.site.north === 0, 'ancien aménagement sans « site » : accepté, nord en haut');
+refused(st({ site: { city: '<b>' } }), 'lieu balisé', 'lieu');
+refused(st({ site: { north: 'nord' } }), 'nord en texte', 'nord');
+refused(st({ site: 'Namur' }), 'site en texte', 'site');
 
 if (fails.length) { console.log('ÉCHEC ' + fails.length + '/' + n); fails.slice(0, 25).forEach(x => console.log('  ' + x)); process.exit(1); }
 console.log('OK ' + n + '/' + n);

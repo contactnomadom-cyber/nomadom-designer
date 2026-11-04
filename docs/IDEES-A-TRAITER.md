@@ -169,7 +169,7 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 
 ---
 
-## 8. Rendus plus beaux : ambiances, aménagement approfondi, ouvertures optimisées — 🛠 étape 1 en cours (04/11/2026)
+## 8. Rendus plus beaux : ambiances, aménagement approfondi, ouvertures optimisées — 🛠 étapes 1 et 2 en cours (04/11/2026)
 
 **Besoin** : des rendus 3D plus esthétiques avec des **choix d'ambiance**, un aménagement intérieur plus poussé (ossature CLS + mobilier, liste de débits et angles « façon SketchUp »), des ouvertures pensées avec le soleil. Réutiliser des briques existantes plutôt que tout développer.
 
@@ -178,10 +178,14 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 - Matériaux de l'aménagement : CLS sapin blanc raboté (38 × 63 à 38 × 235), OSB, multiplex, Agepan ; fournisseur de référence Bourguignon Bois (longueurs CLS 2,10 à 5,40 m suivant stock).
 - Briques repérées (licences à vérifier) : SunCalc (soleil → ouvertures), three-bvh-csg (découpes 3D), pmndrs postprocessing, three-gpu-pathtracer (images finales), OpenCutList et DomeCalc (débits), Blueprint3D (inspiration).
 
+- Étape 2 (branche `feature/soleil-ouvertures`, 04/11/2026) : barre « Site et soleil » — lieu par ville (liste intégrée, hors ligne), nord sur le plan (flèche tournée à l'écran et à l'impression, gardé dans l'aménagement), soleil réel par date et heure belge, arcs du 21 décembre et du 21 juin, carte des faces (bilan fenêtres hiver − été, soleil d'hiver, soleil d'été) et lecture « meilleurs côtés ». Statut 🟡 calculé : rayonnement direct par ciel clair, sans ombre du terrain ni des arbres.
+- Critères de Nathan pour les ouvertures (04/11/2026) : lumière en hiver, pas de surchauffe l'été, ventilation, vue — les quatre comptent.
+
 **Questions ouvertes ❓**
 1. Mémoriser l'ambiance choisie avec l'aménagement ?
-2. Ouvertures : quel critère prime — lumière, vue, chaleur d'été, ventilation ?
-3. Formats exacts des panneaux chez Bourguignon Bois (OSB, multiplex, Agepan).
+2. Étape 3 : ventilation (ouvertures basses + hautes, effet cheminée) et vue (repère du paysage sur le plan).
+3. Ajouter les ombres du terrain (arbres, bâtiments) ? Une ville absente de la liste : coordonnées GPS en option ?
+4. Formats exacts des panneaux chez Bourguignon Bois (OSB, multiplex, Agepan).
 
 ---
 

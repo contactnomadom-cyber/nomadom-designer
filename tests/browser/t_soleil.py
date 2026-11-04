@@ -1,0 +1,76 @@
+# Site et soleil (onglet Design) : lieu, nord sur le plan, soleil réel, carte des faces.
+# Usage : python3 tests/browser/t_soleil.py dist/nomadom-designer.html [dossier_images]
+import sys, os
+from playwright.sync_api import sync_playwright
+APP = 'file://' + os.path.abspath(sys.argv[1])
+OUT = sys.argv[2] if len(sys.argv) > 2 else None
+fails = []
+def check(c, m):
+    print(('OK   ' if c else 'ÉCHEC ') + m)
+    if not c: fails.append(m)
+def snap(pg, name):
+    if OUT: os.makedirs(OUT, exist_ok=True); pg.locator('#ds3d').screenshot(path=os.path.join(OUT, name + '.png'))
+with sync_playwright() as p:
+    b = p.chromium.launch(args=["--use-gl=swiftshader", "--enable-webgl", "--ignore-gpu-blocklist"])
+    pg = b.new_page(viewport={'width': 1400, 'height': 1000})
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.goto(APP); pg.wait_for_timeout(1500)
+    pg.click('#tabDesign'); pg.wait_for_timeout(2500)
+    shot3 = lambda: pg.eval_on_selector('#ds3d', 'c => c.toDataURL()')
+    plan = lambda: pg.eval_on_selector('#dsPlan', 'c => c.toDataURL()')
+    check(pg.is_visible('#dsSunBar'), 'barre « Site et soleil » visible')
+    check(pg.input_value('#dsSiteCity') == 'beauraing' and pg.input_value('#dsSiteNorth') == '0', 'par défaut : Beauraing, nord en haut')
+    check(not pg.is_visible('#dsSunWhen'), 'date et heure cachées tant que le soleil suit l\'ambiance')
+    img0, plan0 = shot3(), plan()
+    # nord tourné : la flèche du plan tourne, l'aménagement est gardé
+    pg.fill('#dsSiteNorth', '90'); pg.dispatch_event('#dsSiteNorth', 'change'); pg.wait_for_timeout(600)
+    check(plan() != plan0, 'nord à 90° : la flèche du plan tourne')
+    check(pg.evaluate('CoverDesign.state().site.north') == 90, 'nord gardé dans l\'aménagement')
+    pg.fill('#dsSiteNorth', '0'); pg.dispatch_event('#dsSiteNorth', 'change'); pg.wait_for_timeout(600)
+    check(plan() == plan0, 'nord remis à 0 : plan identique au départ')
+    # soleil réel
+    pg.select_option('#dsSunMode', 'real'); pg.wait_for_timeout(1200)
+    check(pg.is_visible('#dsSunWhen'), 'soleil réel : date et heure visibles')
+    pg.fill('#dsSunDate', '2026-06-21'); pg.dispatch_event('#dsSunDate', 'change')
+    pg.eval_on_selector('#dsSunHour', 'e => { e.value = 14; e.dispatchEvent(new Event("input")); }'); pg.wait_for_timeout(1200)
+    info = pg.inner_text('#dsSunInfo')
+    check('Soleil à 6' in info and 'S' in info, '21 juin 14 h à Beauraing : soleil haut (' + info.split(' · ')[0] + ')')
+    sc = pg.evaluate('CoverDesign._sunScene()')
+    check(len(sc['arcs']) == 2 and sc['now']['elevation'] > 1.0, 'arcs du 21 déc. et du 21 juin + soleil placé')
+    img_juin = shot3(); snap(pg, 'soleil-juin-14h')
+    check(img_juin != img0, 'soleil réel : la 3D change (arcs, soleil, ombres)')
+    pg.fill('#dsSunDate', '2026-12-21'); pg.dispatch_event('#dsSunDate', 'change'); pg.wait_for_timeout(1200)
+    info = pg.inner_text('#dsSunInfo')
+    check('Soleil à 1' in info, '21 décembre 14 h : soleil bas (' + info.split(' · ')[0] + ')')
+    snap(pg, 'soleil-decembre-14h')
+    pg.eval_on_selector('#dsSunHour', 'e => { e.value = 21; e.dispatchEvent(new Event("input")); }'); pg.wait_for_timeout(800)
+    check('couché' in pg.inner_text('#dsSunInfo'), '21 décembre 21 h : soleil couché')
+    # carte des faces
+    pg.select_option('#dsSunMode', 'amb'); pg.select_option('#dsSunMap', 'bilan'); pg.wait_for_timeout(1500)
+    sc = pg.evaluate('CoverDesign._sunScene()')
+    n = pg.evaluate('CoverDesign._model().skinTris.length')
+    check(sc['faces'] and len(sc['faces']) == n, 'carte bilan : une couleur par triangle de toile (' + str(n) + ')')
+    info = pg.inner_text('#dsSunInfo')
+    check('meilleurs côtés : S' in info, 'lecture : meilleurs côtés au sud (' + info.split('meilleurs côtés : ')[-1].split(' · ')[0] + ')')
+    check('🟡' in info, 'statut 🟡 calculé affiché')
+    img_bilan = shot3(); snap(pg, 'carte-bilan')
+    check(img_bilan != img0, 'carte bilan : les faces se colorent')
+    for m in ['hiver', 'ete']:
+        pg.select_option('#dsSunMap', m); pg.wait_for_timeout(1200); snap(pg, 'carte-' + m)
+    # le nord tourne aussi la carte : avec le nord à droite, le meilleur côté reste le sud (à gauche du plan)
+    pg.select_option('#dsSunMap', 'bilan')
+    pg.fill('#dsSiteNorth', '90'); pg.dispatch_event('#dsSiteNorth', 'change'); pg.wait_for_timeout(1500)
+    check('meilleurs côtés : S' in pg.inner_text('#dsSunInfo') and shot3() != img_bilan, 'nord tourné : la carte suit, le meilleur côté reste le sud')
+    # retour à l'état de départ : image d'origine
+    pg.fill('#dsSiteNorth', '0'); pg.dispatch_event('#dsSiteNorth', 'change')
+    pg.select_option('#dsSunMap', 'none'); pg.wait_for_timeout(1500)
+    check(shot3() == img0, 'tout remis : rendu 3D identique au départ (pas de régression)')
+    # le lieu est gardé après rechargement
+    pg.select_option('#dsSiteCity', 'namur'); pg.wait_for_timeout(500)
+    pg.reload(); pg.wait_for_timeout(1500); pg.click('#tabDesign'); pg.wait_for_timeout(2000)
+    check(pg.input_value('#dsSiteCity') == 'namur', 'lieu gardé après rechargement (Namur)')
+    pg.select_option('#dsSiteCity', 'beauraing'); pg.wait_for_timeout(300)
+    check(not errs, 'aucune erreur JavaScript' + ('' if not errs else ' : ' + errs[0]))
+    b.close()
+print('\n' + ('TOUT PASSE' if not fails else str(len(fails)) + ' échec(s)'))
+sys.exit(1 if fails else 0)
