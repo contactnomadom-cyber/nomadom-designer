@@ -49,7 +49,7 @@
     h += plan(r);
     const q = r.qty, L = r.loads;
     h += '<div class="door-3d"><b>Quantités</b> <span class="muted">🟠 aperçu · longueurs d\'axe · poutres 75 × 195, solives 45 × 145 provisoires</span><dl>' +
-      '<dt>Pilotis</dt><dd>' + q.piles + ' (' + q.pilesOuter + ' sous les nœuds de base' + (q.pilesInner ? ' + ' + q.pilesInner + ' en 2ᵉ rangée' : '') + (q.pilesSas ? ' + ' + q.pilesSas + ' sous le sas' : '') + ')</dd>' +
+      '<dt>Pilotis</dt><dd>' + q.piles + ' (' + q.pilesOuter + ' sous les nœuds de base' + (q.pilesInner ? ' + ' + q.pilesInner + ' en 2ᵉ rangée' : '') + (q.pilesSas ? ' + ' + q.pilesSas + ' sous le sas' : '') + (q.pilesPorte ? ' + ' + q.pilesPorte + ' sous les poteaux de porte' : '') + ')</dd>' +
       '<dt>Blocs béton</dt><dd>' + q.blocksFirst + ' × 39 × 29 × 19 (assise, couchés) + ' + q.blocksNext + ' × 39 × 19 × 19</dd>' +
       '<dt>Ceinture</dt><dd>' + m(q.beams.ceinture) + ' (' + r.ring.length + ' côtés)</dd>' +
       (q.beams.pentagone ? '<dt>Pentagone</dt><dd>' + m(q.beams.pentagone) + ' (5 côtés de ' + mm(q.beams.pentagone / 5) + ')</dd>' : '') +
@@ -59,13 +59,14 @@
       '<dt>Surface de plancher</dt><dd>' + q.deckArea.toFixed(2).replace('.', ',') + ' m²</dd>' +
       '<dt>Vide ventilé</dt><dd>' + mm(r.voidMin) + ' au point le plus haut du terrain (mini 300 mm)</dd></dl></div>';
     // pilotis : empilement et charges
-    const rows = r.piles.map((p, i) => '<tr><td>' + (i + 1) + '</td><td>' + (p.row === 'exterieure' ? 'ext.' : p.row === 'sas' ? 'sas' : 'int.') + '</td><td>' + mm(p.stack.height) + '</td><td>1 + ' + p.stack.next + '</td><td>' + mm(p.stack.shim) + '</td><td>' +
+    const rows = r.piles.map((p, i) => '<tr><td>' + (i + 1) + '</td><td>' + (p.row === 'exterieure' ? 'ext.' : p.row === 'sas' ? 'sas' : p.row === 'porte' ? 'porte' : 'int.') + '</td><td>' + mm(p.stack.height) + '</td><td>1 + ' + p.stack.next + '</td><td>' + mm(p.stack.shim) + '</td><td>' +
       p.area.toFixed(2).replace('.', ',') + '</td><td>' + kN(p.loads.els) + '</td><td>' + Math.round(p.pressure) + '</td></tr>').join('');
     h += '<details class="door-lib"><summary>Pilotis : blocs et charges (' + r.piles.length + ')</summary><table class="floor-t"><tr><th>n°</th><th>rangée</th><th>hauteur sous poutre</th><th>blocs 29 + 19</th><th>calage</th><th>zone (m²)</th><th>charge</th><th>kPa</th></tr>' + rows + '</table></details>';
     h += '<div class="door-3d"><b>Charges et portance</b> <span class="muted">🟠 ordres de grandeur, pas une note de calcul · vent (soulèvement) non calculé</span><dl>' +
       '<dt>Poids du dôme (montants, nœuds, toile)</dt><dd>' + kN(L.domeG) + ' sur les ' + q.pilesOuter + ' pilotis de la ceinture</dd>' +
       '<dt>Neige</dt><dd>' + kN(L.snowS) + ' (' + String(r.options.loads.snow).replace('.', ',') + ' kN/m² × ' + String(r.options.loads.snowShape).replace('.', ',') + ' sur ' + L.floorArea.toFixed(1).replace('.', ',') + ' m²)</dd>' +
       (q.pilesSas ? '<dt>Sas d\'entrée (bois, toile, plancher, occupation, neige)</dt><dd>' + kN(r.piles.filter(p => p.row === 'sas').reduce((t, p) => t + p.loads.els, 0)) + ' sur ' + q.pilesSas + ' pilotis du sas</dd>' : '') +
+      (q.pilesPorte ? '<dt>Avant-corps de porte (bois, toile, neige ; toute la charge sur les poteaux, côté sûr)</dt><dd>' + kN(r.piles.filter(p => p.row === 'porte').reduce((t, p) => t + p.loads.els, 0)) + ' sur ' + q.pilesPorte + ' pilotis des poteaux</dd>' : '') +
       '<dt>Plancher + occupation</dt><dd>' + String(r.options.loads.floorG).replace('.', ',') + ' + ' + String(r.options.loads.liveQ).replace('.', ',') + ' kN/m² (habitation)</dd>' +
       '<dt>Total sur les pilotis</dt><dd>' + kN(L.totalEls) + ' (≈ ' + Math.round(L.totalEls / 9.81 * 100) / 100 + ' t)</dd>' +
       '<dt>Pilotis le plus chargé</dt><dd>' + kN(Math.max(...r.piles.map(p => p.loads.els))) + ' → ' + Math.round(L.pmax) + ' kPa sous le bloc de 39 × 29 · ' + esc(L.soil.name) + ' : ' + L.soil.q + ' kPa courants · ' +

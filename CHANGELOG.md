@@ -7,6 +7,12 @@
 
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
+## 0.9.20 — 05/11/2026 (poteaux de porte sur pilotis)
+- Porte d'aplomb + plancher sur pilotis : les **poteaux d'angle de l'avant-corps** tombaient juste hors du plancher, dans le vide ventilé. Chacun reçoit maintenant **son propre pilotis** (mêmes blocs, même calage selon la pente), visible sur le plan et en 3D.
+- La charge de l'avant-corps (bois, toile du toit et des parois, neige) est reportée en entier sur ces pilotis — côté sûr, les appuis sur le dôme en reprennent en réalité une part 🟠. Elle s'affiche dans « Charges et portance » ; les pilotis sont comptés à part (« + 2 sous les poteaux de porte »).
+- Porte reculée vers l'intérieur : les poteaux posent sur le plancher, pas de pilotis en plus. Porte-à-faux : pas de poteau, pas de pilotis. Sas : inchangé (ses pilotis existaient déjà).
+- Contrôles : nouvelle suite `porte_pilotis` (11 vérifications) ; `t_door` vérifie les 2 pilotis et leurs blocs dans la 3D. 35 suites ; dômes de référence inchangés.
+
 ## 0.9.19 — 05/11/2026 (ambiances du rendu)
 - Onglet Design, style Réaliste : menu **Ambiance** — **Plein jour**, **Matin** (soleil bas et doré), **Coucher de soleil** (lumière orangée, lampe intérieure allumée), **Ciel couvert** (lumière douce, sans ombre dure), **Nuit** (lampe chaude au centre, le dôme brille comme une lanterne). Tout est calculé : marche sans internet. Menu masqué en style Maquette.
 - **Le rendu photo suit l'ambiance choisie** ; le PNG porte son nom (ex. `rendu-dome-nuit.png`).

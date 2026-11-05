@@ -54,6 +54,9 @@
       const extra = [];
       sasScenes().forEach(sc => { const pts = sc.groundPoints || []; if (!pts.length) return;
         Floor.extraPiles(lay, pts, -0.0225, Floor.sasLoad(sc, lay.options)).forEach(p => extra.push(p)); });
+      // poteaux d'angle des avant-corps (porte sans sas) : un pilotis sous chaque pied hors du plancher
+      doorStructures().filter(x => x.kind !== 'sas').forEach(sc => { const pts = Floor.outsideDeck(lay, sc.groundPoints); if (!pts.length) return;
+        Floor.extraPiles(lay, pts, -0.0225, Floor.sasLoad(sc, lay.options), 'porte').forEach(p => extra.push(p)); });
       return Floor.withExtra(lay, extra);
     }
     function floorScene() { const lay = floorLayout(); return lay && lay.ok ? Floor.scene(lay) : null; }

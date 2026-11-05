@@ -314,7 +314,9 @@
     } else warnings.push('Bord haut de l\'ouverture trop découpé : seule l\'huisserie est dessinée.');
 
     const an = analyseJoints(pieces, panels, node3, struts, sec, opts.joints, MIN);
-    return Object.assign(an, { section: sec, support, attachAppui: attA, attachChevron: attC, pieces, panels, roof: panels.filter(p => p.kind === 'toit').map(p => p.pts),
+    // pieds des poteaux d'angle : avec un plancher sur pilotis, chacun demande son propre pilotis (floor.js)
+    const groundPoints = pieces.filter(p => p.kind === 'poteau').map(p => (p.a.y < p.b.y ? p.a : p.b));
+    return Object.assign(an, { section: sec, support, attachAppui: attA, attachChevron: attC, pieces, panels, groundPoints, roof: panels.filter(p => p.kind === 'toit').map(p => p.pts),
       roofArea: an.areas.toit || 0, complete: !!chain && an.ok, closed: !!chain, warnings,
       advised: support !== 'porte-a-faux' });
   }

@@ -146,7 +146,7 @@ Demande de Nathan : l'option plancher, avec des choix combinables.
 1. Sections réelles : poutres (ceinture, pentagone, triangle), solives, panneaux ; aujourd'hui 75 × 195 et 45 × 145 provisoires.
 2. Plancher plein : quelle poutre de reprise (sous quel axe, sur quels pilotis) ?
 3. Charges à retenir : neige du site, poids réel du dôme (section des montants, toile), occupation.
-4. Porte + plancher sur pilotis : les poteaux de l'avant-corps doivent descendre sur leurs propres pilotis (pas encore relié).
+4. ✅ Porte + plancher sur pilotis : chaque poteau d'angle de l'avant-corps hors du plancher reçoit son propre pilotis, avec la charge de l'avant-corps (0.9.20, 05/11/2026). Porte reculée : les poteaux posent sur le plancher.
 5. Plancher en diaphragme.
 
 ---

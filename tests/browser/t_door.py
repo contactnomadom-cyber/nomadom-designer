@@ -3,7 +3,7 @@
 # Usage : python3 tests/browser/t_door.py dist/nomadom-designer.html
 import sys, os
 from playwright.sync_api import sync_playwright
-APP = 'file://' + os.path.abspath(sys.argv[1])
+APP = 'file://' + os.path.abspath(sys.argv[1]); OUT = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), '..', 'build', 'check', 'door'); os.makedirs(OUT, exist_ok=True)
 fails = []
 def check(c, m):
     print(('OK   ' if c else 'ÉCHEC ') + m)
@@ -38,6 +38,14 @@ with sync_playwright() as p:
     check(shot() != img0, 'la structure de la porte apparaît dans la 3D de l\'onglet Base')
     pg.click('#tabDesign'); pg.wait_for_timeout(2500)
     check(pg.evaluate('CoverApp.doorScenes().length') == 1 and pg.evaluate('CoverApp.doorScenes()[0].pieces.length') > 10, 'la structure de la porte est transmise au Design')
+    # plancher sur pilotis : chaque poteau d'angle de l'avant-corps reçoit son propre pilotis
+    pg.click('#tabBase'); pg.wait_for_timeout(1200)
+    pg.click('[data-floor-on]'); pg.wait_for_timeout(1500)
+    fl = pg.inner_text('#baseFloor')
+    check('+ 2 sous les poteaux de porte' in fl and 'Avant-corps de porte' in fl, 'plancher sur pilotis : 2 pilotis sous les poteaux de porte, charge affichée')
+    check(pg.evaluate("CoverApp.floorScene().boxes.filter(b => b.kind === 'bloc29').length") == 25, '3D : 23 + 2 blocs d\'assise')
+    pg.screenshot(path=os.path.join(OUT, 'porte_pilotis.png'))
+    pg.click('[data-floor-off]'); pg.wait_for_timeout(1200)
     dimg = pg.eval_on_selector('#ds3d', 'c => c.toDataURL()')
     pg.click('#tabBase'); pg.wait_for_timeout(1200)
     t3 = pg.inner_text('.door-3d')
