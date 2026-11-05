@@ -498,8 +498,16 @@
     // mezzanine : plancher, solives de rive, garde-corps sur les bords libres
     const mp = Z.mezzPolygon(model, st.mezz);
     if (mp) {
-      const h = st.mezz.h, th = st.mezz.thick;
-      slab(opaque, mp, h - th, h, C('floor'), C('wood'), 1, false);
+      const h = st.mezz.h, th = st.mezz.thick, mf = opts.mezzFrame && opts.mezzFrame.joists ? opts.mezzFrame : null;
+      // avec l'ossature calculée (mezz-frame.js) : panneau de plancher seul, solives, poutres et poteaux visibles dessous
+      if (mf) {
+        const dk = mf.deckThickness || 0.022, S = mf.sections, yTop = h - dk;
+        slab(opaque, mp, yTop, h, C('floor'), C('wood'), 1, false);
+        const P3 = (p, y) => ({ x: p.x, y, z: p.z });
+        mf.joists.forEach(j => beam(opaque, P3(j.a, yTop - S.joist.d / 2), P3(j.b, yTop - S.joist.d / 2), S.joist.w, S.joist.d, null, C('wood'), 2));
+        mf.beams.forEach(b => beam(opaque, P3(b.a, yTop - S.beam.d / 2), P3(b.b, yTop - S.beam.d / 2), S.beam.w, S.beam.d, null, C('woodDark'), 2));
+        mf.posts.forEach(p => box(opaque, new Frame(p.at.x, 0, p.at.z, 0), 0, mf.postHeight / 2, 0, S.post.w, mf.postHeight, S.post.d, C('woodDark'), 2));
+      } else slab(opaque, mp, h - th, h, C('floor'), C('wood'), 1, false);
       const wallSec = Z.section(model, h);
       mp.forEach((p, i) => { const q = mp[(i + 1) % mp.length], m = { x: (p.x + q.x) / 2, z: (p.z + q.z) / 2 };
         const onWall = wallSec && wallSec.some((a, j) => { const b = wallSec[(j + 1) % wallSec.length], L = Math.hypot(b.x - a.x, b.z - a.z); return Math.abs((b.x - a.x) * (m.z - a.z) - (b.z - a.z) * (m.x - a.x)) / L < 0.03; });
@@ -510,7 +518,7 @@
         for (let k = 0; k <= n; k++) { const t = k / n, x = p.x + (q.x - p.x) * t, z = p.z + (q.z - p.z) * t; cyl(opaque, F0, [x, h, z], [x, h + 0.95, z], k % Math.max(1, Math.round(n / 3)) === 0 ? 0.03 : 0.011, C(k % Math.max(1, Math.round(n / 3)) === 0 ? 'woodDark' : 'wood'), 2, 8); }
       });
       // poteaux sous la mezzanine (aux angles libres)
-      mp.forEach(p => { if (wallSec && Math.min(...wallSec.map(a => Math.hypot(a.x - p.x, a.z - p.z))) < 0.25) return;
+      if (!mf) mp.forEach(p => { if (wallSec && Math.min(...wallSec.map(a => Math.hypot(a.x - p.x, a.z - p.z))) < 0.25) return;
         const ceil = Z.ceilingAt(model, p.x, p.z); if (ceil === null || ceil < h - th) return; cyl(opaque, F0, [p.x * 0.97, 0, p.z * 0.97], [p.x * 0.97, h - th, p.z * 0.97], 0.045, C('woodDark'), 2, 10); });
     }
     // ouvertures : cadre, porte ou vitrage

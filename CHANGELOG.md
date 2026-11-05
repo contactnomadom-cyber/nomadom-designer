@@ -7,11 +7,19 @@
 
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
-## 0.9.21 — 05/11/2026 (raccord toile du sas / toile du dôme)
+## 0.9.22 — 05/11/2026 (raccord toile du sas / toile du dôme)
 - Fiche porte, sas : nouveau choix **« Toile au dôme »** — **rabat glissé dessous** (défaut, comme avant), **rabat cousu** (non démontable, couture double), **bande auto-agrippante** (crochets sur le rabat, velours sous la toile du dôme), **jonc dans un rail** vissé sur les montants (fourreau de 30 mm au lieu du rabat de 100 mm). Dans tous les cas la toile du dôme reste par-dessus, comme les tuiles.
 - Cover+, toile du sas : le raccord choisi, s'il est démontable, le matériel à prévoir (sangles, mètres de couture, de bande, de jonc et de rail) et ses remarques d'étanchéité.
 - **Coins hauts du raccord** (là où deux rabats se croisent) : nombre de coins et trois solutions à essayer en atelier — pièce de renfort en chapeau, soufflet, coin en onglet + bande d'étanchéité — chacune avec son analogie, ses avantages et ses limites. 🟠 non vérifié en atelier.
-- Contrôles : `sas_toile` +9 vérifications, `t_door` vérifie le choix et son effet dans Cover+. 35 suites ; dômes de référence inchangés.
+- Contrôles : `sas_toile` +9 vérifications, `t_door` vérifie le choix et son effet dans Cover+. 43 suites ; dômes de référence inchangés.
+## 0.9.21 — 05/11/2026 (site et soleil, aération, vue, débits, solidité, ossature de mezzanine)
+- **Site et soleil** (Design, 🟡 calculé) : lieu par ville (39 villes, hors ligne), nord sur le plan (flèche tournée à l'écran et à l'impression), soleil réel par date et heure belge, arcs du 21 décembre et du 21 juin, carte des faces (bilan fenêtres hiver − été, soleil d'hiver, soleil d'été) et lecture « meilleurs côtés ».
+- **Vue principale** : direction et largeur du paysage, secteur sur le plan, carte « vue », lecture croisée vue + soleil.
+- **Aération** (🟡) : coupole zénitale, porte et fenêtres reconnues, case « ouvrable » et part ouvrante (%), renouvellements d'air par effet cheminée (été, mi-saison), surface d'entrées basses pour un objectif, alerte d'équilibre, rappel pluie, flèches d'air en 3D.
+- **Plancher** (Base) : sections au choix (provisoires, CLS, KVH) et cadres en onglet ou en about ; **solidité** des solives et poutres (flexion, cisaillement, flèche, Eurocode 5 simplifié) avec section conseillée ; **liste de débits** (pièces repérées, onglets, barres à commander, plan de coupe, panneaux), masquée si une pièce est 🔴 (ADR-0002). Le plancher plein avec les sections d'origine est désormais 🔴 (solive sur 3,9 m).
+- **Ossature de la mezzanine** (Design) : solives, poutres de rive, poteaux (flambement), entraxe, épaisseur conseillée, appui côté paroi indépendant (par défaut) ou sur les montants (🟠), liste de débits, ossature dessinée dans la 3D.
+- 🟠 Longueurs de barres et formats de panneaux à confirmer chez Bourguignon Bois ; CLS supposé C16, KVH C24.
+- Contrôles : nouvelles suites `sun`, `vent`, `lumber`, `mezz_frame`, `t_soleil`, `t_aeration`, `t_debits`, `t_mezz_frame` ; dômes de référence inchangés.
 
 ## 0.9.20 — 05/11/2026 (poteaux de porte sur pilotis)
 - Porte d'aplomb + plancher sur pilotis : les **poteaux d'angle de l'avant-corps** tombaient juste hors du plancher, dans le vide ventilé. Chacun reçoit maintenant **son propre pilotis** (mêmes blocs, même calage selon la pente), visible sur le plan et en 3D.

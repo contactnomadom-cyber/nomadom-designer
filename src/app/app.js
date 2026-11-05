@@ -1938,7 +1938,19 @@
   document.getElementById('tabDesign').addEventListener('click', () => showView('design'));
   document.getElementById('tabBase').addEventListener('click', () => showView('base'));
   // accès du module Design (onglet séparé) au dôme courant
-  window.CoverApp = { dome: () => ds.struct || ds.nominal, labels: () => Ouvertures.nodeLabels(ds.nominal), label: domeLabel, showView, doorScenes: () => doorStructures(), floorScene,
+  // ouvertures tracées (onglet Base), pour l'aération du Design : surface, hauteurs, centre et direction vers l'extérieur
+  function openingSummaries() {
+    const r = ds.openings.result; if (!r || !r.ok) return [];
+    const d = ds.nominal, ys = d.points.map(p => p.y), yB = Math.min(...ys), H = Math.max(...ys) - yB;
+    return r.openings.map(o => {
+      let c = { x: 0, y: 0, z: 0 }, n = 0;
+      o.faces.forEach(i => d.faces[i].pointIds.forEach(id => { const p = d.pointById.get(id); c.x += p.x; c.y += p.y - yB; c.z += p.z; n++; }));
+      c = { x: c.x / n, y: c.y / n, z: c.z / n };
+      const v = { x: c.x, y: c.y - 0.35 * H, z: c.z }, L = Math.hypot(v.x, v.y, v.z) || 1;
+      return { key: 'b' + o.faces.join('.'), n: o.n, area: o.area, yMin: o.heightMin, yMax: o.heightMax, closedByGround: o.closedByGround, center: c, normal: { x: v.x / L, y: v.y / L, z: v.z / L } };
+    });
+  }
+  window.CoverApp = { dome: () => ds.struct || ds.nominal, labels: () => Ouvertures.nodeLabels(ds.nominal), label: domeLabel, showView, doorScenes: () => doorStructures(), floorScene, openings: openingSummaries,
     // contour d'ouvertures donné en étiquettes [['N1', 'N2'], …] (scénarios de test, reprise d'un projet)
     setOpenings: pairs => { ds.openings.labels = pairs.map(p => p.slice().sort()); openingsChanged(); } };
   // « ? » à côté de chaque réglage : ouvre l'explication correspondante

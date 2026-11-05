@@ -169,7 +169,7 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 
 ---
 
-## 8. Rendus plus beaux : rendu photo, ambiances, aménagement approfondi, ouvertures optimisées — 🛠 rendu photo fait (0.9.18), ambiances faites (0.9.19)
+## 8. Rendus plus beaux : rendu photo, ambiances, aménagement approfondi, ouvertures optimisées — 🛠 rendu photo (0.9.18), ambiances (0.9.19), site et soleil, aération, vue, débits, solidité, ossature de mezzanine (0.9.21)
 
 **Besoin** : des images plus belles pour les devis, le site nomadom.be et la présentation client (Nathan trouve que la Quadrisphère « manque de classe », dans sa forme comme dans son rendu) ; des rendus 3D plus esthétiques avec des **choix d'ambiance**, un aménagement intérieur plus poussé (ossature CLS + mobilier, liste de débits et angles « façon SketchUp »), des ouvertures pensées avec le soleil. Réutiliser des briques existantes plutôt que tout développer.
 
@@ -180,13 +180,26 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 - Matériaux de l'aménagement : CLS sapin blanc raboté (38 × 63 à 38 × 235), OSB, multiplex, Agepan ; fournisseur de référence Bourguignon Bois (longueurs CLS 2,10 à 5,40 m suivant stock).
 - Briques repérées (licences à vérifier) : SunCalc (soleil → ouvertures), three-bvh-csg (découpes 3D), pmndrs postprocessing, three-gpu-pathtracer (images finales), OpenCutList et DomeCalc (débits), Blueprint3D (inspiration).
 
+- Étape 2 (branche `feature/soleil-ouvertures`, 04/11/2026) : barre « Site et soleil » — lieu par ville (liste intégrée, hors ligne), nord sur le plan (flèche tournée à l'écran et à l'impression, gardé dans l'aménagement), soleil réel par date et heure belge, arcs du 21 décembre et du 21 juin, carte des faces (bilan fenêtres hiver − été, soleil d'hiver, soleil d'été) et lecture « meilleurs côtés ». Statut 🟡 calculé : rayonnement direct par ciel clair, sans ombre du terrain ni des arbres.
+- Critères de Nathan pour les ouvertures (04/11/2026) : lumière en hiver, pas de surchauffe l'été, ventilation, vue — les quatre comptent.
+- Étape 3 (branche `feature/aeration`, 04/11/2026) : barre « Aération » — coupole zénitale = pentagone du sommet (reconnue dès 60 % de la hauteur), porte = ouverture fermée par le sol, fenêtre sinon ; case « ouvrable » par ouverture (porte et coupole cochées, fenêtres fixes par défaut), gardée dans l'aménagement ; renouvellements d'air par effet cheminée (été ΔT 3 °C, mi-saison ΔT 10 °C), dimensionnement des entrées basses pour un objectif (5/h par défaut), alerte d'équilibre, rappel pluie quand la coupole est ouvrable (avertir seulement, choix de Nathan), flèches d'air en 3D. Statut 🟡 calculé : sans vent. Part ouvrante par ouverture (5 à 100 %, 100 % par défaut) pour une coupole à charnière ou une fenêtre à soufflet, gardée dans l'aménagement (05/11/2026).
+- Étape 4 (branche `feature/vue`, 05/11/2026) : « Vue principale » dans la barre Site et soleil — direction (16 points cardinaux) et largeur (20 à 180°, 90° par défaut), gardées dans l'aménagement ; secteur « Vue » dessiné sur le plan ; carte des faces « Vue principale » ; lecture croisée vue + soleil (faces qui regardent la vue, dont conseillées pour le soleil, dont à protéger de la surchauffe).
+- Aménagement, étape 1 (branche `feature/debits-cls`, 05/11/2026) : liste de débits du plancher (onglet Base) — pièces repérées par section (poutres, solives), longueur d'axe et à couper (pointe longue), onglets des cadres (ceinture, pentagone 36°, triangle 60°), barres à commander optimisées (longueurs 2,10 à 5,40 m par 30 cm, trait de scie 4 mm), plan de coupe des barres, panneaux de plancher (2,44 × 1,22, chute 12 %). 🟠 longueurs et formats à confirmer chez Bourguignon Bois ; sections du plancher (75 × 195, 45 × 145) toujours provisoires.
+- Choix du bois (branche `feature/debits-choix`, 05/11/2026, demande de Nathan « je veux pouvoir choisir ») : section des poutres et des solives au choix (provisoires d'origine, CLS 38 × 63 à 38 × 235, KVH 60 × 120 à 100 × 200 — 🟠 à confirmer chez le fournisseur) et assemblage des cadres en onglet ou en about (coupe d'équerre, pièces raccourcies, jour extérieur signalé). Gardés dans les choix du plancher ; la 3D et les quantités suivent.
+- Solidité (branche `feature/portees`, 05/11/2026) : tableau « Solidité » dans la fiche plancher — solives et poutres (ceinture, intérieures), taux de travail en flexion, cisaillement et flèche finale ≤ portée/300 (Eurocode 5 simplifié, kmod 0,8, γM 1,3, fluage compris ; plancher 0,5 + habitation 2 kN/m²) ; CLS supposé C16, KVH et sections d'origine C24 (🟠 à confirmer) ; section conseillée quand ça ne passe pas ; liste de débits masquée tant qu'une pièce est 🔴 (ADR-0002). Statut 🟡 calculé. Constat : le plancher plein (portée 3,9 m) ne passe pas avec la solive d'origine 45 × 145.
+- Aménagement, étape 2 (branche `feature/mezz-ossature`, 05/11/2026) : ossature de la mezzanine (onglet Design, barre « Ossature mezzanine ») — solives parallèles à l'orientation, réparties régulièrement (entraxe 30 à 60 cm), de la poutre de rive à la paroi (lambourde sur les montants, 🟠 à vérifier : la charge passe dans le dôme) ; bord libre parallèle = solive de rive ; arc remplacé par des cordes ; poteaux aux angles libres et poteaux intermédiaires ajoutés tant que la poutre ne passe pas ; contrôles flexion / cisaillement / flèche et poteaux en compression avec flambement (🟡 calculé) ; section conseillée ; épaisseur conseillée (bouton) ; liste de débits (biais en plan contre la paroi) et panneaux ; débits masqués si 🔴. Sections de poteau KVH 80 × 80 à 120 × 120 ajoutées.
+- Appui côté paroi (branche `feature/mezz-paroi`, 05/11/2026) : choix « Poutre + poteaux (indépendante du dôme) » — par défaut, la paroi ne porte rien, poteaux rentrés de 12 cm et contrôlés au sol, contreventement rappelé — ou « Lambourde sur les montants » (🟠 charge dans le dôme, non vérifiée : section et bois des montants inconnus de l'appli).
+- Ossature de la mezzanine dans la 3D (branche `feature/mezz-3d`, 05/11/2026) : panneau de plancher seul, solives, poutres et poteaux dessinés sous la mezzanine ; la 3D suit les choix (sections, appui côté paroi).
+
 **Questions ouvertes ❓**
 1. Mémoriser l'ambiance choisie avec l'aménagement ?
-2. Ouvertures : quel critère prime — lumière, vue, chaleur d'été, ventilation ?
-3. Formats exacts des panneaux chez Bourguignon Bois (OSB, multiplex, Agepan).
-4. Temps de calcul du rendu photo acceptable sur la tablette de présentation ? Faut-il un réglage Rapide / Normal / Soigné ?
-5. Étendre le rendu photo à la Quadrisphère et à Nomad Vision ; revoir la forme de la Quadrisphère (**remis à plus tard, 05/11/2026**).
-6. La coupe « voir dedans » n'est pas encore rendue en photo : à traiter ?
+2. Part ouvrante typique de la coupole Nomad'Om (charnière ou soulevée sur le tour) pour la proposer par défaut ?
+3. Ajouter les ombres du terrain (arbres, bâtiments) ? Une ville absente de la liste : coordonnées GPS en option ?
+4. Formats exacts des panneaux et longueurs de CLS chez Bourguignon Bois (OSB, multiplex, Agepan) ; classe réelle du CLS chez Bourguignon (C16 ou C24) ?
+5. Aménagement, étape 3 : cloisons en CLS, puis le mobilier en multiplex. Appui sur les montants : section et bois des montants à renseigner pour vérifier la charge reprise par le dôme.
+6. Temps de calcul du rendu photo acceptable sur la tablette de présentation ? Faut-il un réglage Rapide / Normal / Soigné ?
+7. Étendre le rendu photo à la Quadrisphère et à Nomad Vision ; revoir la forme de la Quadrisphère (**remis à plus tard, 05/11/2026**).
+8. La coupe « voir dedans » n'est pas encore rendue en photo : à traiter ?
 
 ---
 

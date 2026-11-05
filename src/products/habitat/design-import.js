@@ -50,7 +50,7 @@
     if (!isObj(raw)) return { ok: false, errors: ['ce n\'est pas un aménagement (objet attendu)'] };
     if (raw.version !== 1) return { ok: false, errors: ['version de format ' + escapeText(raw.version) + ' inconnue (attendue : 1)'] };
     const lib = new Map((library || []).map(l => [l.type, l]));
-    const out = { version: 1, items: [], openings: [], mezz: Object.assign({}, defaults.mezz), style: defaults.style };
+    const out = { version: 1, items: [], openings: [], mezz: Object.assign({}, defaults.mezz), style: defaults.style, site: Object.assign({ city: 'beauraing', north: 0, view: null }, defaults.site), vent: { target: defaults.vent ? defaults.vent.target : 5, open: {}, part: {} } };
 
     // éléments
     const items = raw.items === undefined ? [] : raw.items;
@@ -101,9 +101,58 @@
           else out.mezz[k] = m[k];
         });
         if (m.shape !== undefined) { if (MEZZ_SHAPES.indexOf(m.shape) < 0) err('mezzanine : forme inconnue'); else out.mezz.shape = m.shape; }
+        // ossature : sections (identifiants courts), entraxe, assemblage
+        if (m.frame !== undefined) {
+          const fr = m.frame, okId = x => typeof x === 'string' && /^[a-z]{3,4}-[0-9x]{3,9}$/.test(x);
+          if (!isObj(fr)) err('mezzanine : « frame » doit être un objet');
+          else {
+            const f2 = {};
+            ['joistSection', 'beamSection', 'postSection'].forEach(k => { if (fr[k] !== undefined) { if (!okId(fr[k])) err('mezzanine : section « ' + k + ' » invalide'); else f2[k] = fr[k]; } });
+            if (fr.spacing !== undefined) { if ([0.3, 0.4, 0.5, 0.6].indexOf(fr.spacing) < 0) err('mezzanine : entraxe impossible (0,3 à 0,6 m)'); else f2.spacing = fr.spacing; }
+            if (fr.joint !== undefined) { if (['onglet', 'about'].indexOf(fr.joint) < 0) err('mezzanine : assemblage inconnu'); else f2.joint = fr.joint; }
+            if (fr.wallSupport !== undefined) { if (['poteaux', 'paroi'].indexOf(fr.wallSupport) < 0) err('mezzanine : appui côté paroi inconnu'); else f2.wallSupport = fr.wallSupport; }
+            out.mezz.frame = f2;
+          }
+        }
       }
     }
     if (raw.style !== undefined) { if (STYLES.indexOf(raw.style) < 0) err('style de plan inconnu'); else out.style = raw.style; }
+    // lieu du projet et orientation du nord (course du soleil)
+    if (raw.site !== undefined) {
+      if (!isObj(raw.site)) err('« site » doit être un objet');
+      else {
+        if (raw.site.city !== undefined) { if (typeof raw.site.city !== 'string' || !/^[a-z0-9-]{1,30}$/.test(raw.site.city)) err('lieu du projet invalide'); else out.site.city = raw.site.city; }
+        if (raw.site.north !== undefined) { if (!isNum(raw.site.north) || Math.abs(raw.site.north) > 360) err('orientation du nord impossible'); else out.site.north = raw.site.north; }
+        if (raw.site.view !== undefined && raw.site.view !== null) {
+          const w = raw.site.view;
+          if (!isObj(w) || !isNum(w.az) || w.az < 0 || w.az >= 360 || !isNum(w.width) || w.width < 20 || w.width > 180) err('vue principale impossible (direction 0 à 359°, angle 20 à 180°)');
+          else out.site.view = { az: w.az, width: w.width };
+        }
+      }
+    }
+    // aération : objectif de renouvellements d'air, ouvertures ouvrables
+    if (raw.vent !== undefined) {
+      if (!isObj(raw.vent)) err('« vent » doit être un objet');
+      else {
+        const v = raw.vent;
+        if (v.target !== undefined) { if (!isNum(v.target) || v.target < 0.5 || v.target > 60) err('aération : objectif impossible (0,5 à 60 par heure)'); else out.vent.target = v.target; }
+        if (v.open !== undefined) {
+          if (!isObj(v.open) || Object.keys(v.open).length > 200) err('aération : liste des ouvertures ouvrables invalide');
+          else Object.keys(v.open).forEach(k => {
+            if (!/^[bd][A-Za-z0-9.]{1,300}$/.test(k) || typeof v.open[k] !== 'boolean') err('aération : ouverture « ' + escapeText(k) + ' » invalide');
+            else out.vent.open[k] = v.open[k];
+          });
+        }
+        // part réellement ouvrante (coupole à charnière, fenêtre à soufflet…), en %
+        if (v.part !== undefined) {
+          if (!isObj(v.part) || Object.keys(v.part).length > 200) err('aération : parts ouvrantes invalides');
+          else Object.keys(v.part).forEach(k => {
+            if (!/^[bd][A-Za-z0-9.]{1,300}$/.test(k) || !isNum(v.part[k]) || v.part[k] < 5 || v.part[k] > 100) err('aération : part ouvrante de « ' + escapeText(k) + ' » impossible (5 à 100 %)');
+            else out.vent.part[k] = v.part[k];
+          });
+        }
+      }
+    }
 
     // panneaux Kumiko (NOMAD-2026-003) : un panneau par triangle, repéré par ses 3 nœuds
     if (raw.kumiko !== undefined) {

@@ -89,5 +89,23 @@ const exs = F.extraPiles(F.layout(dome, { slope: 10 }), [{ x: 3.5, y: 0, z: 0 }]
 check(exs[0].ground !== ex[0].ground, 'pilotis du sas : suit la pente du terrain');
 check(F.scene(P, ex).boxes.filter(b => b.kind === 'bloc29').length === 25 && F.extraPiles(P, [], 0).length === 0, 'scène : 23 + 2 assises');
 
+// solidité (aperçu 🟡, Eurocode 5 simplifié) — vérifiée à la main sur la solive d'origine
+{
+  const r0 = F.layout(dome, { support: 'pentagone', deck: 'etoile' }), s0 = F.strength(r0), j = s0.joist;
+  // 45 × 145 C24, portée 2,15 m, largeur 0,68 m : qd = 1,35 (0,34 + 0,027) + 1,5 × 1,36 ≈ 2,53 kN/m → σ ≈ 9,3 MPa / 14,8 MPa
+  check(Math.abs(j.span - 2.15) < 0.01 && Math.abs(j.width - 0.68) < 0.01, 'solive : portée 2,15 m, largeur reprise 0,68 m');
+  const g = (0.5 * j.width + 420 * 9.81e-3 * 0.045 * 0.145), q = 2 * j.width, qd = 1.35 * g + 1.5 * q, M = qd * 2150 * 2150 / 8 * (j.span / 2.15) ** 2;
+  check(Math.abs(j.bending - (qd * (j.span * 1000) ** 2 / 8) / (45 * 145 * 145 / 6) / (0.8 * 24 / 1.3)) < 1e-9 && Math.abs(j.bending - 0.63) < 0.01, 'flexion solive d\'origine : 63 % (calcul à la main)');
+  check(s0.ok && j.ok && s0.beams.length === 2 && s0.beams.every(b => b.ok && b.max < 0.3), 'plancher par défaut : tout passe, poutres peu chargées');
+  const rP = F.layout(dome, { support: 'pentagone', deck: 'plein' }), sP = F.strength(rP);
+  check(!sP.ok && !sP.joist.ok && sP.joist.deflection > 1, 'plancher plein (portée 3,9 m) : solive 45 × 145 trop faible');
+  const rC = F.layout(dome, { support: 'pentagone', deck: 'etoile', joistSection: 'cls-38x140' }), sC = F.strength(rC);
+  check(!sC.ok && sC.joist.suggest === 'cls-38x184', 'solive CLS 38 × 140 (C16) trop faible → au moins CLS 38 × 184');
+  check(F.strength(F.layout(dome, { support: 'pentagone', deck: 'etoile', joistSection: 'cls-38x184' })).joist.ok, 'CLS 38 × 184 : passe');
+  const rB = F.layout(dome, { support: 'pentagone', deck: 'etoile', beamSection: 'cls-38x89', joistSection: 'cls-38x184' }), sB = F.strength(rB);
+  check(!sB.ok && sB.beams.find(b => b.key === 'interieur').suggest === 'cls-38x140' && sB.beams.find(b => b.key === 'ceinture').ok, 'poutres CLS 38 × 89 : ceinture passe, intérieures trop faibles → CLS 38 × 140');
+  check(F.strength({ ok: false }) === null, 'plancher en erreur : pas de calcul');
+}
+
 if (fails.length) { console.log('ÉCHEC ' + fails.length + '/' + n); fails.forEach(x => console.log('  ' + x)); process.exit(1); }
 console.log('OK ' + n + '/' + n);
