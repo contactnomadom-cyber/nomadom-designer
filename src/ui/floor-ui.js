@@ -83,8 +83,25 @@
       '<li>Un bloc béton 39 × 29 × 19 couché à plat : la semelle, qui étale la charge (c\'est sa surface qui compte pour la portance).</li>' +
       '<li>Des blocs 39 × 19 × 19 croisés d\'un rang à l\'autre selon la pente, puis une cale en tête pour l\'ajustage fin.</li>' +
       '<li>Toujours au moins 30 cm de vide ventilé sous les poutres : l\'air circule, le bois reste sec (étanchéité avant tout).</li></ol></details>';
-    h += cutList(r);
+    // solidité des solives et des poutres (🟡 calculé) ; une section trop faible n'a pas de liste de débits (ADR-0002)
+    const stg = F.strength ? F.strength(r) : null;
+    if (stg) h += strengthHtml(F, stg);
+    h += stg && !stg.ok ? '<details class="door-lib" id="floorCuts"><summary>🔴 Liste de débits masquée : section trop faible</summary><div class="op-status">Choisissez une section plus forte (voir « Solidité ») ou ajoutez une poutre de reprise : la liste revient dès que tout passe.</div></details>' : cutList(r);
     return h;
+  }
+
+  // tableau de solidité : taux de travail en flexion, cisaillement, flèche ; section conseillée si ça ne passe pas
+  function strengthHtml(F, stg) {
+    const pc = v => Math.round(v * 100) + ' %', mark = x => x.ok ? (x.max > 0.85 ? '🟡' : '🟢') : '🔴';
+    const name = k => F.SECTIONS[k] ? F.SECTIONS[k].name : k;
+    const row = (lab, x) => '<tr title="largeur de plancher reprise ' + m(x.width) + ' · flèche finale ' + mm(x.wfin / 1000) + '"><td style="text-align:left">' + mark(x) + ' ' + lab + '</td><td style="white-space:nowrap">' + esc(name(x.section).replace(' (provisoire)', '')) + ' ' + (F.SECTIONS[x.section] ? F.SECTIONS[x.section].grade : '') + '</td><td>' + m(x.span) + '</td><td>' + pc(x.bending) + '</td><td>' + pc(x.shear) + '</td><td>' + pc(x.deflection) + '</td></tr>' +
+      (x.ok ? '' : '<tr><td colspan="6" style="text-align:left">→ ' + (x.suggest ? 'il faut au moins ' + esc(name(x.suggest)) : 'aucune section de la même famille ne suffit : ajouter une poutre de reprise ou passer en plancher en étoile') + '</td></tr>');
+    const BEAM = { ceinture: 'Ceinture', interieur: 'Poutres int.' };
+    return '<div class="op-status" id="floorStrength"><b>Solidité ' + (stg.ok ? '— tout passe' : '— 🔴 section trop faible') + '</b>' +
+      '<div style="overflow-x:auto"><table class="floor-t"><tr><th style="text-align:left">pièce</th><th>section</th><th>portée</th><th>flexion</th><th>cisail.</th><th>flèche</th></tr>' +
+      row('Solives', stg.joist) + stg.beams.map(b => row(BEAM[b.key] || b.key, b)).join('') + '</table></div>' +
+      '<div class="muted">🟡 calculé (Eurocode 5 simplifié) : pièce sur deux appuis, plancher ' + String(stg.loads.G).replace('.', ',') + ' kN/m² + habitation ' + String(stg.loads.Q).replace('.', ',') +
+      ' kN/m², flèche finale ≤ portée/300 · CLS supposé C16, KVH et sections d\'origine C24 (🟠 classe à confirmer chez le fournisseur) · 100 % = limite · 🟢 &lt; 85 % · 🟡 85–100 % · 🔴 &gt; 100 % · à faire valider par un ingénieur pour un plancher recevant du public</div></div>';
   }
 
   // liste de débits (lumber.js) : pièces repérées, onglets, barres à commander, panneaux

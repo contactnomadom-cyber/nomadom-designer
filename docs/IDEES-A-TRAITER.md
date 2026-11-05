@@ -184,12 +184,13 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 - Étape 4 (branche `feature/vue`, 05/11/2026) : « Vue principale » dans la barre Site et soleil — direction (16 points cardinaux) et largeur (20 à 180°, 90° par défaut), gardées dans l'aménagement ; secteur « Vue » dessiné sur le plan ; carte des faces « Vue principale » ; lecture croisée vue + soleil (faces qui regardent la vue, dont conseillées pour le soleil, dont à protéger de la surchauffe).
 - Aménagement, étape 1 (branche `feature/debits-cls`, 05/11/2026) : liste de débits du plancher (onglet Base) — pièces repérées par section (poutres, solives), longueur d'axe et à couper (pointe longue), onglets des cadres (ceinture, pentagone 36°, triangle 60°), barres à commander optimisées (longueurs 2,10 à 5,40 m par 30 cm, trait de scie 4 mm), plan de coupe des barres, panneaux de plancher (2,44 × 1,22, chute 12 %). 🟠 longueurs et formats à confirmer chez Bourguignon Bois ; sections du plancher (75 × 195, 45 × 145) toujours provisoires.
 - Choix du bois (branche `feature/debits-choix`, 05/11/2026, demande de Nathan « je veux pouvoir choisir ») : section des poutres et des solives au choix (provisoires d'origine, CLS 38 × 63 à 38 × 235, KVH 60 × 120 à 100 × 200 — 🟠 à confirmer chez le fournisseur) et assemblage des cadres en onglet ou en about (coupe d'équerre, pièces raccourcies, jour extérieur signalé). Gardés dans les choix du plancher ; la 3D et les quantités suivent.
+- Solidité (branche `feature/portees`, 05/11/2026) : tableau « Solidité » dans la fiche plancher — solives et poutres (ceinture, intérieures), taux de travail en flexion, cisaillement et flèche finale ≤ portée/300 (Eurocode 5 simplifié, kmod 0,8, γM 1,3, fluage compris ; plancher 0,5 + habitation 2 kN/m²) ; CLS supposé C16, KVH et sections d'origine C24 (🟠 à confirmer) ; section conseillée quand ça ne passe pas ; liste de débits masquée tant qu'une pièce est 🔴 (ADR-0002). Statut 🟡 calculé. Constat : le plancher plein (portée 3,9 m) ne passe pas avec la solive d'origine 45 × 145.
 
 **Questions ouvertes ❓**
 1. Mémoriser l'ambiance choisie avec l'aménagement ?
 2. Part ouvrante typique de la coupole Nomad'Om (charnière ou soulevée sur le tour) pour la proposer par défaut ?
 3. Ajouter les ombres du terrain (arbres, bâtiments) ? Une ville absente de la liste : coordonnées GPS en option ?
-4. Formats exacts des panneaux et longueurs de CLS chez Bourguignon Bois (OSB, multiplex, Agepan) ; dimensionnement des sections choisies (tables de portée) à ajouter ?
+4. Formats exacts des panneaux et longueurs de CLS chez Bourguignon Bois (OSB, multiplex, Agepan) ; classe réelle du CLS chez Bourguignon (C16 ou C24) ?
 5. Aménagement, étape 2 : ossature de la mezzanine et des cloisons en CLS, puis le mobilier en multiplex.
 
 ---
