@@ -190,11 +190,19 @@
     // le ciel physique (shader) est remplacé par un ciel en dégradé.
     let pt = null, ptRaf = 0, photo = null;
     const envTexs = {};
-    function photoEnv(maq) {
-      const key = maq ? 'maq' : 'real';
+    // Ambiances du rendu photo : ciel (zénith, horizon, sol), soleil (hauteur en rad,
+    // décalage d'azimut par rapport à la caméra, couleur, intensité), lampe intérieure, exposition.
+    const AMBIANCES = {
+      matin: { zen: [0.32, 0.50, 0.85], hor: [0.98, 0.84, 0.70], gnd: [0.24, 0.21, 0.16], el: 0.26, az: 1.75, sun: 0xffd2a0, si: 2.4, lamp: 0, exp: 1.0 },
+      midi:  { zen: [0.20, 0.40, 0.85], hor: [0.80, 0.86, 0.95], gnd: [0.25, 0.22, 0.17], el: 0.72, az: 1.05, sun: 0xfff1dc, si: 2.8, lamp: 0, exp: 0.95 },
+      soir:  { zen: [0.22, 0.24, 0.52], hor: [1.00, 0.56, 0.30], gnd: [0.18, 0.13, 0.10], el: 0.09, az: -1.30, sun: 0xff9850, si: 2.2, lamp: 0, exp: 1.05 },
+      nuit:  { zen: [0.006, 0.010, 0.030], hor: [0.025, 0.035, 0.070], gnd: [0.010, 0.010, 0.010], el: 0.80, az: 2.2, sun: 0x9fb4ff, si: 0.12, lamp: 1, exp: 1.6 }
+    };
+    function photoEnv(maq, amb) {
+      const A = AMBIANCES[amb] || AMBIANCES.midi, key = maq ? 'maq' : amb;
       if (envTexs[key]) return envTexs[key];
       const t = new K.ProceduralEquirectTexture(512, 256);
-      const zen = new T.Color(0.20, 0.40, 0.85), hor = new T.Color(0.80, 0.86, 0.95), gnd = new T.Color(0.25, 0.22, 0.17);
+      const zen = new T.Color(...A.zen), hor = new T.Color(...A.hor), gnd = new T.Color(...A.gnd);
       const white = new T.Color(0.93, 0.93, 0.92), grey = new T.Color(0.55, 0.55, 0.54);
       t.generationCallback = (polar, uv, coord, c) => {
         const y = -Math.cos(polar.phi); // 1 = zénith, -1 = nadir (convention du path tracer)
@@ -226,9 +234,11 @@
     function photoStop() {
       if (ptRaf) cancelAnimationFrame(ptRaf); ptRaf = 0;
       if (photo) { scene.background = photo.bg; scene.environment = photo.env; sky.visible = photo.sky; hemi.visible = true;
+        sun.position.copy(photo.sunPos); sun.color.copy(photo.sunCol); sun.intensity = photo.sunInt; renderer.toneMappingExposure = photo.exp;
+        if (photo.lamp) { scene.remove(photo.lamp); photo.lamp.dispose(); }
         photo.swaps.forEach(([m, g]) => { m.geometry.dispose(); m.geometry = g; }); photo = null; }
     }
-    // cb : { samples, onProgress(n, total), onDone(), onError(err) }
+    // cb : { samples, ambiance ('matin' | 'midi' | 'soir' | 'nuit', style Réaliste seulement), onProgress(n, total), onDone(), onError(err) }
     function photoStart(cam, cut, cb) {
       cb = cb || {};
       photoStop();
@@ -239,11 +249,21 @@
           pt.tiles.set(2, 2); pt.minSamples = 1; pt.renderDelay = 0; pt.fadeDuration = 400;
           pt.bounces = 6; pt.transmissiveBounces = 6; pt.filterGlossyFactor = 0.5;
         }
-        const maq = style === 'maquette';
-        photo = { bg: scene.background, env: scene.environment, sky: sky.visible, swaps: [] };
+        const maq = style === 'maquette', amb = maq ? 'midi' : (AMBIANCES[cb.ambiance] ? cb.ambiance : 'midi'), A = AMBIANCES[amb];
+        photo = { bg: scene.background, env: scene.environment, sky: sky.visible, swaps: [],
+          sunPos: sun.position.clone(), sunCol: sun.color.clone(), sunInt: sun.intensity, exp: renderer.toneMappingExposure, lamp: null };
+        if (!maq) {
+          const d = new T.Vector3(Math.cos(A.el) * Math.sin(cam.yaw + A.az), Math.sin(A.el), Math.cos(A.el) * Math.cos(cam.yaw + A.az));
+          sun.position.copy(d.multiplyScalar(25)).add(new T.Vector3(0, bounds.h * 0.4, 0));
+          sun.color.set(A.sun); sun.intensity = A.si; renderer.toneMappingExposure = A.exp;
+          if (A.lamp) { // lampe chaude suspendue au centre, à mi-hauteur
+            photo.lamp = new T.PointLight(0xffc27a, 7 * bounds.r * bounds.r, 0, 2);
+            photo.lamp.position.set(0, bounds.h * 0.55, 0); scene.add(photo.lamp);
+          }
+        }
         content.traverse(o => { if (o.isMesh && !o.userData.keepMat) { const g = fixWinding(o.geometry); if (g) { photo.swaps.push([o, o.geometry]); o.geometry = g; } } });
         sky.visible = false; hemi.visible = false; // non gérés par le lancer de rayons
-        const env = photoEnv(maq);
+        const env = photoEnv(maq, amb);
         scene.environment = env; scene.background = maq ? new T.Color(0xeeeeec) : env;
         pt.setScene(scene, camera);
       } catch (err) { photoStop(); if (cb.onError) cb.onError(err); return false; }
@@ -281,7 +301,7 @@
       su.sunPosition.value.copy(d);
       renderer.render(scene, camera);
     }
-    return { isThree: true, update, render, photoStart, photoStop, snapshot, photoBusy: () => !!ptRaf, canPhoto: !!K.WebGLPathTracer, setQuality(v) { hiQ = v; sun.castShadow = v; renderer.shadowMap.type = v ? T.PCFSoftShadowMap : T.BasicShadowMap; renderer.shadowMap.needsUpdate = true; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); canvas.width = 0; }, renderer };
+    return { isThree: true, update, render, photoStart, photoStop, snapshot, photoBusy: () => !!ptRaf, canPhoto: !!K.WebGLPathTracer, ambiances: Object.keys(AMBIANCES), setQuality(v) { hiQ = v; sun.castShadow = v; renderer.shadowMap.type = v ? T.PCFSoftShadowMap : T.BasicShadowMap; renderer.shadowMap.needsUpdate = true; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); canvas.width = 0; }, renderer };
   }
 
   global.Design3DThree = { create };

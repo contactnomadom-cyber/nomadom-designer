@@ -7,6 +7,11 @@
 
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
+## 0.9.19 — 05/11/2026 (ambiances du rendu photo)
+- Onglet Design : menu **d'ambiance** à côté de « 📷 Rendu photo » : **Matin** (soleil bas et doré), **Midi**, **Coucher de soleil** (lumière orangée rasante), **Nuit, intérieur éclairé** (lampe chaude au centre, le dôme brille comme une lanterne). Le soleil tourne avec la vue pour garder un bel éclairage. Le PNG porte le nom de l'ambiance (ex. `rendu-dome-nuit.png`).
+- En style Maquette d'architecte, le menu est grisé (éclairage neutre de maquette).
+- Contrôles : `t_photo` vérifie le menu (4 ambiances, grisé en Maquette) et fait le rendu en Coucher de soleil. 33 suites ; dômes de référence inchangés.
+
 ## 0.9.18 — 04/11/2026 (rendu photo du Design)
 - Onglet Design : bouton **« 📷 Rendu photo »**. L'image réaliste (ombres douces, reflets, lumière du ciel) se calcule progressivement, avec la progression en % ; bouton **« ⬇ PNG »** pour l'enregistrer (devis, site, présentation client). Bouger la vue revient à la 3D habituelle. Fonctionne hors ligne. La coupe « voir dedans » n'est pas encore rendue en photo (toile entière, avec un avertissement).
 - Moteur 3D : three.js reste en 0.169 ; ajout de three-gpu-pathtracer 0.0.23 dans `vendor/three/` (+ ≈ 180 Ko), recette de régénération dans `vendor/three/README.md`.

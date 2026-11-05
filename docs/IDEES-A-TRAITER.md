@@ -169,18 +169,19 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 
 ---
 
-## 8. Rendus plus esthétiques : rendu photo et ambiances — 🛠 rendu photo fait (branche feature/rendu-photo, 04/11/2026)
+## 8. Rendus plus esthétiques : rendu photo et ambiances — 🛠 rendu photo fait (0.9.18), ambiances faites (0.9.19)
 
 **Besoin** : des images plus belles pour les devis, le site nomadom.be et la présentation client ; Nathan trouve que la Quadrisphère « manque de classe », dans sa forme comme dans son rendu.
 
 **Décidé**
 - Rendu photo par lancer de rayons (three-gpu-pathtracer, hors ligne) dans l'onglet Design : bouton « 📷 Rendu photo », progression en %, export PNG ; bouger la vue revient à la 3D.
 - Réutiliser des briques existantes (GitHub, npm) plutôt que tout développer.
+- 05/11/2026 : quatre ambiances pour le rendu photo (matin, midi, coucher de soleil, nuit avec intérieur éclairé), en style Réaliste ; rendu photo de la Quadrisphère **remis à plus tard**.
 
 **Questions ouvertes ❓**
 1. Temps de calcul acceptable sur la tablette de présentation ? Faut-il un réglage Rapide / Normal / Soigné ?
-2. Ambiances à proposer (matin, coucher de soleil, nuit éclairée de l'intérieur) ?
-3. Étendre le rendu photo à la Quadrisphère et à Nomad Vision ; revoir la forme de la Quadrisphère.
+2. ~~Ambiances à proposer~~ : faites en 0.9.19. Couleur et puissance de la lampe de nuit à régler selon tes goûts ?
+3. Étendre le rendu photo à la Quadrisphère et à Nomad Vision ; revoir la forme de la Quadrisphère. **Remis à plus tard (05/11/2026).**
 4. La coupe « voir dedans » n'est pas encore rendue en photo : à traiter ?
 
 ---

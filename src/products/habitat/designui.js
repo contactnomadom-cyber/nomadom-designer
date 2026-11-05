@@ -68,7 +68,7 @@
       <div class="split-view split-stack" id="dsSplitView">
         <section class="pane"><h2><span>PLAN — VUE DU DESSUS</span><span id="dsPlanInfo"></span></h2>
           <div class="body"><canvas id="dsPlan"></canvas><div class="hint">glisser un élément = le déplacer (pas de 5 cm) · poignée ↻ = le faire pivoter (pas de 15°, libre avec Maj) · lâcher hors du dôme ou Suppr = effacer · molette = zoom · double-clic = recadrer</div></div></section>
-        <section class="pane"><h2><span>RENDU 3D</span><span><select id="ds3dStyle" style="font-family:var(--mono);font-size:11px;margin-right:6px"><option value="real">Réaliste</option><option value="maquette">Maquette d'architecte</option></select><select id="dsQual" style="font-family:var(--mono);font-size:11px;margin-right:6px;display:none" title="Haute : ombres douces, pleine résolution. Rapide : sans ombres, pour un ordinateur lent."><option value="1">Qualité haute</option><option value="0">Rapide</option></select><select id="dsToile" style="font-family:var(--mono);font-size:11px"><option value="coupe">Toile en coupe (voir dedans)</option><option value="verre">Toile transparente</option><option value="fil">Structure seule</option></select><button id="dsPhoto" type="button" style="font-family:var(--mono);font-size:11px;margin-left:6px;display:none" title="Image réaliste calculée par lancer de rayons (ombres, reflets, lumière douce). Ne pas bouger la vue pendant le calcul.">📷 Rendu photo</button><button id="dsPhotoSave" type="button" style="font-family:var(--mono);font-size:11px;margin-left:4px;display:none" title="Enregistrer l'image du rendu photo">⬇ PNG</button></span></h2>
+        <section class="pane"><h2><span>RENDU 3D</span><span><select id="ds3dStyle" style="font-family:var(--mono);font-size:11px;margin-right:6px"><option value="real">Réaliste</option><option value="maquette">Maquette d'architecte</option></select><select id="dsQual" style="font-family:var(--mono);font-size:11px;margin-right:6px;display:none" title="Haute : ombres douces, pleine résolution. Rapide : sans ombres, pour un ordinateur lent."><option value="1">Qualité haute</option><option value="0">Rapide</option></select><select id="dsToile" style="font-family:var(--mono);font-size:11px"><option value="coupe">Toile en coupe (voir dedans)</option><option value="verre">Toile transparente</option><option value="fil">Structure seule</option></select><select id="dsAmbiance" style="font-family:var(--mono);font-size:11px;margin-left:6px;display:none" title="Moment de la journée du rendu photo (style Réaliste)"><option value="matin">Matin</option><option value="midi" selected>Midi</option><option value="soir">Coucher de soleil</option><option value="nuit">Nuit, intérieur éclairé</option></select><button id="dsPhoto" type="button" style="font-family:var(--mono);font-size:11px;margin-left:6px;display:none" title="Image réaliste calculée par lancer de rayons (ombres, reflets, lumière douce). Ne pas bouger la vue pendant le calcul.">📷 Rendu photo</button><button id="dsPhotoSave" type="button" style="font-family:var(--mono);font-size:11px;margin-left:4px;display:none" title="Enregistrer l'image du rendu photo">⬇ PNG</button></span></h2>
           <div class="body"><canvas id="ds3d"></canvas><div class="hint" id="ds3dHint">glisser = tourner · clic droit ou Maj + glisser = déplacer · molette = zoom · double-clic = recadrer</div></div></section>
       </div>
       <div class="split-handle" id="dsSplitHandle"></div>
@@ -129,7 +129,7 @@
     $('dsStyle').addEventListener('change', e => { st.style = e.target.value; changed(); });
     $('dsZones').addEventListener('change', e => { showZones = e.target.checked; drawAll(); });
     $('dsToile').addEventListener('change', e => { toileMode = e.target.value; dirty3 = true; draw3D(); });
-    $('ds3dStyle').addEventListener('change', e => { style3 = e.target.value; dirty3 = true; draw3D(); });
+    $('ds3dStyle').addEventListener('change', e => { style3 = e.target.value; dirty3 = true; $('dsAmbiance').disabled = style3 === 'maquette'; draw3D(); });
     $('dsQual').addEventListener('change', e => { if (eng && eng.setQuality) { eng.setQuality(e.target.value === '1'); draw3D(); } });
     $('dsAdd').addEventListener('click', () => {
       const it = Z.newItem($('dsAddType').value, 0, 0, level);
@@ -169,9 +169,11 @@
     if (eng && eng.isThree) $('dsQual').style.display = '';
     if (eng && eng.isThree && eng.canPhoto) {
       $('dsPhoto').style.display = '';
+      $('dsAmbiance').style.display = '';
+      $('dsAmbiance').addEventListener('change', () => { if (photoOn) draw3D(); });
       const render0 = eng.render; eng.render = (c, k) => { render0(c, k); photoUi(false); };
       $('dsPhoto').addEventListener('click', photoClick);
-      $('dsPhotoSave').addEventListener('click', () => { const a = document.createElement('a'); a.href = eng.snapshot(); a.download = 'rendu-dome.png'; document.body.appendChild(a); a.click(); a.remove(); });
+      $('dsPhotoSave').addEventListener('click', () => { const a = document.createElement('a'); a.href = eng.snapshot(); a.download = 'rendu-dome-' + $('dsAmbiance').value + '.png'; document.body.appendChild(a); a.click(); a.remove(); });
     }
     if (eng) events3DGL(); else { events3DCanvas(); $('ds3dHint').textContent = 'WebGL2 indisponible sur cet appareil : rendu simplifié · glisser = tourner · molette = zoom'; }
     (st.models || []).forEach(loadModel);
@@ -669,7 +671,7 @@
     if (dirty3) draw3D();
     const note = toileMode === 'coupe' ? ' · la coupe n\'est pas rendue (toile entière)' : '';
     photoUi(true, 'Préparation du rendu photo…');
-    const ok = eng.photoStart(cam, toileMode === 'coupe', { samples: window.COVER_PHOTO_SAMPLES || 256,
+    const ok = eng.photoStart(cam, toileMode === 'coupe', { samples: window.COVER_PHOTO_SAMPLES || 256, ambiance: $('dsAmbiance').value,
       onProgress: (n, t) => { $('ds3dHint').textContent = 'Rendu photo : ' + Math.round(100 * n / t) + ' %' + note + ' · bouger la vue annule'; },
       onDone: () => { photoOn = false; $('dsPhoto').textContent = '📷 Rendu photo'; $('dsPhotoSave').style.display = ''; $('ds3dHint').textContent = 'Rendu photo terminé · ⬇ PNG pour l\'enregistrer · bouger la vue revient au 3D'; },
       onError: err => { console.warn(err); photoUi(false, 'Rendu photo impossible sur cet appareil (WebGL2 insuffisant).'); } });
