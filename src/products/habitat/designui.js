@@ -93,7 +93,8 @@
         <label title="Angle du nord sur le plan, dans le sens des aiguilles d'une montre (0 = nord en haut)">Nord sur le plan (°)<input type="number" id="dsSiteNorth" step="5" min="-360" max="360"></label>
         <label>Soleil dans la 3D<select id="dsSunMode"><option value="amb">Selon l'ambiance</option><option value="real">Réel (date et heure)</option></select></label>
         <label id="dsSunWhen">Date et heure (heure belge)<span style="display:flex;gap:6px;align-items:center"><input type="date" id="dsSunDate"><input type="range" id="dsSunHour" min="4" max="22" step="0.25" style="width:120px"><b id="dsSunHourTxt" style="font-family:var(--mono);font-size:11px"></b></span></label>
-        <label>Carte des faces<select id="dsSunMap"><option value="none">Aucune</option><option value="bilan">Bilan fenêtres (hiver − été)</option><option value="hiver">Soleil d'hiver (21 déc.)</option><option value="ete">Soleil d'été (21 juin)</option></select></label>
+        <label title="Direction du paysage à cadrer (vallée, forêt, lac…)">Vue principale<span style="display:flex;gap:6px;align-items:center"><select id="dsViewDir"><option value="">Aucune</option>${['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'].map((c, i) => '<option value="' + i * 22.5 + '">' + c + '</option>').join('')}</select><input type="number" id="dsViewWidth" min="20" max="180" step="10" style="width:56px" title="Largeur du paysage, en degrés"> °</span></label>
+        <label>Carte des faces<select id="dsSunMap"><option value="none">Aucune</option><option value="bilan">Bilan fenêtres (hiver − été)</option><option value="vue">Vue principale</option><option value="hiver">Soleil d'hiver (21 déc.)</option><option value="ete">Soleil d'été (21 juin)</option></select></label>
         <label>Lecture<span class="muted" id="dsSunInfo" style="font-size:11px;max-width:320px"></span></label>
       </div>
       <div class="toolbar" id="dsVentBar">
@@ -173,6 +174,9 @@
       $('dsSunDate').addEventListener('change', e => { if (e.target.value) sunUi.date = e.target.value; syncSun(); });
       $('dsSunHour').addEventListener('input', e => { sunUi.hour = parseFloat(e.target.value); syncSun(); });
       $('dsSunMap').addEventListener('change', e => { sunUi.map = e.target.value; syncSun(); });
+      const setView = () => { const d = $('dsViewDir').value, w = parseFloat(String($('dsViewWidth').value).replace(',', '.'));
+        st.site.view = d === '' ? null : { az: parseFloat(d), width: isFinite(w) ? Math.max(20, Math.min(180, w)) : 90 }; save(); drawAll(); };
+      $('dsViewDir').addEventListener('change', setView); $('dsViewWidth').addEventListener('change', setView);
     } else $('dsSunBar').style.display = 'none';
     if (VENT) {
       $('dsVentTarget').addEventListener('change', e => { const v = parseFloat(String(e.target.value).replace(',', '.')); st.vent.target = isFinite(v) ? Math.max(0.5, Math.min(60, v)) : 5; save(); syncVent(); });
@@ -225,7 +229,8 @@
     const m = st.mezz;
     $('dsStyle').value = st.style; $('dsMezzOn').checked = m.on;
     if (VENT) { $('dsVentTarget').value = st.vent.target; $('dsVentArrows').checked = ventArrows; }
-    if (SUN) { $('dsSiteCity').value = SUN.cityOf(st.site.city).id; $('dsSiteNorth').value = st.site.north; $('dsSunMode').value = sunUi.mode; $('dsSunDate').value = sunUi.date; $('dsSunHour').value = sunUi.hour; $('dsSunMap').value = sunUi.map; }
+    if (SUN) { $('dsSiteCity').value = SUN.cityOf(st.site.city).id; $('dsSiteNorth').value = st.site.north; $('dsSunMode').value = sunUi.mode; $('dsSunDate').value = sunUi.date; $('dsSunHour').value = sunUi.hour; $('dsSunMap').value = sunUi.map;
+      const vw = st.site.view; $('dsViewDir').value = vw ? String(Math.round(vw.az / 22.5) * 22.5) : ''; $('dsViewWidth').value = vw ? vw.width : 90; $('dsViewWidth').disabled = !vw; }
     $('dsMezzH').value = m.h; $('dsMezzT').value = m.thick; $('dsMezzShape').value = m.shape; $('dsMezzD').value = m.depth; $('dsMezzW').value = m.width; $('dsMezzA').value = m.angle; $('dsMezzO').value = m.orient;
     ['dsMezzH', 'dsMezzT', 'dsMezzShape', 'dsMezzD', 'dsMezzW', 'dsMezzA', 'dsMezzO'].forEach(id => $(id).disabled = !m.on);
     $('dsLDepth').style.display = m.shape === 'secteur' ? 'none' : '';
@@ -394,7 +399,7 @@
   let planT = null;
   function planTransform(cv) {
     const ext = window.CoverApp && window.CoverApp.doorScenes ? Math.max(0, ...window.CoverApp.doorScenes().flatMap(x => x.pieces.map(p => Math.hypot(p.b.x, p.b.z)))) : 0;
-    const W = cv.width, H = cv.height, R = Math.max(model.radius, ext) + 0.6;
+    const W = cv.width, H = cv.height, R = Math.max(model.radius, ext) + (st.site && st.site.view ? 0.95 : 0.6);   // place pour le secteur de vue
     const s = Math.min(W, H) / (2 * R) * view.zoom;
     const cx = W / 2 + view.panX, cy = H / 2 + view.panY;
     return { s, f: p => ({ x: cx + p.x * s, y: cy + p.z * s }), inv: q => ({ x: (q.x - cx) / s, z: (q.y - cy) / s }) };
@@ -413,6 +418,17 @@
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.moveTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.stroke();
     }
     drawPlan(canvasPen(ctx, dpr), planT.f, dpr, level);
+    // vue principale : secteur hors du dôme, dans la direction du paysage
+    const vw = st.site && st.site.view;
+    if (SUN && vw) {
+      const r0 = model.radius + 0.1, r1 = model.radius + 0.45, pts = [];
+      for (let k = 0; k <= 16; k++) { const v = SUN.compass(vw.az - vw.width / 2 + vw.width * k / 16, st.site.north); pts.push(planT.f({ x: v.x * r1, z: v.z * r1 })); }
+      for (let k = 16; k >= 0; k--) { const v = SUN.compass(vw.az - vw.width / 2 + vw.width * k / 16, st.site.north); pts.push(planT.f({ x: v.x * r0, z: v.z * r0 })); }
+      ctx.beginPath(); pts.forEach((q, k) => k ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath();
+      ctx.fillStyle = 'rgba(38,140,158,0.18)'; ctx.fill(); ctx.strokeStyle = 'rgba(38,140,158,0.8)'; ctx.lineWidth = 1.2 * dpr; ctx.stroke();
+      const m = SUN.compass(vw.az, st.site.north), lp = planT.f({ x: m.x * (r1 + 0.22), z: m.z * (r1 + 0.22) });
+      ctx.fillStyle = 'rgb(28,110,124)'; ctx.font = 'bold ' + 10 * dpr + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('Vue ' + SUN.cardinal(vw.az), lp.x, lp.y);
+    }
     // nord + échelle
     const pen = canvasPen(ctx, dpr);
     const nx = cv.width - 30 * dpr, ny = 34 * dpr;
@@ -719,7 +735,8 @@
       const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t), grey = [0.86, 0.86, 0.84];
       out.faces = model.skinTris.map((t, i) => {
         const f = ex[i]; let col;
-        if (sunUi.map === 'hiver') col = mix([0.95, 0.96, 0.98], [0.12, 0.35, 0.8], f.hiver / maxW);
+        if (sunUi.map === 'vue') col = mix(grey, [0.15, 0.55, 0.62], SUN.viewScore(f.normal, st.site.north, st.site.view));
+        else if (sunUi.map === 'hiver') col = mix([0.95, 0.96, 0.98], [0.12, 0.35, 0.8], f.hiver / maxW);
         else if (sunUi.map === 'ete') col = mix([0.98, 0.96, 0.92], [0.85, 0.18, 0.12], f.ete / maxS);
         else col = f.balance >= 0 ? mix(grey, [0.2, 0.66, 0.3], Math.min(1, f.balance / 0.6)) : mix(grey, [0.86, 0.22, 0.15], Math.min(1, -f.balance / 0.6));
         return { pts: t, normal: f.normal, color: col };
@@ -739,7 +756,15 @@
       const ex = sunExposure(), side = {};
       ex.forEach((f, i) => { if (f.verdict !== 'conseille') return; const t = model.skinTris[i], k = SUN.cardinal(SUN.azimuthOf({ x: t[0].x + t[1].x + t[2].x, z: t[0].z + t[1].z + t[2].z }, st.site.north)); side[k] = (side[k] || 0) + 1; });
       const best = Object.keys(side).sort((a, b) => side[b] - side[a]).slice(0, 3);
-      parts.push((sunUi.map === 'bilan' ? '🟢 fenêtres conseillées · 🔴 à protéger (surchauffe) · ' : sunUi.map === 'hiver' ? 'Bleu foncé = soleil d\'hiver bienvenu · ' : 'Rouge = soleil d\'été (risque de surchauffe) · ') +
+      if (sunUi.map === 'vue' || (sunUi.map === 'bilan' && st.site.view)) {
+        if (!st.site.view) parts.push('Choisissez la direction de la vue principale');
+        else {
+          const both = ex.filter(f => f.verdict === 'conseille' && SUN.viewScore(f.normal, st.site.north, st.site.view) > 0).length,
+            seen = ex.filter(f => SUN.viewScore(f.normal, st.site.north, st.site.view) > 0).length, hot = ex.filter(f => f.verdict === 'proteger' && SUN.viewScore(f.normal, st.site.north, st.site.view) > 0).length;
+          parts.push('Vue ' + SUN.cardinal(st.site.view.az) + ' : ' + seen + ' faces la regardent, dont ' + both + ' aussi conseillées pour le soleil' + (hot ? ' et ' + hot + ' à protéger de la surchauffe (store ou avancée)' : ''));
+        }
+      }
+      if (sunUi.map !== 'vue') parts.push((sunUi.map === 'bilan' ? '🟢 fenêtres conseillées · 🔴 à protéger (surchauffe) · ' : sunUi.map === 'hiver' ? 'Bleu foncé = soleil d\'hiver bienvenu · ' : 'Rouge = soleil d\'été (risque de surchauffe) · ') +
         (best.length ? 'meilleurs côtés : ' + best.join(', ') : 'aucune face nettement favorable'));
     }
     parts.push('🟡 calculé : ciel clair, sans ombre du terrain ni des arbres');

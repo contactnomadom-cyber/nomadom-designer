@@ -50,7 +50,7 @@
     if (!isObj(raw)) return { ok: false, errors: ['ce n\'est pas un aménagement (objet attendu)'] };
     if (raw.version !== 1) return { ok: false, errors: ['version de format ' + escapeText(raw.version) + ' inconnue (attendue : 1)'] };
     const lib = new Map((library || []).map(l => [l.type, l]));
-    const out = { version: 1, items: [], openings: [], mezz: Object.assign({}, defaults.mezz), style: defaults.style, site: Object.assign({ city: 'beauraing', north: 0 }, defaults.site), vent: { target: defaults.vent ? defaults.vent.target : 5, open: {}, part: {} } };
+    const out = { version: 1, items: [], openings: [], mezz: Object.assign({}, defaults.mezz), style: defaults.style, site: Object.assign({ city: 'beauraing', north: 0, view: null }, defaults.site), vent: { target: defaults.vent ? defaults.vent.target : 5, open: {}, part: {} } };
 
     // éléments
     const items = raw.items === undefined ? [] : raw.items;
@@ -110,6 +110,11 @@
       else {
         if (raw.site.city !== undefined) { if (typeof raw.site.city !== 'string' || !/^[a-z0-9-]{1,30}$/.test(raw.site.city)) err('lieu du projet invalide'); else out.site.city = raw.site.city; }
         if (raw.site.north !== undefined) { if (!isNum(raw.site.north) || Math.abs(raw.site.north) > 360) err('orientation du nord impossible'); else out.site.north = raw.site.north; }
+        if (raw.site.view !== undefined && raw.site.view !== null) {
+          const w = raw.site.view;
+          if (!isObj(w) || !isNum(w.az) || w.az < 0 || w.az >= 360 || !isNum(w.width) || w.width < 20 || w.width > 180) err('vue principale impossible (direction 0 à 359°, angle 20 à 180°)');
+          else out.site.view = { az: w.az, width: w.width };
+        }
       }
     }
     // aération : objectif de renouvellements d'air, ouvertures ouvrables

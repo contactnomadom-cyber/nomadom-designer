@@ -107,6 +107,11 @@ check(V(old).ok && V(old).state.site.north === 0, 'ancien aménagement sans « s
 refused(st({ site: { city: '<b>' } }), 'lieu balisé', 'lieu');
 refused(st({ site: { north: 'nord' } }), 'nord en texte', 'nord');
 refused(st({ site: 'Namur' }), 'site en texte', 'site');
+const sv = V(st({ site: { view: { az: 157.5, width: 120 } } }));
+check(sv.ok && sv.state.site.view.az === 157.5 && sv.state.site.view.width === 120, 'vue principale relue (SSE, 120°)');
+check(V(st()).state.site.view === null && V(st({ site: { view: null } })).ok, 'sans vue : aucune');
+refused(st({ site: { view: { az: 400, width: 90 } } }), 'vue à 400°', 'vue');
+refused(st({ site: { view: { az: 90, width: 5 } } }), 'vue de 5°', 'vue');
 // aération
 const vv = V(st({ vent: { target: 8, open: { 'b12.13.14': true, 'do1abc': false } } }));
 check(vv.ok && vv.state.vent.target === 8 && vv.state.vent.open['b12.13.14'] === true && vv.state.vent.open.do1abc === false, 'aération relue');

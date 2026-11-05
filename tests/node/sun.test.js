@@ -51,5 +51,15 @@ check(['SSE', 'S', 'SSO'].includes(S.cardinal(S.azimuthOf(best.c, 0))), 'meilleu
 const turned = S.faceExposure(model.skinTris, model.height, { city: 'beauraing', north: 90 }), bestT = turned.map((f, i) => ({ f, c: centre(i) })).reduce((a, b) => (b.f.balance > a.f.balance ? b : a));
 check(['SSE', 'S', 'SSO'].includes(S.cardinal(S.azimuthOf(bestT.c, 90))) && bestT.c.x < -1, 'nord tourné de 90° : le meilleur côté suit le sud (à gauche du plan)');
 
+// 5. vue principale
+const vS = { az: 180, width: 90 };
+check(S.viewScore({ x: 0, y: 0, z: 1 }, 0, vS) === 1 && S.viewScore({ x: 0, y: 0, z: -1 }, 0, vS) === 0, 'vue au sud : la face sud la regarde, la face nord non');
+check(S.viewScore({ x: 0, y: 0.95, z: 0.3 }, 0, vS) === 0, 'face du haut : regarde le ciel, pas la vue');
+check(S.viewScore({ x: 1, y: 0, z: 0 }, 0, { az: 180, width: 180 }) === 0.5 && S.viewScore({ x: 1, y: 0, z: 0 }, 0, vS) === 0, 'bord du cône : demi-poids ; hors du cône : rien');
+check(S.viewScore({ x: -1, y: 0, z: 0 }, 90, vS) === 1, 'nord tourné de 90° : la vue sud est à gauche du plan');
+check(S.viewScore({ x: 0, y: 0, z: 1 }, 0, null) === 0, 'sans vue : aucune face');
+const seen = ex.filter(f => S.viewScore(f.normal, 0, vS) > 0).length;
+check(seen > 0 && seen < ex.length / 2, 'dôme de référence, vue au sud sur 90° : ' + seen + ' faces sur ' + ex.length);
+
 console.log('\n' + (fails.length ? fails.length + ' échec(s) sur ' + n : 'TOUT PASSE (' + n + ')'));
 process.exit(fails.length ? 1 : 0);

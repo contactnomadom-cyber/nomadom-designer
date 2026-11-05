@@ -150,7 +150,19 @@
     return (a + 360) % 360;
   }
 
-  const Sun = { CITIES, DEFAULT_SITE, cityOf, belgianToUtc, position, direction, compass, dni, dayPath, outwardNormal, faceExposure, cardinal, azimuthOf };
+  // vue principale (paysage) : view = { az: degrés depuis le nord, width: angle d'ouverture en degrés }
+  // une face « regarde la vue » si sa normale horizontale tombe dans le cône ; les faces du haut regardent le ciel
+  function viewScore(normal, northDeg, view) {
+    if (!view) return 0;
+    const h = Math.hypot(normal.x, normal.z);
+    if (h < 0.5) return 0;
+    const az = azimuthOf({ x: normal.x, z: normal.z }, northDeg);
+    let d = Math.abs(az - view.az) % 360; if (d > 180) d = 360 - d;
+    const half = (view.width || 90) / 2;
+    return d <= half ? 1 - 0.5 * (d / half) * (d / half) : 0;
+  }
+
+  const Sun = { CITIES, viewScore, DEFAULT_SITE, cityOf, belgianToUtc, position, direction, compass, dni, dayPath, outwardNormal, faceExposure, cardinal, azimuthOf };
   if (typeof module !== 'undefined' && module.exports) module.exports = Sun;
   else global.Sun = Sun;
 })(typeof window !== 'undefined' ? window : globalThis);
