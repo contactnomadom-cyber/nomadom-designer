@@ -61,6 +61,16 @@ with sync_playwright() as p:
     check('☂' in t and 'pluie' in t, 'coupole ouverte : rappel pluie (étanchéité)')
     check('🟡' in t, 'statut 🟡 calculé affiché')
     check(R['cases'][1]['ach'] > R['cases'][0]['ach'], 'mi-saison (écart 10 °C) : plus de tirage qu\'en été')
+    # part ouvrante : coupole à charnière ouverte à moitié → moins d'air, gardé dans l'aménagement
+    cap_key = [o['key'] for o in R['ops'] if o['kind'] == 'coupole'][0]
+    check(pg.input_value('[data-vent-part="' + cap_key + '"]') == '100', 'part ouvrante de la coupole : 100 % par défaut')
+    pg.fill('[data-vent-part="' + cap_key + '"]', '50'); pg.dispatch_event('[data-vent-part="' + cap_key + '"]', 'change'); pg.wait_for_timeout(800)
+    R50 = pg.evaluate('CoverDesign._vent()')
+    cap50 = [o for o in R50['ops'] if o['kind'] == 'coupole'][0]
+    check(abs(cap50['area'] - cap50['areaFull'] / 2) < 1e-9 and R50['cases'][0]['ach'] < e['ach'], 'coupole ouverte à 50 % : surface ouverte divisée par 2, ' + str(round(R50['cases'][0]['ach'])) + '/h au lieu de ' + str(round(e['ach'])))
+    check(pg.evaluate('CoverDesign.state().vent.part')[cap_key] == 50, 'part ouvrante gardée dans l\'aménagement')
+    pg.fill('[data-vent-part="' + cap_key + '"]', '100'); pg.dispatch_event('[data-vent-part="' + cap_key + '"]', 'change'); pg.wait_for_timeout(800)
+    check(abs(pg.evaluate('CoverDesign._vent()')['cases'][0]['ach'] - e['ach']) < 1e-9, 'retour à 100 % : résultat de départ')
     # alerte d'équilibre : porte décochée → seule la coupole reste, puis objectif élevé
     pg.locator('[data-vent^="b"]').nth(0).wait_for()
     keys = [o['key'] for o in R['ops'] if o['kind'] == 'porte']

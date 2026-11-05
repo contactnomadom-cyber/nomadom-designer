@@ -50,7 +50,7 @@
     if (!isObj(raw)) return { ok: false, errors: ['ce n\'est pas un aménagement (objet attendu)'] };
     if (raw.version !== 1) return { ok: false, errors: ['version de format ' + escapeText(raw.version) + ' inconnue (attendue : 1)'] };
     const lib = new Map((library || []).map(l => [l.type, l]));
-    const out = { version: 1, items: [], openings: [], mezz: Object.assign({}, defaults.mezz), style: defaults.style, site: Object.assign({ city: 'beauraing', north: 0 }, defaults.site), vent: { target: defaults.vent ? defaults.vent.target : 5, open: {} } };
+    const out = { version: 1, items: [], openings: [], mezz: Object.assign({}, defaults.mezz), style: defaults.style, site: Object.assign({ city: 'beauraing', north: 0 }, defaults.site), vent: { target: defaults.vent ? defaults.vent.target : 5, open: {}, part: {} } };
 
     // éléments
     const items = raw.items === undefined ? [] : raw.items;
@@ -123,6 +123,14 @@
           else Object.keys(v.open).forEach(k => {
             if (!/^[bd][A-Za-z0-9.]{1,300}$/.test(k) || typeof v.open[k] !== 'boolean') err('aération : ouverture « ' + escapeText(k) + ' » invalide');
             else out.vent.open[k] = v.open[k];
+          });
+        }
+        // part réellement ouvrante (coupole à charnière, fenêtre à soufflet…), en %
+        if (v.part !== undefined) {
+          if (!isObj(v.part) || Object.keys(v.part).length > 200) err('aération : parts ouvrantes invalides');
+          else Object.keys(v.part).forEach(k => {
+            if (!/^[bd][A-Za-z0-9.]{1,300}$/.test(k) || !isNum(v.part[k]) || v.part[k] < 5 || v.part[k] > 100) err('aération : part ouvrante de « ' + escapeText(k) + ' » impossible (5 à 100 %)');
+            else out.vent.part[k] = v.part[k];
           });
         }
       }

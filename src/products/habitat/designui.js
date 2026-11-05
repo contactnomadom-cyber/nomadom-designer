@@ -176,7 +176,13 @@
     } else $('dsSunBar').style.display = 'none';
     if (VENT) {
       $('dsVentTarget').addEventListener('change', e => { const v = parseFloat(String(e.target.value).replace(',', '.')); st.vent.target = isFinite(v) ? Math.max(0.5, Math.min(60, v)) : 5; save(); syncVent(); });
-      $('dsVentList').addEventListener('change', e => { const k = e.target.dataset.vent; if (!k) return; st.vent.open[k] = e.target.checked; save(); syncVent(); });
+      $('dsVentList').addEventListener('change', e => {
+        const k = e.target.dataset.vent, kp = e.target.dataset.ventPart;
+        if (k) st.vent.open[k] = e.target.checked;
+        else if (kp) { if (!st.vent.part) st.vent.part = {}; const v = parseFloat(String(e.target.value).replace(',', '.')); st.vent.part[kp] = isFinite(v) ? Math.max(5, Math.min(100, Math.round(v))) : 100; }
+        else return;
+        save(); syncVent();
+      });
       $('dsVentArrows').addEventListener('change', e => { ventArrows = e.target.checked; syncVent(); });
     } else $('dsVentBar').style.display = 'none';
     mz('dsMezzH', 'h', true); mz('dsMezzT', 'thick', true); mz('dsMezzShape', 'shape'); mz('dsMezzD', 'depth', true); mz('dsMezzW', 'width', true); mz('dsMezzA', 'angle', true); mz('dsMezzO', 'orient', true);
@@ -761,7 +767,9 @@
       out.push({ key: 'd' + op.id, kind: op.type, label: VENT.LABEL[op.type] + ' (Design ' + (i + 1) + ')', area: op.w * op.h, yMin: sill, yMax: sill + op.h,
         center: { x: (g.p0.x + g.p1.x) / 2, y: sill + op.h / 2, z: (g.p0.z + g.p1.z) / 2 }, normal: { x: -g.nx, y: 0, z: -g.nz } });
     });
-    out.forEach(o => { const v = st.vent.open[o.key]; o.open = typeof v === 'boolean' ? v : VENT.defaultOpen(o.kind); });
+    // part ouvrante : seule la surface réellement dégagée laisse passer l'air (coupole à charnière, fenêtre à soufflet…)
+    out.forEach(o => { const v = st.vent.open[o.key], p = st.vent.part && st.vent.part[o.key];
+      o.open = typeof v === 'boolean' ? v : VENT.defaultOpen(o.kind); o.part = typeof p === 'number' ? p : 100; o.areaFull = o.area; o.area = o.areaFull * o.part / 100; });
     return out;
   }
   function ventResult() {
@@ -782,22 +790,23 @@
   function syncVent() {
     if (!VENT || !model || !$('dsVentInfo')) return;
     const R = ventResult(), f1 = v => fr(v, 1), f2 = v => fr(v, 2);
-    $('dsVentList').innerHTML = R.ops.length ? R.ops.map(o => '<label class="chk" style="font-weight:400"><input type="checkbox" data-vent="' + esc(o.key) + '"' + (o.open ? ' checked' : '') + '> ' + esc(o.label) + ' · ' + f2(o.area) + ' m²</label>').join('')
+    $('dsVentList').innerHTML = R.ops.length ? R.ops.map(o => '<span style="display:inline-flex;align-items:center;gap:4px"><label class="chk" style="font-weight:400"><input type="checkbox" data-vent="' + esc(o.key) + '"' + (o.open ? ' checked' : '') + '> ' + esc(o.label) + ' · ' + f2(o.areaFull) + ' m²</label>'
+      + (o.open ? '<input type="number" data-vent-part="' + esc(o.key) + '" value="' + o.part + '" min="5" max="100" step="5" style="width:52px" title="Part réellement ouvrante : 100 % = toute la surface dégagée ; une coupole à charnière ouverte à moitié ≈ 50 %"> % ouvrant' : '') + '</span>').join('')
       : '<span class="muted">Aucune ouverture : tracez la porte et la coupole dans l\'onglet Base.</span>';
     const L = [], e = R.cases[0];
     if (e.mode === 'aucune') L.push('Aucune ouverture ouvrable : pas d\'aération naturelle.');
     else {
-      L.push('Entrées basses ' + f2(e.low) + ' m² · coupole ' + f2(e.high) + ' m²' + (e.mode === 'cheminee' ? ' · tirage sur ' + f1(e.height) + ' m' : ' (sans coupole : aération faible)') + ' · volume ' + f1(R.vol) + ' m³');
+      L.push('Ouvert en bas ' + f2(e.low) + ' m² · ouvert en haut ' + f2(e.high) + ' m²' + (e.mode === 'cheminee' ? ' · tirage sur ' + f1(e.height) + ' m' : ' (sans coupole : aération faible)') + ' · volume ' + f1(R.vol) + ' m³');
       L.push(R.cases.map(r => (r.ach >= st.vent.target ? '🟢 ' : '🟠 ') + fr(r.ach, r.ach < 10 ? 1 : 0) + ' renouvellements/h (' + r.c.label + ', écart ' + r.c.dT + ' °C)').join(' · '));
       const b = VENT.balance(e); if (b) L.push((b.level === 'warn' ? '⚠ ' : b.level === 'ok' ? '✓ ' : 'ⓘ ') + b.text);
       const z = R.size;
       if (!z.ok) L.push('Dimensionner : ' + z.reason + '.');
       else if (e.ach >= st.vent.target) L.push('Objectif ' + fr(st.vent.target, 1) + '/h atteint en été' + (z.needLow ? ' (entrées basses utiles : ' + f2(z.needLow) + ' m² au moins)' : '') + '.');
-      else if (z.highTooSmall) L.push('Objectif ' + fr(st.vent.target, 1) + '/h : coupole trop petite, il faut au moins ' + f2(z.minHigh) + ' m² au sommet (et autant en bas).');
+      else if (z.highTooSmall) L.push('Objectif ' + fr(st.vent.target, 1) + '/h : coupole trop petite, il faut au moins ' + f2(z.minHigh) + ' m² réellement ouverts au sommet (et autant en bas).');
       else L.push('Objectif ' + fr(st.vent.target, 1) + '/h : il faut ' + f2(z.needLow) + ' m² d\'entrées basses ouvrables (vous en avez ' + f2(e.low) + ').');
       if (R.open.some(o => o.kind === 'coupole')) L.push('☂ Coupole ouverte : à fermer par pluie, ou prévoir un chapeau (étanchéité avant tout).');
     }
-    L.push('🟡 calculé : effet cheminée seul, sans vent (cas défavorable), ouvertures entièrement ouvertes');
+    L.push('🟡 calculé : effet cheminée seul, sans vent (cas défavorable), surface ouverte selon la part ouvrante indiquée');
     $('dsVentInfo').innerHTML = L.map(esc).join('<br>');
     if (eng && eng.isThree && eng.setVent && visible()) { eng.setVent(ventScene(R)); eng.render(cam, toileMode === 'coupe'); }
   }

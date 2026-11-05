@@ -114,6 +114,11 @@ check(V(st()).state.vent.target === 5 && Object.keys(V(st()).state.vent.open).le
 refused(st({ vent: { target: 500 } }), 'objectif 500/h', 'objectif');
 refused(st({ vent: { open: { '<b>': true } } }), 'ouverture balisée', 'aération');
 refused(st({ vent: { open: { b1: 'oui' } } }), 'ouvrable en texte', 'aération');
+const vp = V(st({ vent: { part: { 'b1.2.3.4.5': 40 } } }));
+check(vp.ok && vp.state.vent.part['b1.2.3.4.5'] === 40, 'part ouvrante relue (40 %)');
+check(V(st()).state.vent.part && Object.keys(V(st()).state.vent.part).length === 0, 'sans part ouvrante : 100 % par défaut');
+refused(st({ vent: { part: { b1: 0 } } }), 'part ouvrante 0 %', 'part ouvrante');
+refused(st({ vent: { part: { b1: '50' } } }), 'part ouvrante en texte', 'part ouvrante');
 
 if (fails.length) { console.log('ÉCHEC ' + fails.length + '/' + n); fails.slice(0, 25).forEach(x => console.log('  ' + x)); process.exit(1); }
 console.log('OK ' + n + '/' + n);
