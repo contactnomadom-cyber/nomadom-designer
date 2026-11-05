@@ -27,6 +27,7 @@ Nomad'Om Designer : conception et fabrication de dômes géodésiques (géométr
 | Tests ciblés (pendant le travail) | `node scripts/test-all.mjs --only <suites>` |
 | Contrôle rapide (≈ 3 min) | `node scripts/test-all.mjs --quick` |
 | Contrôle complet (≈ 10 min, avant fusion/publication) | `node scripts/test-all.mjs` |
+| Contrôle complet sur petite machine (2 processeurs, ≈ 30 min) | `node scripts/test-all.mjs --parallel=1` |
 | Feu vert de publication | `node scripts/release.mjs` |
 
 ## Quels tests selon les fichiers modifiés
@@ -55,7 +56,7 @@ Les deux dômes de référence (3V Kruschke 7/12 Ø 5 m ; 2V Chords 1/2 Ø 5,30 
 
 ## Pièges connus
 - Pas de `"type": "module"` dans `package.json` (casse les `require` des tests et modules).
-- Tests navigateur : 3 en parallèle au plus (au-delà, Chromium ne charge plus la page).
+- Tests navigateur : 3 en parallèle au plus (au-delà, Chromium ne charge plus la page). Sur 2 processeurs (conteneur cloud), même 3 font dépasser le délai des clics (`Timeout 30000ms` sur un onglet) : relancer avec `--parallel=1` avant de conclure à une régression.
 - Une ligne de 130 ko dans `vendor/three/` : ne jamais la lire.
 - Conventions : code en anglais, interface et termes d'atelier en français (`docs/glossary.md`) ; unités internes en mètres ; renommer seulement ce que le chantier touche. Décisions : `docs/architecture/`.
 
