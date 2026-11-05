@@ -34,6 +34,13 @@ with sync_playwright() as p:
     check('Solives CLS 38 × 184' in t and 'Poutres KVH 80 × 200' in t and 'poutre côté paroi' in t and 'À commander' in t and 'panneaux de 2,44 m × 1,22 m' in t, 'liste de débits : solives, poutre de rive, panneaux')
     if OUT:
         os.makedirs(OUT, exist_ok=True); pg.locator('#dsMezzFrameBar').screenshot(path=os.path.join(OUT, 'mezz-ossature.png'))
+    # 3D : ossature dessinée sous la mezzanine, elle suit l'appui choisi
+    i_ind = pg.eval_on_selector('#ds3d', 'c => c.toDataURL()')
+    pg.select_option('#dsMfWall', 'paroi'); pg.wait_for_timeout(1500)
+    i_par = pg.eval_on_selector('#ds3d', 'c => c.toDataURL()')
+    check(i_par != i_ind, '3D : l\'ossature suit l\'appui choisi (poteaux côté paroi présents ou non)')
+    pg.select_option('#dsMfWall', 'poteaux'); pg.wait_for_timeout(1500)
+    check(pg.eval_on_selector('#ds3d', 'c => c.toDataURL()') == i_ind, '3D : retour à l\'appui indépendant, même image')
     # côtés droits : poteaux
     pg.select_option('#dsMezzShape', 'droit'); pg.wait_for_timeout(1500)
     t = pg.inner_text('#dsMezzFrame')

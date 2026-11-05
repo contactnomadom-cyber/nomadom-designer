@@ -187,13 +187,14 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 - Solidité (branche `feature/portees`, 05/11/2026) : tableau « Solidité » dans la fiche plancher — solives et poutres (ceinture, intérieures), taux de travail en flexion, cisaillement et flèche finale ≤ portée/300 (Eurocode 5 simplifié, kmod 0,8, γM 1,3, fluage compris ; plancher 0,5 + habitation 2 kN/m²) ; CLS supposé C16, KVH et sections d'origine C24 (🟠 à confirmer) ; section conseillée quand ça ne passe pas ; liste de débits masquée tant qu'une pièce est 🔴 (ADR-0002). Statut 🟡 calculé. Constat : le plancher plein (portée 3,9 m) ne passe pas avec la solive d'origine 45 × 145.
 - Aménagement, étape 2 (branche `feature/mezz-ossature`, 05/11/2026) : ossature de la mezzanine (onglet Design, barre « Ossature mezzanine ») — solives parallèles à l'orientation, réparties régulièrement (entraxe 30 à 60 cm), de la poutre de rive à la paroi (lambourde sur les montants, 🟠 à vérifier : la charge passe dans le dôme) ; bord libre parallèle = solive de rive ; arc remplacé par des cordes ; poteaux aux angles libres et poteaux intermédiaires ajoutés tant que la poutre ne passe pas ; contrôles flexion / cisaillement / flèche et poteaux en compression avec flambement (🟡 calculé) ; section conseillée ; épaisseur conseillée (bouton) ; liste de débits (biais en plan contre la paroi) et panneaux ; débits masqués si 🔴. Sections de poteau KVH 80 × 80 à 120 × 120 ajoutées.
 - Appui côté paroi (branche `feature/mezz-paroi`, 05/11/2026) : choix « Poutre + poteaux (indépendante du dôme) » — par défaut, la paroi ne porte rien, poteaux rentrés de 12 cm et contrôlés au sol, contreventement rappelé — ou « Lambourde sur les montants » (🟠 charge dans le dôme, non vérifiée : section et bois des montants inconnus de l'appli).
+- Ossature de la mezzanine dans la 3D (branche `feature/mezz-3d`, 05/11/2026) : panneau de plancher seul, solives, poutres et poteaux dessinés sous la mezzanine ; la 3D suit les choix (sections, appui côté paroi).
 
 **Questions ouvertes ❓**
 1. Mémoriser l'ambiance choisie avec l'aménagement ?
 2. Part ouvrante typique de la coupole Nomad'Om (charnière ou soulevée sur le tour) pour la proposer par défaut ?
 3. Ajouter les ombres du terrain (arbres, bâtiments) ? Une ville absente de la liste : coordonnées GPS en option ?
 4. Formats exacts des panneaux et longueurs de CLS chez Bourguignon Bois (OSB, multiplex, Agepan) ; classe réelle du CLS chez Bourguignon (C16 ou C24) ?
-5. Aménagement, étape 3 : cloisons en CLS, puis le mobilier en multiplex. Ossature de la mezzanine dans la 3D ? Appui sur les montants : section et bois des montants à renseigner pour vérifier la charge reprise par le dôme.
+5. Aménagement, étape 3 : cloisons en CLS, puis le mobilier en multiplex. Appui sur les montants : section et bois des montants à renseigner pour vérifier la charge reprise par le dôme.
 
 ---
 

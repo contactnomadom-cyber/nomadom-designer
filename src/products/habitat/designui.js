@@ -183,7 +183,7 @@
       const FS = window.Floor.SECTIONS, opt = keys => keys.map(k => '<option value="' + k + '">' + esc(FS[k].name) + '</option>').join('');
       const wood = Object.keys(FS).filter(k => !FS[k].post && k.indexOf('prov-') !== 0);
       $('dsMfJoist').innerHTML = opt(wood); $('dsMfBeam').innerHTML = opt(wood); $('dsMfPost').innerHTML = opt(Object.keys(FS).filter(k => FS[k].post));
-      const mf = (id, key, num) => $(id).addEventListener('change', e => { st.mezz.frame = Object.assign({}, window.MezzFrame.DEFAULTS, st.mezz.frame, { [key]: num ? parseFloat(e.target.value) : e.target.value }); save(); syncMezzFrame(); });
+      const mf = (id, key, num) => $(id).addEventListener('change', e => { st.mezz.frame = Object.assign({}, window.MezzFrame.DEFAULTS, st.mezz.frame, { [key]: num ? parseFloat(e.target.value) : e.target.value }); changed(); });
       mf('dsMfJoist', 'joistSection'); mf('dsMfSpacing', 'spacing', true); mf('dsMfBeam', 'beamSection'); mf('dsMfPost', 'postSection'); mf('dsMfJoint', 'joint'); mf('dsMfWall', 'wallSupport');
       $('dsMfThick').addEventListener('click', () => { const r = mezzFrame(); if (r && r.thickNeed) { st.mezz.thick = Math.ceil(r.thickNeed * 100) / 100; syncInputs(); changed(); } });
     } else $('dsMezzFrameBar').style.display = 'none';
@@ -880,8 +880,9 @@
       const kumiko = kmSegments();
       // portes d'aplomb et plancher sur pilotis réglés dans l'onglet Base (NOMAD-2026-005 / 006)
       const CA = window.CoverApp, doors = CA && CA.doorScenes ? CA.doorScenes() : [], floor = CA && CA.floorScene ? CA.floorScene() : null;
-      if (eng.isThree) eng.update(Z, model, st, { style: style3, ambiance: amb3, toile: toileMode, openings, kumiko, doors, floor }, () => eng.render(cam, toileMode === 'coupe'));
-      else eng.setScene(Design3D.buildScene(Z, model, st, { style: style3, toile: toileMode, models: glbCache, openings, kumiko, doors, floor }));
+      const mf = mezzFrame(), mezzFrameScene = mf && mf.joists ? Object.assign({ deckThickness: window.MezzFrame.DECK }, mf) : null;   // ossature de la mezzanine
+      if (eng.isThree) eng.update(Z, model, st, { style: style3, ambiance: amb3, toile: toileMode, openings, kumiko, doors, floor, mezzFrame: mezzFrameScene }, () => eng.render(cam, toileMode === 'coupe'));
+      else eng.setScene(Design3D.buildScene(Z, model, st, { style: style3, toile: toileMode, models: glbCache, openings, kumiko, doors, floor, mezzFrame: mezzFrameScene }));
       cam.target[1] = Math.min(cam.target[1], model.height); dirty3 = false;
     }
     eng.render(cam, toileMode === 'coupe');
