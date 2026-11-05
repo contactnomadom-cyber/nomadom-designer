@@ -107,6 +107,12 @@ check(V(old).ok && V(old).state.site.north === 0, 'ancien aménagement sans « s
 refused(st({ site: { city: '<b>' } }), 'lieu balisé', 'lieu');
 refused(st({ site: { north: 'nord' } }), 'nord en texte', 'nord');
 refused(st({ site: 'Namur' }), 'site en texte', 'site');
+// ossature de la mezzanine
+const mf = V(st({ mezz: { on: true, frame: { joistSection: 'cls-38x184', spacing: 0.4, beamSection: 'kvh-80x200', postSection: 'kvh-100x100', joint: 'onglet' } } }));
+check(mf.ok && mf.state.mezz.frame.spacing === 0.4 && mf.state.mezz.frame.joint === 'onglet' && mf.state.mezz.frame.postSection === 'kvh-100x100', 'ossature de mezzanine relue');
+refused(st({ mezz: { frame: { spacing: 0.45 } } }), 'entraxe 45 cm', 'entraxe');
+refused(st({ mezz: { frame: { joistSection: '<b>' } } }), 'section balisée', 'section');
+refused(st({ mezz: { frame: { joint: 'colle' } } }), 'assemblage inconnu', 'assemblage');
 const sv = V(st({ site: { view: { az: 157.5, width: 120 } } }));
 check(sv.ok && sv.state.site.view.az === 157.5 && sv.state.site.view.width === 120, 'vue principale relue (SSE, 120°)');
 check(V(st()).state.site.view === null && V(st({ site: { view: null } })).ok, 'sans vue : aucune');

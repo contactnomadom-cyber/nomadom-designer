@@ -40,7 +40,7 @@
     h += '<div class="door-choice"><b>Choix</b><label>Soubassement ' + sel('support', f.support, SUPPORT) + '</label><label>Plancher ' + sel('deck', f.deck, DECK) + '</label>' +
       '<span class="muted">Plancher en diaphragme : plus tard</span></div>';
     // bois : sections au choix (provisoires, CLS, KVH) et assemblage des cadres
-    const SEC = Object.fromEntries(Object.keys(F.SECTIONS || {}).map(k => [k, F.SECTIONS[k].name]));
+    const SEC = Object.fromEntries(Object.keys(F.SECTIONS || {}).filter(k => !F.SECTIONS[k].post).map(k => [k, F.SECTIONS[k].name]));
     if (F.SECTIONS) h += '<div class="door-choice"><b>Bois</b><label>Poutres ' + sel('beamSection', f.beamSection || 'prov-75x195', SEC) + '</label>' +
       '<label>Solives ' + sel('joistSection', f.joistSection || 'prov-45x145', SEC) + '</label>' +
       '<label>Assemblage des cadres ' + sel('joint', f.joint || 'onglet', F.JOINTS) + '</label>' +

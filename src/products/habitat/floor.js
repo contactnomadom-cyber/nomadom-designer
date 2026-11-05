@@ -48,7 +48,10 @@
     'kvh-60x200': { name: 'KVH 60 × 200', w: 0.060, d: 0.200, grade: 'C24' },
     'kvh-80x160': { name: 'KVH 80 × 160', w: 0.080, d: 0.160, grade: 'C24' },
     'kvh-80x200': { name: 'KVH 80 × 200', w: 0.080, d: 0.200, grade: 'C24' },
-    'kvh-100x200': { name: 'KVH 100 × 200', w: 0.100, d: 0.200, grade: 'C24' }
+    'kvh-100x200': { name: 'KVH 100 × 200', w: 0.100, d: 0.200, grade: 'C24' },
+    'kvh-80x80': { name: 'KVH 80 × 80 (poteau)', w: 0.080, d: 0.080, grade: 'C24', post: true },
+    'kvh-100x100': { name: 'KVH 100 × 100 (poteau)', w: 0.100, d: 0.100, grade: 'C24', post: true },
+    'kvh-120x120': { name: 'KVH 120 × 120 (poteau)', w: 0.120, d: 0.120, grade: 'C24', post: true }
   };
   // classes de résistance (EN 338) : f_m, f_v (MPa), E moyen (MPa), masse volumique (kg/m³)
   // CLS supposé C16 (classement courant, 🟠 à confirmer), KVH et sections d'origine C24
@@ -309,11 +312,9 @@
   // près des appuis (cisaillement) et ne pas trop plier (flèche ≤ portée / 300 sous les charges
   // de calcul, fluage compris). Chaque pièce est une poutre sur deux appuis avec une charge répartie.
   // kmod 0,8 (charges de moyenne durée, classe de service 2), γM 1,3, kcr 0,67, kdef 0,8, ψ2 0,3.
-  function strength(res) {
-    if (!res || !res.ok) return null;
-    const o = res.options, L = o.loads, KMOD = 0.8, GM = 1.3, KCR = 0.67, KDEF = 0.8, PSI2 = 0.3, LIM = 300;
-    // une pièce : section s (w, d, grade), portée l (m), charges réparties g et q (kN/m, g sans poids propre)
-    const piece = (sec, l, g, q) => {
+  const KMOD = 0.8, GM = 1.3, KCR = 0.67, KDEF = 0.8, PSI2 = 0.3, LIM = 300;
+  // une pièce : section s (w, d, grade), portée l (m), charges réparties g et q (kN/m, g sans poids propre)
+  function checkPiece(sec, l, g, q) {
       const gr = GRADES[sec.grade] || GRADES.C24, b = sec.w * 1000, h = sec.d * 1000, Lmm = l * 1000;
       const gTot = g + gr.rho * 9.81e-3 * sec.w * sec.d;                    // + poids propre (kN/m)
       const qd = 1.35 * gTot + 1.5 * q;                                      // ELU (kN/m = N/mm)
@@ -324,7 +325,21 @@
       const r = { bending: M / W / fm, shear: 1.5 * V / (b * h * KCR) / fv, deflection: wfin / (Lmm / LIM), wfin, span: l };
       r.max = Math.max(r.bending, r.shear, r.deflection); r.ok = r.max <= 1 + 1e-9;
       return r;
-    };
+  }
+  // un poteau : compression avec flambement (EN 1995-1-1 §6.3.2), section s, hauteur H (m), effort N (kN, ELU)
+  // classes : f_c,0 (MPa) et E_0,05 (MPa)
+  const POST = { C16: { fc: 17, E05: 5400 }, C24: { fc: 21, E05: 7400 } };
+  function checkPost(sec, H, N) {
+    const g = POST[sec.grade] || POST.C24, b = Math.min(sec.w, sec.d) * 1000, A = sec.w * sec.d * 1e6, i = b / Math.sqrt(12);
+    const lam = H * 1000 / i, lrel = lam / Math.PI * Math.sqrt(g.fc / g.E05), k = 0.5 * (1 + 0.2 * (lrel - 0.3) + lrel * lrel);
+    const kc = Math.min(1, 1 / (k + Math.sqrt(k * k - lrel * lrel))), fcd = KMOD * g.fc / GM;
+    const r = { compression: N * 1000 / A / (kc * fcd), kc, slenderness: lam, height: H, N };
+    r.max = r.compression; r.ok = r.max <= 1 + 1e-9;
+    return r;
+  }
+  function strength(res) {
+    if (!res || !res.ok) return null;
+    const o = res.options, L = o.loads, piece = checkPiece;
     const p = L.floorG, q = L.liveQ;   // kN/m²
     // solives : largeur reprise = entraxe (plein) ou écart moyen entre solives voisines (étoile)
     let width = o.joistSpacing;
@@ -356,7 +371,7 @@
     });
     // section conseillée : la plus petite (par aire) de la même famille qui passe
     const suggest = (cur, test) => {
-      const fam = cur.split('-')[0], list = Object.keys(SECTIONS).filter(k => k.split('-')[0] === fam).sort((a, b) => SECTIONS[a].w * SECTIONS[a].d - SECTIONS[b].w * SECTIONS[b].d);
+      const fam = cur.split('-')[0], list = Object.keys(SECTIONS).filter(k => k.split('-')[0] === fam && !SECTIONS[k].post).sort((a, b) => SECTIONS[a].w * SECTIONS[a].d - SECTIONS[b].w * SECTIONS[b].d);
       return list.find(k => test(SECTIONS[k]).ok) || null;
     };
     if (!joist.ok) joist.suggest = suggest(o.joistSection, sc => piece(Object.assign({}, sc), jSpan, p * width, q * width));
@@ -364,7 +379,7 @@
     return { joist, beams, ok: joist.ok && beams.every(b => b.ok), loads: { G: p, Q: q } };
   }
 
-  const Floor = { SUPPORTS, DECKS, SOILS, SECTIONS, JOINTS, GRADES, strength, DEFAULTS,
+  const Floor = { SUPPORTS, DECKS, SOILS, SECTIONS, JOINTS, GRADES, strength, checkPiece, checkPost, DEFAULTS,
  layout, scene, choices, extraPiles, sasLoad, withExtra, baseRing, pentagonIdx, polyArea, segX };
   if (typeof module !== 'undefined' && module.exports) module.exports = Floor;
   else global.Floor = Floor;

@@ -115,6 +115,16 @@
         <label id="dsLAngle">Ouverture (°)<input type="number" id="dsMezzA" step="5" min="20" max="350"></label>
         <label>Orientation (°)<input type="number" id="dsMezzO" step="5"></label>
       </div>
+      <div class="toolbar" id="dsMezzFrameBar">
+        <span class="group-title">Ossature mezzanine</span>
+        <label>Solives<select id="dsMfJoist"></select></label>
+        <label>Entraxe<select id="dsMfSpacing"><option value="0.3">30 cm</option><option value="0.4">40 cm</option><option value="0.5">50 cm</option><option value="0.6">60 cm</option></select></label>
+        <label>Poutres de rive<select id="dsMfBeam"></select></label>
+        <label>Poteaux<select id="dsMfPost"></select></label>
+        <label>Cadres de rive<select id="dsMfJoint"><option value="about">En about</option><option value="onglet">En onglet</option></select></label>
+        <button id="dsMfThick" style="display:none" title="Régler l'épaisseur de la mezzanine sur plancher + ossature">Appliquer l'épaisseur conseillée</button>
+        <div id="dsMezzFrame" style="flex-basis:100%;max-width:640px"></div>
+      </div>
       <div class="toolbar" id="dsKumikoBar">
         <span class="group-title">Kumiko</span>
         <label>Motif<select id="dsKmPattern">${KL.validPatterns(KM).map(p => '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>').join('')}</select></label>
@@ -167,6 +177,15 @@
     });
     const mz = (id, key, num) => $(id).addEventListener('change', e => { st.mezz[key] = num ? parseFloat(e.target.value) || 0 : e.target.value; syncInputs(); changed(); });
     $('dsMezzOn').addEventListener('change', e => { st.mezz.on = e.target.checked; syncInputs(); changed(); });
+    // ossature de la mezzanine : sections, entraxe, assemblage (st.mezz.frame)
+    if (window.MezzFrame && window.Floor) {
+      const FS = window.Floor.SECTIONS, opt = keys => keys.map(k => '<option value="' + k + '">' + esc(FS[k].name) + '</option>').join('');
+      const wood = Object.keys(FS).filter(k => !FS[k].post && k.indexOf('prov-') !== 0);
+      $('dsMfJoist').innerHTML = opt(wood); $('dsMfBeam').innerHTML = opt(wood); $('dsMfPost').innerHTML = opt(Object.keys(FS).filter(k => FS[k].post));
+      const mf = (id, key, num) => $(id).addEventListener('change', e => { st.mezz.frame = Object.assign({}, window.MezzFrame.DEFAULTS, st.mezz.frame, { [key]: num ? parseFloat(e.target.value) : e.target.value }); save(); syncMezzFrame(); });
+      mf('dsMfJoist', 'joistSection'); mf('dsMfSpacing', 'spacing', true); mf('dsMfBeam', 'beamSection'); mf('dsMfPost', 'postSection'); mf('dsMfJoint', 'joint');
+      $('dsMfThick').addEventListener('click', () => { const r = mezzFrame(); if (r && r.thickNeed) { st.mezz.thick = Math.ceil(r.thickNeed * 100) / 100; syncInputs(); changed(); } });
+    } else $('dsMezzFrameBar').style.display = 'none';
     if (SUN) {
       $('dsSiteCity').addEventListener('change', e => { st.site.city = e.target.value; sunCache = null; save(); drawAll(); });
       $('dsSiteNorth').addEventListener('change', e => { const v = parseFloat(String(e.target.value).replace(',', '.')); st.site.north = isFinite(v) ? Math.max(-360, Math.min(360, v)) : 0; sunCache = null; save(); drawAll(); });
@@ -835,6 +854,24 @@
     $('dsVentInfo').innerHTML = L.map(esc).join('<br>');
     if (eng && eng.isThree && eng.setVent && visible()) { eng.setVent(ventScene(R)); eng.render(cam, toileMode === 'coupe'); }
   }
+  // ---------------------------------------------------------
+  // Ossature de la mezzanine (mezz-frame.js) : solives, poutres de rive, poteaux, solidité, débits
+  // ---------------------------------------------------------
+  function mezzFrame() {
+    if (!window.MezzFrame || !window.Floor || !model || !st.mezz.on) return null;
+    const mp = Z.mezzPolygon(model, st.mezz), wall = Z.section(model, st.mezz.h);
+    return mp && wall ? window.MezzFrame.layout(mp, wall, st.mezz, st.mezz.frame, window.Floor) : null;
+  }
+  function syncMezzFrame() {
+    if (!window.MezzFrame || !$('dsMezzFrameBar')) return;
+    $('dsMezzFrameBar').style.display = st.mezz.on ? '' : 'none';
+    if (!st.mezz.on) return;
+    const o = Object.assign({}, window.MezzFrame.DEFAULTS, st.mezz.frame);
+    $('dsMfJoist').value = o.joistSection; $('dsMfSpacing').value = String(o.spacing); $('dsMfBeam').value = o.beamSection; $('dsMfPost').value = o.postSection; $('dsMfJoint').value = o.joint;
+    const r = mezzFrame();
+    $('dsMfThick').style.display = r && r.ok !== undefined && r.thickNeed && (st.mezz.thick || 0) + 1e-9 < r.thickNeed ? '' : 'none';
+    $('dsMezzFrame').innerHTML = r ? window.MezzUI.html(r, window.Floor) : '<span class="muted">Mezzanine hors de la paroi à cette hauteur.</span>';
+  }
   function draw3D() {
     if (!eng) return draw3DCanvas();
     if (dirty3) {
@@ -998,11 +1035,11 @@
   function drawAll() {
     if (!visible() || !model) return;
     $('dsDome').innerHTML = 'Dôme <b>' + esc(window.CoverApp.label()) + '</b> <span class="muted">(se règle dans l\'onglet Base, ouvertures comprises)</span>';
-    drawPlanScreen(); draw3D(); renderProps(); renderList(); renderKumiko(); syncKumikoBar(); syncSun(); syncVent();
+    drawPlanScreen(); draw3D(); renderProps(); renderList(); renderKumiko(); syncKumikoBar(); syncSun(); syncVent(); syncMezzFrame();
   }
   window.CoverDesign = {
     show() { const first = !built; model = Z.domeModel(window.CoverApp.dome()); if (first) build(); dirty3 = true; if (first && eng) { cam.dist = model.radius * 3.6; cam.target = [0, model.height * 0.38, 0]; } syncInputs(); drawAll(); },
     domeChanged() { if (window.CoverApp) model = Z.domeModel(window.CoverApp.dome()); dirty3 = true; if (built) drawAll(); },
-    state: () => st, _model: () => model, _sunScene: () => sunScene(), _vent: () => ventResult()
+    state: () => st, _model: () => model, _sunScene: () => sunScene(), _vent: () => ventResult(), _mezzFrame: () => mezzFrame()
   };
 })();
