@@ -34,8 +34,32 @@
     gravier: { name: 'Grave compactée', q: 250 },
     argile: { name: 'Argile ferme', q: 100 }
   };
+  // sections de bois au choix (largeur × hauteur, m) : provisoires d'origine, CLS sapin raboté, KVH — 🟠 à confirmer chez le fournisseur
+  const SECTIONS = {
+    'prov-75x195': { name: '75 × 195 (provisoire)', w: 0.075, d: 0.195, grade: 'C24' },
+    'prov-45x145': { name: '45 × 145 (provisoire)', w: 0.045, d: 0.145, grade: 'C24' },
+    'cls-38x63': { name: 'CLS 38 × 63', w: 0.038, d: 0.063, grade: 'C16' },
+    'cls-38x89': { name: 'CLS 38 × 89', w: 0.038, d: 0.089, grade: 'C16' },
+    'cls-38x140': { name: 'CLS 38 × 140', w: 0.038, d: 0.140, grade: 'C16' },
+    'cls-38x184': { name: 'CLS 38 × 184', w: 0.038, d: 0.184, grade: 'C16' },
+    'cls-38x235': { name: 'CLS 38 × 235', w: 0.038, d: 0.235, grade: 'C16' },
+    'kvh-60x120': { name: 'KVH 60 × 120', w: 0.060, d: 0.120, grade: 'C24' },
+    'kvh-60x160': { name: 'KVH 60 × 160', w: 0.060, d: 0.160, grade: 'C24' },
+    'kvh-60x200': { name: 'KVH 60 × 200', w: 0.060, d: 0.200, grade: 'C24' },
+    'kvh-80x160': { name: 'KVH 80 × 160', w: 0.080, d: 0.160, grade: 'C24' },
+    'kvh-80x200': { name: 'KVH 80 × 200', w: 0.080, d: 0.200, grade: 'C24' },
+    'kvh-100x200': { name: 'KVH 100 × 200', w: 0.100, d: 0.200, grade: 'C24' },
+    'kvh-80x80': { name: 'KVH 80 × 80 (poteau)', w: 0.080, d: 0.080, grade: 'C24', post: true },
+    'kvh-100x100': { name: 'KVH 100 × 100 (poteau)', w: 0.100, d: 0.100, grade: 'C24', post: true },
+    'kvh-120x120': { name: 'KVH 120 × 120 (poteau)', w: 0.120, d: 0.120, grade: 'C24', post: true }
+  };
+  // classes de résistance (EN 338) : f_m, f_v (MPa), E moyen (MPa), masse volumique (kg/m³)
+  // CLS supposé C16 (classement courant, 🟠 à confirmer), KVH et sections d'origine C24
+  const GRADES = { C16: { fm: 16, fv: 3.2, E: 8000, rho: 370 }, C24: { fm: 24, fv: 4.0, E: 11000, rho: 420 } };
+  // assemblage des cadres (ceinture, pentagone, triangle) aux nœuds
+  const JOINTS = { onglet: 'En onglet (coupe d\'angle)', about: 'En about (bout à bout, coupe d\'équerre)' };
   const DEFAULTS = {
-    support: 'pentagone', deck: 'etoile',
+    support: 'pentagone', deck: 'etoile', beamSection: 'prov-75x195', joistSection: 'prov-45x145', joint: 'onglet',
     triangleDiameter: 1.2,      // cercle du triangle central (1 à 1,5 m)
     hubDiameter: 0.9,           // pièce centrale du plancher en étoile (0,80 à 1 m)
     joistSpacing: 0.4,          // plancher plein
@@ -85,6 +109,10 @@
     const o = Object.assign({}, DEFAULTS, opts || {});
     o.loads = Object.assign({}, DEFAULTS.loads, opts && opts.loads);
     o.blocks = DEFAULTS.blocks; o.beam = Object.assign({}, DEFAULTS.beam, opts && opts.beam); o.joist = Object.assign({}, DEFAULTS.joist, opts && opts.joist);
+    // section choisie dans la liste (un ancien projet sans choix garde les sections d'origine)
+    if (!SECTIONS[o.beamSection]) o.beamSection = DEFAULTS.beamSection; else if (!(opts && opts.beam)) o.beam = { w: SECTIONS[o.beamSection].w, d: SECTIONS[o.beamSection].d };
+    if (!SECTIONS[o.joistSection]) o.joistSection = DEFAULTS.joistSection; else if (!(opts && opts.joist)) o.joist = { w: SECTIONS[o.joistSection].w, d: SECTIONS[o.joistSection].d };
+    if (!JOINTS[o.joint]) o.joint = DEFAULTS.joint;
     const support = SUPPORTS.includes(o.support) ? o.support : DEFAULTS.support, deck = DECKS.includes(o.deck) ? o.deck : DEFAULTS.deck;
     const warnings = [], errors = [];
     const ring = baseRing(dome), n = ring.length;
@@ -227,7 +255,8 @@
 
   // choix réglables par l'utilisateur, valeurs de départ (ce qui est mémorisé dans l'objet dôme)
   const choices = () => ({ support: DEFAULTS.support, deck: DEFAULTS.deck, triangleDiameter: DEFAULTS.triangleDiameter, hubDiameter: DEFAULTS.hubDiameter,
-    joistSpacing: DEFAULTS.joistSpacing, slope: 0, slopeDir: 0, soil: DEFAULTS.soil });
+    joistSpacing: DEFAULTS.joistSpacing, slope: 0, slopeDir: 0, soil: DEFAULTS.soil,
+    beamSection: DEFAULTS.beamSection, joistSection: DEFAULTS.joistSection, joint: DEFAULTS.joint });
 
   // Pilotis supplémentaires : mêmes blocs, même terrain, tête à topY.
   // row = 'sas' (sous un sas d'entrée, NOMAD-2026-007) ou 'porte' (sous les poteaux d'angle d'un avant-corps).
@@ -285,7 +314,80 @@
     return { beams, boxes, panels, groundY: Math.min(...res.piles.map(p => p.ground)) - 0.05 };
   }
 
-  const Floor = { SUPPORTS, DECKS, SOILS, DEFAULTS, layout, scene, choices, extraPiles, outsideDeck, sasLoad, withExtra, baseRing, pentagonIdx, polyArea, segX };
+  // ---- solidité des solives et des poutres (aperçu 🟡, Eurocode 5 simplifié) ----
+  // Image : une planche posée sur deux tréteaux. Elle doit ne pas casser (flexion), ne pas se fendre
+  // près des appuis (cisaillement) et ne pas trop plier (flèche ≤ portée / 300 sous les charges
+  // de calcul, fluage compris). Chaque pièce est une poutre sur deux appuis avec une charge répartie.
+  // kmod 0,8 (charges de moyenne durée, classe de service 2), γM 1,3, kcr 0,67, kdef 0,8, ψ2 0,3.
+  const KMOD = 0.8, GM = 1.3, KCR = 0.67, KDEF = 0.8, PSI2 = 0.3, LIM = 300;
+  // une pièce : section s (w, d, grade), portée l (m), charges réparties g et q (kN/m, g sans poids propre)
+  function checkPiece(sec, l, g, q) {
+      const gr = GRADES[sec.grade] || GRADES.C24, b = sec.w * 1000, h = sec.d * 1000, Lmm = l * 1000;
+      const gTot = g + gr.rho * 9.81e-3 * sec.w * sec.d;                    // + poids propre (kN/m)
+      const qd = 1.35 * gTot + 1.5 * q;                                      // ELU (kN/m = N/mm)
+      const M = qd * Lmm * Lmm / 8, V = qd * Lmm / 2, W = b * h * h / 6, I = b * h * h * h / 12;
+      const fm = KMOD * gr.fm / GM, fv = KMOD * gr.fv / GM;
+      const defl = w => 5 * w * Math.pow(Lmm, 4) / (384 * gr.E * I);
+      const wfin = defl(gTot) * (1 + KDEF) + defl(q) * (1 + PSI2 * KDEF);
+      const r = { bending: M / W / fm, shear: 1.5 * V / (b * h * KCR) / fv, deflection: wfin / (Lmm / LIM), wfin, span: l };
+      r.max = Math.max(r.bending, r.shear, r.deflection); r.ok = r.max <= 1 + 1e-9;
+      return r;
+  }
+  // un poteau : compression avec flambement (EN 1995-1-1 §6.3.2), section s, hauteur H (m), effort N (kN, ELU)
+  // classes : f_c,0 (MPa) et E_0,05 (MPa)
+  const POST = { C16: { fc: 17, E05: 5400 }, C24: { fc: 21, E05: 7400 } };
+  function checkPost(sec, H, N) {
+    const g = POST[sec.grade] || POST.C24, b = Math.min(sec.w, sec.d) * 1000, A = sec.w * sec.d * 1e6, i = b / Math.sqrt(12);
+    const lam = H * 1000 / i, lrel = lam / Math.PI * Math.sqrt(g.fc / g.E05), k = 0.5 * (1 + 0.2 * (lrel - 0.3) + lrel * lrel);
+    const kc = Math.min(1, 1 / (k + Math.sqrt(k * k - lrel * lrel))), fcd = KMOD * g.fc / GM;
+    const r = { compression: N * 1000 / A / (kc * fcd), kc, slenderness: lam, height: H, N };
+    r.max = r.compression; r.ok = r.max <= 1 + 1e-9;
+    return r;
+  }
+  function strength(res) {
+    if (!res || !res.ok) return null;
+    const o = res.options, L = o.loads, piece = checkPiece;
+    const p = L.floorG, q = L.liveQ;   // kN/m²
+    // solives : largeur reprise = entraxe (plein) ou écart moyen entre solives voisines (étoile)
+    let width = o.joistSpacing;
+    // étoile : la largeur reprise diminue vers le centre (part de camembert) ; charge en trapèze ≈ charge uniforme
+    // de largeur moyenne (moment maxi à 3 % près pour un triangle), écart maxi pris entre solives voisines
+    if (o.deck === 'etoile') {
+      const gap = pts => Math.max(...pts.map((e, i) => dist(e, pts[(i + 1) % pts.length])));
+      width = (gap(res.joists.map(j => j.a)) + gap(res.joists.map(j => j.b))) / 2;
+    }
+    const jSec = Object.assign({ grade: 'C24' }, SECTIONS[o.joistSection], o.joist);
+    const jSpan = Math.max(0, ...res.joists.map(j => j.span));
+    const joist = Object.assign(piece(jSec, jSpan, p * width, q * width), { width, section: o.joistSection });
+    // poutres : portée = plus grand écart entre pilotis sous la poutre ; charge = surface reprise par la rangée / longueur des poutres
+    const bSec = Object.assign({ grade: 'C24' }, SECTIONS[o.beamSection], o.beam);
+    const spanOnPiles = bm => {
+      const ts = res.piles.map(pl => { const ab = { x: bm.b.x - bm.a.x, z: bm.b.z - bm.a.z }, l2 = ab.x * ab.x + ab.z * ab.z;
+        const t = ((pl.at.x - bm.a.x) * ab.x + (pl.at.z - bm.a.z) * ab.z) / l2, c = { x: bm.a.x + t * ab.x, z: bm.a.z + t * ab.z };
+        return t > -1e-6 && t < 1 + 1e-6 && dist(c, pl.at) < 0.02 ? t : null; }).filter(t => t !== null).sort((a, b) => a - b);
+      const len = dist(bm.a, bm.b);
+      if (ts.length < 2) return len;
+      return Math.max(ts[0] * len, (1 - ts[ts.length - 1]) * len, ...ts.slice(1).map((t, k) => (t - ts[k]) * len));
+    };
+    const rows = [{ key: 'ceinture', beams: res.beams.filter(b => b.kind === 'ceinture'), piles: res.piles.filter(pl => pl.row === 'exterieure') },
+      { key: 'interieur', beams: res.beams.filter(b => b.kind !== 'ceinture'), piles: res.piles.filter(pl => pl.row !== 'exterieure') }];
+    const beams = rows.filter(rw => rw.beams.length).map(rw => {
+      const area = rw.piles.reduce((t, pl) => t + pl.area, 0), len = rw.beams.reduce((t, b) => t + dist(b.a, b.b), 0), tw = area / len;
+      const span = Math.max(...rw.beams.map(spanOnPiles));
+      return Object.assign(piece(bSec, span, p * tw, q * tw), { key: rw.key, width: tw, section: o.beamSection });
+    });
+    // section conseillée : la plus petite (par aire) de la même famille qui passe
+    const suggest = (cur, test) => {
+      const fam = cur.split('-')[0], list = Object.keys(SECTIONS).filter(k => k.split('-')[0] === fam && !SECTIONS[k].post).sort((a, b) => SECTIONS[a].w * SECTIONS[a].d - SECTIONS[b].w * SECTIONS[b].d);
+      return list.find(k => test(SECTIONS[k]).ok) || null;
+    };
+    if (!joist.ok) joist.suggest = suggest(o.joistSection, sc => piece(Object.assign({}, sc), jSpan, p * width, q * width));
+    beams.forEach(bm => { if (!bm.ok) bm.suggest = suggest(o.beamSection, sc => piece(Object.assign({}, sc), bm.span, p * bm.width, q * bm.width)); });
+    return { joist, beams, ok: joist.ok && beams.every(b => b.ok), loads: { G: p, Q: q } };
+  }
+
+  const Floor = { SUPPORTS, DECKS, SOILS, SECTIONS, JOINTS, GRADES, strength, checkPiece, checkPost, DEFAULTS,
+ layout, scene, choices, extraPiles, outsideDeck, sasLoad, withExtra, baseRing, pentagonIdx, polyArea, segX };
   if (typeof module !== 'undefined' && module.exports) module.exports = Floor;
   else global.Floor = Floor;
 })(typeof window !== 'undefined' ? window : globalThis);
