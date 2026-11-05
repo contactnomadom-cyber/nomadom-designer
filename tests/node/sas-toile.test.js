@@ -67,5 +67,19 @@ check(all.loads.pmax >= lay.loads.pmax && F.withExtra(lay, []) === lay, 'pilotis
 const h = T.html([tx]);
 check(h.includes('<svg') && h.includes('rabat') && h.includes('recouvre') && h.includes('🟠') && h.includes('Pignon'), 'fiche : patrons, rabat, recouvrements, aperçu 🟠, pignon');
 
+// 9. raccord toile du sas / toile du dôme : 4 façons au choix, 3 solutions pour les coins
+check(tx.raccord.key === 'glisse' && near(tx.raccord.flap, 0.10) && tx.raccord.demontable, 'par défaut : rabat glissé de 100 mm, démontable (inchangé)');
+const tr = k => T.patterns(D.sas(r, null, { direction: 'exterieur', length: 2.5, raccord: k }), fab);
+const tc = tr('cousu'), tv = tr('velcro'), tj = tr('jonc'), tg = tr('glisse');
+check(near(tg.rollLength, tx.rollLength, 1e-12) && tg.pieces.every((p, i) => near(p.length, tx.pieces[i].length, 1e-12)), 'rabat glissé : patrons identiques à avant');
+check(!tc.raccord.demontable && tc.pieces.every(p => p.allow.dome.kind.includes('cousu')) && near(tc.raccord.material[0].qty, 2 * tx.raccord.length), 'cousu : non démontable, couture double sur tout le raccord');
+check(tv.raccord.material.length === 2 && tv.raccord.material.every(x => near(x.qty, tx.raccord.length)) && tv.raccord.notes.some(t => t.includes('50 mm')), 'Velcro : bande crochets + velours sur toute la longueur, posée en haut du rabat');
+check(tj.pieces.every((p, i) => near(p.length, tx.pieces[i].length - 0.07, 1e-9)) && tj.raccord.material[1].pieces === tj.pieces.length && tj.raccord.notes.some(t => t.includes('recouvrir le rail')), 'jonc : fourreau de 30 mm au lieu du rabat, un rail par montant, rail recouvert par la toile du dôme');
+check(['glisse', 'cousu', 'velcro', 'jonc'].every(k => near(tr(k).raccord.length, tx.raccord.length) && near(tr(k).netArea, tx.netArea)), 'même longueur de raccord et même toile nette quel que soit le raccord');
+check(near(T.patterns(D.sas(r, null, { direction: 'exterieur', length: 2.5, raccord: 'inconnu' }), fab).raccord.flap, 0.10), 'raccord inconnu : rabat glissé par défaut');
+check(tx.corners.count === tx.overlaps.length && tx.corners.count > 0 && T.CORNERS.length === 3, 'coins hauts : un par nœud où deux pièces se croisent, 3 solutions proposées');
+const hv = T.html([tv]);
+check(hv.includes('Bande auto-agrippante') && hv.includes('Coins hauts') && hv.includes('chapeau') && hv.includes('Soufflet') && hv.includes('onglet') && hv.includes('<i>Contre</i>'), 'fiche : raccord choisi, coins, pour et contre');
+
 if (fails.length) { console.log('ÉCHEC ' + fails.length + '/' + n); fails.forEach(x => console.log('  ' + x)); process.exit(1); }
 console.log('OK ' + n + '/' + n);

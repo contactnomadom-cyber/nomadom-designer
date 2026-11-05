@@ -18,6 +18,7 @@
     parois: 'Comme une cabane accolée : les poteaux reçoivent des traverses qui ferment les côtés jusqu\'au cadre du dôme ; l\'avant-corps devient une petite pièce.',
     'porte-a-faux': 'Comme une étagère sans équerre : tout le poids du toit pend sur les appuis vissés au dôme. Gardé pour comparer, sans document de fabrication.' };
   const SAS = { aucun: 'aucun (avant-corps)', exterieur: 'vers l\'extérieur', interieur: 'vers l\'intérieur' };
+  const RACCORD = { glisse: 'rabat glissé dessous', cousu: 'rabat cousu', velcro: 'bande auto-agrippante', jonc: 'jonc dans un rail' };
   const SAS_WHY = 'Comme un tiroir qu\'on tire hors de la commode : la forme de l\'ouverture est prolongée tout droit, à l\'horizontale. Une panne part de chaque nœud du cadre de l\'ouverture, des cadres de la même forme la tiennent à intervalle régulier, et une deuxième porte ferme le bout. Deux portes = un sas : on n\'ouvre jamais directement l\'intérieur sur le dehors (chaleur, vent, pluie).';
   const ATTACH = { montant: 'sur le montant (n\'importe où)', noeud: 'sur un nœud seulement' };
   const sel = (key, f, cur, opts) => '<select data-door-key="' + esc(key) + '" data-door-f="' + f + '">' +
@@ -56,7 +57,8 @@
     h += '<div class="door-choice"><b>Entrée</b><label>Sas ' + sel(key, 'sas', isSas ? sk.direction : 'aucun', SAS) + '</label>' +
       (isSas ? num('sas.length', 'Longueur du sas (m)', sk.length, 0.6, 6, 0.05) + num('sas.spacing', 'Cadres tous les (m)', sk.spacing, 0.4, 1.5, 0.05) +
         '<span><b>Porte 2</b></span>' + num('sas.door2.width', 'Largeur (m)', d2.width !== undefined ? d2.width : d.width, 0.5, 3, 0.01) +
-        num('sas.door2.height', 'Hauteur (m)', d2.height !== undefined ? d2.height : d.height, 1.5, 3, 0.01) + num('sas.door2.offset', 'Décalage (m)', d2.offset || 0, -2, 2, 0.01) : '') +
+        num('sas.door2.height', 'Hauteur (m)', d2.height !== undefined ? d2.height : d.height, 1.5, 3, 0.01) + num('sas.door2.offset', 'Décalage (m)', d2.offset || 0, -2, 2, 0.01) +
+        '<label>Toile au dôme ' + sel(key, 'sas.raccord', sv.raccord || 'glisse', RACCORD) + '</label>' : '') +
       '<div class="door-note">' + esc(isSas ? SAS_WHY : 'Sans sas : la porte s\'ouvre directement dehors, sous un avant-corps.') + '</div></div>';
     if (!isSas) h += '<div class="door-choice"><b>Choix constructifs</b>' +
       '<label>Tenue de l\'avant-corps ' + sel(key, 'support', sk.support, SUPPORT) + '</label>' +
@@ -135,6 +137,7 @@
   function apply(dd, f, value, tag) {
     if (f.startsWith('joint:')) { dd.joints = Object.assign({}, dd.joints, { [f.slice(6)]: value }); return value; }
     if (f === 'sas') { dd.sas = value === 'aucun' ? null : Object.assign({ length: 2.5, spacing: 1.2, door2: { width: dd.width, height: dd.height, offset: 0 } }, dd.sas, { direction: value }); return null; }
+    if (f === 'sas.raccord') { if (dd.sas) dd.sas.raccord = value; return null; }
     const v = parseFloat(value);
     if (f.startsWith('sas.') && dd.sas) { const path = f.split('.').slice(1); if (!isFinite(v)) return null;
       if (path[0] === 'door2') dd.sas.door2 = Object.assign({}, dd.sas.door2, { [path[1]]: v }); else dd.sas[path[0]] = v; return null; }

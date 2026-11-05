@@ -7,6 +7,12 @@
 
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
+## 0.9.21 — 05/11/2026 (raccord toile du sas / toile du dôme)
+- Fiche porte, sas : nouveau choix **« Toile au dôme »** — **rabat glissé dessous** (défaut, comme avant), **rabat cousu** (non démontable, couture double), **bande auto-agrippante** (crochets sur le rabat, velours sous la toile du dôme), **jonc dans un rail** vissé sur les montants (fourreau de 30 mm au lieu du rabat de 100 mm). Dans tous les cas la toile du dôme reste par-dessus, comme les tuiles.
+- Cover+, toile du sas : le raccord choisi, s'il est démontable, le matériel à prévoir (sangles, mètres de couture, de bande, de jonc et de rail) et ses remarques d'étanchéité.
+- **Coins hauts du raccord** (là où deux rabats se croisent) : nombre de coins et trois solutions à essayer en atelier — pièce de renfort en chapeau, soufflet, coin en onglet + bande d'étanchéité — chacune avec son analogie, ses avantages et ses limites. 🟠 non vérifié en atelier.
+- Contrôles : `sas_toile` +9 vérifications, `t_door` vérifie le choix et son effet dans Cover+. 35 suites ; dômes de référence inchangés.
+
 ## 0.9.20 — 05/11/2026 (poteaux de porte sur pilotis)
 - Porte d'aplomb + plancher sur pilotis : les **poteaux d'angle de l'avant-corps** tombaient juste hors du plancher, dans le vide ventilé. Chacun reçoit maintenant **son propre pilotis** (mêmes blocs, même calage selon la pente), visible sur le plan et en 3D.
 - La charge de l'avant-corps (bois, toile du toit et des parois, neige) est reportée en entier sur ces pilotis — côté sûr, les appuis sur le dôme en reprennent en réalité une part 🟠. Elle s'affiche dans « Charges et portance » ; les pilotis sont comptés à part (« + 2 sous les poteaux de porte »).

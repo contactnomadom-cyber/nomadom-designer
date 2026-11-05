@@ -122,7 +122,7 @@ Demande de Nathan : l'option sas d'entrée, avec une deuxième porte ; le sas do
 
 **Questions ouvertes ❓**
 1. Forme : avec une ouverture étroite au sol (9 triangles, seuil de 956 mm), le sas s'évase vers le haut — garder cette forme exacte, ou proposer aussi un sas rectangulaire calé sur l'ouverture ?
-2. Toile du sas et raccord étanche avec la toile du dôme (étape 3).
+2. 🛠 Raccord toile du sas / toile du dôme (05/11/2026, 0.9.21) : Nathan veut **le choix** — rabat glissé dessous (défaut), rabat cousu, bande auto-agrippante, jonc dans un rail ; la toile du dôme reste toujours par-dessus. Coins hauts : Nathan ne sait pas encore → l'appli présente 3 solutions (chapeau, soufflet, onglet + bande) avec pour/contre. ❓ À essayer en atelier : quel raccord et quel coin retenir ? largeur réelle du Velcro, modèle de rail et de jonc ?
 3. Charges du sas (neige, vent) et pilotis comptés dans la portance.
 
 ---

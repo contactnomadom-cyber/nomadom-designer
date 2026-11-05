@@ -385,7 +385,7 @@
     const an = analyseJoints(pieces, panels, node3, struts, sec, opts.joints, MIN);
     an.areas.pignon = Math.max(0, aC - (fit2 ? d2.width * d2.height : 0)); an.areas.cloison = Math.max(0, aC - w * h);
     const cover = (an.areas.toit || 0) + (an.areas.paroi || 0);
-    return Object.assign(an, { kind: 'sas', direction: dirn, length: Ls, spacing, frames: planes.length, section: sec, pieces, panels,
+    return Object.assign(an, { kind: 'sas', direction: dirn, length: Ls, spacing, frames: planes.length, section: sec, pieces, panels, raccord: opts.raccord,
       door2: { s0: s02, width: d2.width, height: d2.height, fits: fit2 }, coverArea: cover, floorArea: an.areas['plancher-sas'] || 0,
       inside: { width: r.plane.width, height: Math.max(...poly.map(p => p.t)), volume: aC * Ls },
       // géométrie pour la toile (SasToile) : contour (s, t, profondeur du nœud), bout extérieur, porte du bout extérieur
