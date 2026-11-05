@@ -29,6 +29,17 @@ with sync_playwright() as p:
     pg.click('#floorCuts details summary'); pg.wait_for_timeout(200)
     check(pg.locator('#floorCuts details ol li').first.is_visible(), 'plan de coupe des barres dépliable')
     if OUT: os.makedirs(OUT, exist_ok=True); pg.locator('#floorCuts').screenshot(path=os.path.join(OUT, 'debits.png'))
+    # choix du bois : sections et assemblage
+    check(pg.input_value('[data-floor-f="beamSection"]') == 'prov-75x195' and pg.input_value('[data-floor-f="joint"]') == 'onglet', 'par défaut : sections d\'origine, cadres en onglet')
+    pg.select_option('[data-floor-f="joint"]', 'about'); pg.wait_for_timeout(1200)
+    pg.click('#floorCuts > summary'); pg.wait_for_timeout(300); t = pg.inner_text('#floorCuts')
+    check('en about' in t and 'jour à l\'extérieur' in t and '36°' not in t and 'coupes' in t, 'cadres en about : coupes d\'équerre, jour signalé')
+    pg.select_option('[data-floor-f="beamSection"]', 'kvh-80x200'); pg.select_option('[data-floor-f="joistSection"]', 'cls-38x140'); pg.wait_for_timeout(1200)
+    pg.click('#floorCuts > summary'); pg.wait_for_timeout(300); t = pg.inner_text('#floorCuts')
+    check('Poutres KVH 80 × 200' in t and 'Solives CLS 38 × 140' in t and 'poutres 80 × 200, solives 38 × 140' in pg.inner_text('#baseFloor'), 'poutres KVH 80 × 200 et solives CLS 38 × 140 : liste et quantités suivent')
+    ch = pg.evaluate('CoverApp.floorScene().boxes.length')
+    check(ch > 0, 'la 3D du plancher suit les nouvelles sections')
+    pg.select_option('[data-floor-f="beamSection"]', 'prov-75x195'); pg.select_option('[data-floor-f="joistSection"]', 'prov-45x145'); pg.select_option('[data-floor-f="joint"]', 'onglet'); pg.wait_for_timeout(1200)
     # plancher plein : la liste suit le choix
     pg.select_option('[data-floor-f="deck"]', 'plein'); pg.wait_for_timeout(1200)
     s2 = pg.inner_text('#floorCuts summary')

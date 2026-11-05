@@ -44,9 +44,11 @@
   }
   const same = (p, q) => Math.hypot(p.x - q.x, p.z - q.z) < 1e-6;
 
-  // pièces d'un cadre (segments a→b de même famille) : longueur d'axe, onglets aux deux bouts,
-  // longueur à couper à la pointe longue (axe + largeur × tan(onglet) / 2 à chaque bout)
-  function framePieces(segs, width) {
+  // pièces d'un cadre (segments a→b de même famille) : longueur d'axe, angle aux deux bouts.
+  //  - en onglet : coupe d'angle, longueur à la pointe longue = axe + largeur/2 × tan(onglet) à chaque bout ;
+  //  - en about  : coupe d'équerre, pièce raccourcie pour que les coins intérieurs se touchent
+  //                (axe − largeur/2 × tan(onglet) à chaque bout) ; un jour reste à l'extérieur, repris par une plaque.
+  function framePieces(segs, width, joint) {
     return segs.map((s, i) => {
       const len = Math.hypot(s.b.x - s.a.x, s.b.z - s.a.z), d = { x: s.b.x - s.a.x, z: s.b.z - s.a.z };
       const end = (p, out) => {
@@ -56,8 +58,9 @@
         return miterAt(out, w);
       };
       const m0 = end(s.a, d), m1 = end(s.b, { x: -d.x, z: -d.z });
-      const cut = len + width / 2 * (Math.tan(m0 * Math.PI / 180) + Math.tan(m1 * Math.PI / 180));
-      return { axis: len, len: cut, miter: [m0, m1] };
+      const t = width / 2 * (Math.tan(m0 * Math.PI / 180) + Math.tan(m1 * Math.PI / 180));
+      if (joint === 'about') return { axis: len, len: len - t, miter: [0, 0], gap: [m0, m1].map(m => width * Math.tan(m * Math.PI / 180)) };
+      return { axis: len, len: len + t, miter: [m0, m1] };
     });
   }
 
@@ -80,12 +83,13 @@
     const beamP = [];
     ['ceinture', 'pentagone', 'triangle'].forEach(kind => {
       const segs = r.beams.filter(b => b.kind === kind);
-      if (segs.length) framePieces(segs, bw).forEach(p => beamP.push(Object.assign(p, { what: kind })));
+      if (segs.length) framePieces(segs, bw, r.options.joint).forEach(p => beamP.push(Object.assign(p, { what: kind })));
     });
     const joistP = r.joists.map(j => ({ axis: j.length, len: j.length, miter: [0, 0], what: 'solive' }));
     const sections = [
-      { key: 'poutres', name: 'Poutres', w: bw, d: r.options.beam.d, groups: group(beamP, 'P') },
-      { key: 'solives', name: 'Solives', w: jw, d: r.options.joist.d, groups: group(joistP, 'S') }
+      { key: 'poutres', name: 'Poutres', w: bw, d: r.options.beam.d, section: r.options.beamSection, joint: r.options.joint || 'onglet', groups: group(beamP, 'P'),
+        maxGap: Math.max(0, ...beamP.map(p => p.gap ? Math.max(p.gap[0], p.gap[1]) : 0)) },
+      { key: 'solives', name: 'Solives', w: jw, d: r.options.joist.d, section: r.options.joistSection, groups: group(joistP, 'S') }
     ];
     sections.forEach(s => {
       const pieces = [];

@@ -39,6 +39,12 @@
     if (!f) return h + '<div class="op-status"><button data-floor-on="1">Ajouter un plancher sur pilotis</button></div>';
     h += '<div class="door-choice"><b>Choix</b><label>Soubassement ' + sel('support', f.support, SUPPORT) + '</label><label>Plancher ' + sel('deck', f.deck, DECK) + '</label>' +
       '<span class="muted">Plancher en diaphragme : plus tard</span></div>';
+    // bois : sections au choix (provisoires, CLS, KVH) et assemblage des cadres
+    const SEC = Object.fromEntries(Object.keys(F.SECTIONS || {}).map(k => [k, F.SECTIONS[k].name]));
+    if (F.SECTIONS) h += '<div class="door-choice"><b>Bois</b><label>Poutres ' + sel('beamSection', f.beamSection || 'prov-75x195', SEC) + '</label>' +
+      '<label>Solives ' + sel('joistSection', f.joistSection || 'prov-45x145', SEC) + '</label>' +
+      '<label>Assemblage des cadres ' + sel('joint', f.joint || 'onglet', F.JOINTS) + '</label>' +
+      '<span class="muted">🟠 sections et portées à vérifier avec les tables de dimensionnement</span></div>';
     h += '<div class="door-in">' + num('triangleDiameter', 'Cercle du triangle (m)', f.triangleDiameter, 1, 1.5, 0.05) +
       (f.deck === 'etoile' ? num('hubDiameter', 'Pièce centrale Ø (m)', f.hubDiameter, 0.8, 1, 0.05) : num('joistSpacing', 'Entraxe solives (m)', f.joistSpacing, 0.3, 0.6, 0.05)) +
       num('slope', 'Pente du terrain (%)', f.slope, 0, 30, 1) + num('slopeDir', 'Direction de la pente (°)', f.slopeDir, 0, 359, 5) +
@@ -48,7 +54,7 @@
     r.warnings.forEach(w => { h += '<div class="op-status err">⚠ ' + esc(w) + '</div>'; });
     h += plan(r);
     const q = r.qty, L = r.loads;
-    h += '<div class="door-3d"><b>Quantités</b> <span class="muted">🟠 aperçu · longueurs d\'axe · poutres 75 × 195, solives 45 × 145 provisoires</span><dl>' +
+    h += '<div class="door-3d"><b>Quantités</b> <span class="muted">🟠 aperçu · longueurs d\'axe · poutres ' + Math.round(r.options.beam.w * 1000) + ' × ' + Math.round(r.options.beam.d * 1000) + ', solives ' + Math.round(r.options.joist.w * 1000) + ' × ' + Math.round(r.options.joist.d * 1000) + '</span><dl>' +
       '<dt>Pilotis</dt><dd>' + q.piles + ' (' + q.pilesOuter + ' sous les nœuds de base' + (q.pilesInner ? ' + ' + q.pilesInner + ' en 2ᵉ rangée' : '') + (q.pilesSas ? ' + ' + q.pilesSas + ' sous le sas' : '') + ')</dd>' +
       '<dt>Blocs béton</dt><dd>' + q.blocksFirst + ' × 39 × 29 × 19 (assise, couchés) + ' + q.blocksNext + ' × 39 × 19 × 19</dd>' +
       '<dt>Ceinture</dt><dd>' + m(q.beams.ceinture) + ' (' + r.ring.length + ' côtés)</dd>' +
@@ -88,11 +94,12 @@
     const deg = v => v ? (Math.round(v * 10) / 10).toString().replace('.', ',') + '°' : 'équerre';
     const sec = s => s.groups.reduce((t, g) => t + g.n, 0);
     let h = '<details class="door-lib" id="floorCuts"><summary>Liste de débits — bois et panneaux (' + (sec(cl.sections[0]) + sec(cl.sections[1])) + ' pièces, ' + cl.panels.sheets + ' panneaux)</summary>' +
-      '<div class="muted">🟠 aperçu · longueurs d\'axe des poutres + onglets si les cadres sont assemblés en onglet · trait de scie ' + mm(cl.options.kerf) +
+      '<div class="muted">🟠 aperçu · cadres ' + (cl.sections[0].joint === 'about' ? 'en about : coupes d\'équerre, pièces raccourcies pour que les coins intérieurs se touchent, jour à l\'extérieur jusqu\'à ' + mm(cl.sections[0].maxGap) + ' (plaque ou équerre métallique)' : 'en onglet : longueur à la pointe longue') + ' · trait de scie ' + mm(cl.options.kerf) +
       ' · barres de ' + m(cl.options.lengths[0]) + ' à ' + m(cl.options.lengths[cl.options.lengths.length - 1]) + ' par 30 cm chez ' + esc(cl.options.supplier) + ' (suivant stock, à confirmer)</div>';
     cl.sections.forEach(s => {
       const P = s.plan;
-      h += '<b>' + s.name + ' ' + Math.round(s.w * 1000) + ' × ' + Math.round(s.d * 1000) + '</b><table class="floor-t"><tr><th>repère</th><th>rôle</th><th>nb</th><th>axe</th><th>à couper (pointe longue)</th><th>onglets</th></tr>' +
+      const secName = global.Floor && global.Floor.SECTIONS && global.Floor.SECTIONS[s.section] ? global.Floor.SECTIONS[s.section].name : Math.round(s.w * 1000) + ' × ' + Math.round(s.d * 1000);
+      h += '<b>' + s.name + ' ' + esc(secName) + '</b><table class="floor-t"><tr><th>repère</th><th>rôle</th><th>nb</th><th>axe</th><th>à couper' + (s.joint === 'onglet' ? ' (pointe longue)' : '') + '</th><th>' + (s.joint === 'onglet' ? 'onglets' : 'coupes') + '</th></tr>' +
         s.groups.map(g => '<tr><td>' + g.ref + '</td><td>' + esc(g.what) + '</td><td>' + g.n + '</td><td>' + mm(g.axis) + '</td><td>' + mm(g.len) + '</td><td>' + deg(g.miter[0]) + ' / ' + deg(g.miter[1]) + '</td></tr>').join('') + '</table>' +
         '<div class="op-status">À commander : ' + Object.keys(P.buy).sort((a, b) => b - a).map(k => P.buy[k] + ' × ' + k.replace('.', ',') + ' m').join(' + ') +
         ' = ' + m(P.bought) + ' pour ' + m(P.net) + ' de coupes · chute ' + Math.round(P.wasteRatio * 100) + ' %' +

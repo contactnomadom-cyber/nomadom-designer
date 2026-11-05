@@ -47,5 +47,19 @@ check(P.plan.bars.length > 0 && !P.plan.tooLong.length && !S.plan.tooLong.length
 check(cl.panels.sheets === Math.ceil(r.area * 1.12 / (2.44 * 1.22) - 1e-9) && cl.panels.sheets > 5, 'plancher ' + r.area.toFixed(2) + ' m² : ' + cl.panels.sheets + ' panneaux de 2,44 × 1,22 (chute 12 %)');
 check(Lb.floorCutList({ ok: false }) === null, 'plancher en erreur : pas de liste');
 
+// 4. choix : assemblage en about, sections CLS / KVH
+const ab = frame(4)[0], ab4 = Lb.framePieces(poly(4).map((a, i, p) => ({ a, b: p[(i + 1) % 4] })), 0.075, 'about')[0];
+check(ab4.miter[0] === 0 && near(ab4.len, ab.axis - 0.075, 1e-9) && near(ab4.gap[0], 0.075, 1e-9), 'about, carré : coupe d\'équerre, axe − largeur, jour de 75 mm à l\'extérieur');
+const rA = F.layout(dome, { support: 'pentagone', deck: 'etoile', joint: 'about' }), clA = Lb.floorCutList(rA);
+const pentA = clA.sections[0].groups.find(g => g.what === 'pentagone');
+check(clA.sections[0].joint === 'about' && pentA.miter[0] === 0 && near(pentA.len, 2.887 - 0.075 * Math.tan(36 * Math.PI / 180), 0.001), 'plancher en about : pentagone coupé d\'équerre à ' + Math.round(pentA.len * 1000) + ' mm');
+check(clA.sections[0].plan.net < cl.sections[0].plan.net, 'about : moins de bois à couper qu\'en onglet');
+check(F.SECTIONS['cls-38x184'] && F.SECTIONS['kvh-80x200'] && Object.keys(F.SECTIONS).length >= 10, 'sections au choix : CLS et KVH');
+const rC = F.layout(dome, { support: 'pentagone', deck: 'etoile', beamSection: 'kvh-80x200', joistSection: 'cls-38x140' }), clC = Lb.floorCutList(rC);
+check(rC.options.beam.w === 0.08 && rC.options.joist.d === 0.14 && clC.sections[0].section === 'kvh-80x200' && clC.sections[1].w === 0.038, 'poutres KVH 80 × 200, solives CLS 38 × 140 : sections reprises dans la liste');
+check(near(clC.sections[0].groups.find(g => g.what === 'triangle').len, 1.039 + 0.08 * Math.tan(60 * Math.PI / 180), 0.001), 'onglet recalculé avec la largeur de 80 mm');
+const rO = F.layout(dome, { support: 'pentagone', deck: 'etoile', beamSection: 'inconnue', joint: 'colle' });
+check(rO.options.beamSection === 'prov-75x195' && rO.options.beam.w === 0.075 && rO.options.joint === 'onglet', 'choix inconnu (ancien projet) : sections d\'origine, onglet');
+
 console.log('\n' + (fails.length ? fails.length + ' échec(s) sur ' + n : 'TOUT PASSE (' + n + ')'));
 process.exit(fails.length ? 1 : 0);

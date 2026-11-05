@@ -34,8 +34,26 @@
     gravier: { name: 'Grave compactée', q: 250 },
     argile: { name: 'Argile ferme', q: 100 }
   };
+  // sections de bois au choix (largeur × hauteur, m) : provisoires d'origine, CLS sapin raboté, KVH — 🟠 à confirmer chez le fournisseur
+  const SECTIONS = {
+    'prov-75x195': { name: '75 × 195 (provisoire)', w: 0.075, d: 0.195 },
+    'prov-45x145': { name: '45 × 145 (provisoire)', w: 0.045, d: 0.145 },
+    'cls-38x63': { name: 'CLS 38 × 63', w: 0.038, d: 0.063 },
+    'cls-38x89': { name: 'CLS 38 × 89', w: 0.038, d: 0.089 },
+    'cls-38x140': { name: 'CLS 38 × 140', w: 0.038, d: 0.140 },
+    'cls-38x184': { name: 'CLS 38 × 184', w: 0.038, d: 0.184 },
+    'cls-38x235': { name: 'CLS 38 × 235', w: 0.038, d: 0.235 },
+    'kvh-60x120': { name: 'KVH 60 × 120', w: 0.060, d: 0.120 },
+    'kvh-60x160': { name: 'KVH 60 × 160', w: 0.060, d: 0.160 },
+    'kvh-60x200': { name: 'KVH 60 × 200', w: 0.060, d: 0.200 },
+    'kvh-80x160': { name: 'KVH 80 × 160', w: 0.080, d: 0.160 },
+    'kvh-80x200': { name: 'KVH 80 × 200', w: 0.080, d: 0.200 },
+    'kvh-100x200': { name: 'KVH 100 × 200', w: 0.100, d: 0.200 }
+  };
+  // assemblage des cadres (ceinture, pentagone, triangle) aux nœuds
+  const JOINTS = { onglet: 'En onglet (coupe d\'angle)', about: 'En about (bout à bout, coupe d\'équerre)' };
   const DEFAULTS = {
-    support: 'pentagone', deck: 'etoile',
+    support: 'pentagone', deck: 'etoile', beamSection: 'prov-75x195', joistSection: 'prov-45x145', joint: 'onglet',
     triangleDiameter: 1.2,      // cercle du triangle central (1 à 1,5 m)
     hubDiameter: 0.9,           // pièce centrale du plancher en étoile (0,80 à 1 m)
     joistSpacing: 0.4,          // plancher plein
@@ -84,6 +102,10 @@
     const o = Object.assign({}, DEFAULTS, opts || {});
     o.loads = Object.assign({}, DEFAULTS.loads, opts && opts.loads);
     o.blocks = DEFAULTS.blocks; o.beam = Object.assign({}, DEFAULTS.beam, opts && opts.beam); o.joist = Object.assign({}, DEFAULTS.joist, opts && opts.joist);
+    // section choisie dans la liste (un ancien projet sans choix garde les sections d'origine)
+    if (!SECTIONS[o.beamSection]) o.beamSection = DEFAULTS.beamSection; else if (!(opts && opts.beam)) o.beam = { w: SECTIONS[o.beamSection].w, d: SECTIONS[o.beamSection].d };
+    if (!SECTIONS[o.joistSection]) o.joistSection = DEFAULTS.joistSection; else if (!(opts && opts.joist)) o.joist = { w: SECTIONS[o.joistSection].w, d: SECTIONS[o.joistSection].d };
+    if (!JOINTS[o.joint]) o.joint = DEFAULTS.joint;
     const support = SUPPORTS.includes(o.support) ? o.support : DEFAULTS.support, deck = DECKS.includes(o.deck) ? o.deck : DEFAULTS.deck;
     const warnings = [], errors = [];
     const ring = baseRing(dome), n = ring.length;
@@ -226,7 +248,8 @@
 
   // choix réglables par l'utilisateur, valeurs de départ (ce qui est mémorisé dans l'objet dôme)
   const choices = () => ({ support: DEFAULTS.support, deck: DEFAULTS.deck, triangleDiameter: DEFAULTS.triangleDiameter, hubDiameter: DEFAULTS.hubDiameter,
-    joistSpacing: DEFAULTS.joistSpacing, slope: 0, slopeDir: 0, soil: DEFAULTS.soil });
+    joistSpacing: DEFAULTS.joistSpacing, slope: 0, slopeDir: 0, soil: DEFAULTS.soil,
+    beamSection: DEFAULTS.beamSection, joistSection: DEFAULTS.joistSection, joint: DEFAULTS.joint });
 
   // Pilotis supplémentaires (sous un sas d'entrée, NOMAD-2026-007) : mêmes blocs, même terrain, tête à topY.
   function extraPiles(res, pts, topY, load) {
@@ -278,7 +301,7 @@
     return { beams, boxes, panels, groundY: Math.min(...res.piles.map(p => p.ground)) - 0.05 };
   }
 
-  const Floor = { SUPPORTS, DECKS, SOILS, DEFAULTS, layout, scene, choices, extraPiles, sasLoad, withExtra, baseRing, pentagonIdx, polyArea, segX };
+  const Floor = { SUPPORTS, DECKS, SOILS, SECTIONS, JOINTS, DEFAULTS, layout, scene, choices, extraPiles, sasLoad, withExtra, baseRing, pentagonIdx, polyArea, segX };
   if (typeof module !== 'undefined' && module.exports) module.exports = Floor;
   else global.Floor = Floor;
 })(typeof window !== 'undefined' ? window : globalThis);
