@@ -121,7 +121,8 @@
         <label>Entraxe<select id="dsMfSpacing"><option value="0.3">30 cm</option><option value="0.4">40 cm</option><option value="0.5">50 cm</option><option value="0.6">60 cm</option></select></label>
         <label>Poutres de rive<select id="dsMfBeam"></select></label>
         <label>Poteaux<select id="dsMfPost"></select></label>
-        <label>Cadres de rive<select id="dsMfJoint"><option value="about">En about</option><option value="onglet">En onglet</option></select></label>
+        <label title="Côté paroi, la mezzanine peut avoir sa propre poutre sur poteaux (le dôme ne porte rien) ou reposer sur une lambourde vissée aux montants">Appui côté paroi<select id="dsMfWall"><option value="poteaux">Poutre + poteaux (indépendante)</option><option value="paroi">Lambourde sur les montants</option></select></label>
+        <label>Cadres<select id="dsMfJoint"><option value="about">En about</option><option value="onglet">En onglet</option></select></label>
         <button id="dsMfThick" style="display:none" title="Régler l'épaisseur de la mezzanine sur plancher + ossature">Appliquer l'épaisseur conseillée</button>
         <div id="dsMezzFrame" style="flex-basis:100%;max-width:640px"></div>
       </div>
@@ -183,7 +184,7 @@
       const wood = Object.keys(FS).filter(k => !FS[k].post && k.indexOf('prov-') !== 0);
       $('dsMfJoist').innerHTML = opt(wood); $('dsMfBeam').innerHTML = opt(wood); $('dsMfPost').innerHTML = opt(Object.keys(FS).filter(k => FS[k].post));
       const mf = (id, key, num) => $(id).addEventListener('change', e => { st.mezz.frame = Object.assign({}, window.MezzFrame.DEFAULTS, st.mezz.frame, { [key]: num ? parseFloat(e.target.value) : e.target.value }); save(); syncMezzFrame(); });
-      mf('dsMfJoist', 'joistSection'); mf('dsMfSpacing', 'spacing', true); mf('dsMfBeam', 'beamSection'); mf('dsMfPost', 'postSection'); mf('dsMfJoint', 'joint');
+      mf('dsMfJoist', 'joistSection'); mf('dsMfSpacing', 'spacing', true); mf('dsMfBeam', 'beamSection'); mf('dsMfPost', 'postSection'); mf('dsMfJoint', 'joint'); mf('dsMfWall', 'wallSupport');
       $('dsMfThick').addEventListener('click', () => { const r = mezzFrame(); if (r && r.thickNeed) { st.mezz.thick = Math.ceil(r.thickNeed * 100) / 100; syncInputs(); changed(); } });
     } else $('dsMezzFrameBar').style.display = 'none';
     if (SUN) {
@@ -860,14 +861,14 @@
   function mezzFrame() {
     if (!window.MezzFrame || !window.Floor || !model || !st.mezz.on) return null;
     const mp = Z.mezzPolygon(model, st.mezz), wall = Z.section(model, st.mezz.h);
-    return mp && wall ? window.MezzFrame.layout(mp, wall, st.mezz, st.mezz.frame, window.Floor) : null;
+    return mp && wall ? window.MezzFrame.layout(mp, wall, st.mezz, st.mezz.frame, window.Floor, Z.section(model, 0)) : null;
   }
   function syncMezzFrame() {
     if (!window.MezzFrame || !$('dsMezzFrameBar')) return;
     $('dsMezzFrameBar').style.display = st.mezz.on ? '' : 'none';
     if (!st.mezz.on) return;
     const o = Object.assign({}, window.MezzFrame.DEFAULTS, st.mezz.frame);
-    $('dsMfJoist').value = o.joistSection; $('dsMfSpacing').value = String(o.spacing); $('dsMfBeam').value = o.beamSection; $('dsMfPost').value = o.postSection; $('dsMfJoint').value = o.joint;
+    $('dsMfJoist').value = o.joistSection; $('dsMfSpacing').value = String(o.spacing); $('dsMfBeam').value = o.beamSection; $('dsMfPost').value = o.postSection; $('dsMfJoint').value = o.joint; $('dsMfWall').value = o.wallSupport;
     const r = mezzFrame();
     $('dsMfThick').style.display = r && r.ok !== undefined && r.thickNeed && (st.mezz.thick || 0) + 1e-9 < r.thickNeed ? '' : 'none';
     $('dsMezzFrame').innerHTML = r ? window.MezzUI.html(r, window.Floor) : '<span class="muted">Mezzanine hors de la paroi à cette hauteur.</span>';

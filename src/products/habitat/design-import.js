@@ -110,6 +110,7 @@
             ['joistSection', 'beamSection', 'postSection'].forEach(k => { if (fr[k] !== undefined) { if (!okId(fr[k])) err('mezzanine : section « ' + k + ' » invalide'); else f2[k] = fr[k]; } });
             if (fr.spacing !== undefined) { if ([0.3, 0.4, 0.5, 0.6].indexOf(fr.spacing) < 0) err('mezzanine : entraxe impossible (0,3 à 0,6 m)'); else f2.spacing = fr.spacing; }
             if (fr.joint !== undefined) { if (['onglet', 'about'].indexOf(fr.joint) < 0) err('mezzanine : assemblage inconnu'); else f2.joint = fr.joint; }
+            if (fr.wallSupport !== undefined) { if (['poteaux', 'paroi'].indexOf(fr.wallSupport) < 0) err('mezzanine : appui côté paroi inconnu'); else f2.wallSupport = fr.wallSupport; }
             out.mezz.frame = f2;
           }
         }

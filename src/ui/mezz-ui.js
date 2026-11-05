@@ -19,7 +19,7 @@
     let h = '<div class="op-status" id="dsMezzStrength"><b>Solidité ' + (r.ok ? '— tout passe' : '— 🔴 pièce trop faible') + '</b><div style="overflow-x:auto"><table class="floor-t">' +
       '<tr><th style="text-align:left">pièce</th><th>section</th><th>portée</th><th>flexion</th><th>cisail.</th><th>flèche</th></tr>' +
       row('Solives (entraxe ' + m(r.spacing) + ')', C.joist, C.joist.span) +
-      C.beams.map((b, i) => row('Poutre de rive ' + (C.beams.length > 1 ? i + 1 : '') + (b.posts ? ' (+' + b.posts + ' poteau' + (b.posts > 1 ? 'x' : '') + ')' : ''), b, b.span)).join('') +
+      C.beams.map((b, i) => row((b.kind === 'appui' ? 'Poutre côté paroi ' : 'Poutre de rive ') + (C.beams.length > 1 ? i + 1 : '') + (b.posts ? ' (+' + b.posts + ' poteau' + (b.posts > 1 ? 'x' : '') + ')' : ''), b, b.span)).join('') +
       (C.post ? row('Poteaux (' + r.posts.length + ')', C.post, r.postHeight) : '') + '</table></div>' +
       '<div class="muted">🟡 calculé (Eurocode 5 simplifié) : plancher 0,5 + habitation 2 kN/m², flèche ≤ portée/300 · poteaux : hauteur ' + m(r.postHeight) + ' sous la poutre · CLS supposé C16, KVH C24 (🟠 à confirmer)</div></div>';
     if (r.warnings.length) h += '<div class="op-status">' + r.warnings.map(w => '⚠ ' + esc(w)).join('<br>') + '</div>';
@@ -29,7 +29,7 @@
     if (!Lb) return h;
     const secs = [
       { name: 'Solives', key: r.options.joistSection, s: r.sections.joist, groups: Lb.group(r.pieces.joists, 'S') },
-      { name: 'Poutres de rive', key: r.options.beamSection, s: r.sections.beam, groups: Lb.group(r.pieces.beams, 'P') },
+      { name: 'Poutres', key: r.options.beamSection, s: r.sections.beam, groups: Lb.group(r.pieces.beams, 'P') },
       { name: 'Poteaux', key: r.options.postSection, s: r.sections.post, groups: Lb.group(r.pieces.posts, 'T') }
     ].filter(x => x.groups.length);
     const deg = v => v > 0.05 ? (Math.round(v * 10) / 10).toString().replace('.', ',') + '°' : 'équerre';
@@ -44,7 +44,7 @@
     }).join('');
     const sheets = Math.ceil(r.deckArea * (1 + Lb.DEFAULTS.sheetWaste) / (Lb.DEFAULTS.sheet.l * Lb.DEFAULTS.sheet.w) - 1e-9);
     return h + '<details class="door-lib" id="dsMezzCuts"><summary>Liste de débits — mezzanine (' + n + ' pièces, ' + sheets + ' panneaux)</summary>' +
-      '<div class="muted">🟠 aperçu · solives : bout contre la poutre raccourci de la demi-largeur de poutre (sabot), bout contre la paroi : jeu de 10 mm sur la lambourde · cadres de rive ' + (r.options.joint === 'about' ? 'en about' : 'en onglet') + ' · barres 2,10 à 5,40 m (à confirmer)</div>' +
+      '<div class="muted">🟠 aperçu · solives : bout contre la poutre raccourci de la demi-largeur de poutre (sabot), bout côté paroi : ' + (r.options.wallSupport === 'paroi' ? 'jeu de 10 mm sur la lambourde' : 'sabot sur la poutre côté paroi') + ' · cadres de rive ' + (r.options.joint === 'about' ? 'en about' : 'en onglet') + ' · barres 2,10 à 5,40 m (à confirmer)</div>' +
       body + '<b>Plancher 22 mm</b><div class="op-status">' + r.deckArea.toFixed(2).replace('.', ',') + ' m² → ' + sheets + ' panneaux de 2,44 m × 1,22 m (chute comptée 12 %) · format 🟠 à confirmer</div></details>';
   }
 
