@@ -77,10 +77,35 @@
       '<li>Un bloc béton 39 × 29 × 19 couché à plat : la semelle, qui étale la charge (c\'est sa surface qui compte pour la portance).</li>' +
       '<li>Des blocs 39 × 19 × 19 croisés d\'un rang à l\'autre selon la pente, puis une cale en tête pour l\'ajustage fin.</li>' +
       '<li>Toujours au moins 30 cm de vide ventilé sous les poutres : l\'air circule, le bois reste sec (étanchéité avant tout).</li></ol></details>';
+    h += cutList(r);
     return h;
   }
 
-  const FloorUI = { html, plan, SUPPORT, DECK };
+  // liste de débits (lumber.js) : pièces repérées, onglets, barres à commander, panneaux
+  function cutList(r) {
+    const Lb = global.Lumber, cl = Lb ? Lb.floorCutList(r) : null;
+    if (!cl) return '';
+    const deg = v => v ? (Math.round(v * 10) / 10).toString().replace('.', ',') + '°' : 'équerre';
+    const sec = s => s.groups.reduce((t, g) => t + g.n, 0);
+    let h = '<details class="door-lib" id="floorCuts"><summary>Liste de débits — bois et panneaux (' + (sec(cl.sections[0]) + sec(cl.sections[1])) + ' pièces, ' + cl.panels.sheets + ' panneaux)</summary>' +
+      '<div class="muted">🟠 aperçu · longueurs d\'axe des poutres + onglets si les cadres sont assemblés en onglet · trait de scie ' + mm(cl.options.kerf) +
+      ' · barres de ' + m(cl.options.lengths[0]) + ' à ' + m(cl.options.lengths[cl.options.lengths.length - 1]) + ' par 30 cm chez ' + esc(cl.options.supplier) + ' (suivant stock, à confirmer)</div>';
+    cl.sections.forEach(s => {
+      const P = s.plan;
+      h += '<b>' + s.name + ' ' + Math.round(s.w * 1000) + ' × ' + Math.round(s.d * 1000) + '</b><table class="floor-t"><tr><th>repère</th><th>rôle</th><th>nb</th><th>axe</th><th>à couper (pointe longue)</th><th>onglets</th></tr>' +
+        s.groups.map(g => '<tr><td>' + g.ref + '</td><td>' + esc(g.what) + '</td><td>' + g.n + '</td><td>' + mm(g.axis) + '</td><td>' + mm(g.len) + '</td><td>' + deg(g.miter[0]) + ' / ' + deg(g.miter[1]) + '</td></tr>').join('') + '</table>' +
+        '<div class="op-status">À commander : ' + Object.keys(P.buy).sort((a, b) => b - a).map(k => P.buy[k] + ' × ' + k.replace('.', ',') + ' m').join(' + ') +
+        ' = ' + m(P.bought) + ' pour ' + m(P.net) + ' de coupes · chute ' + Math.round(P.wasteRatio * 100) + ' %' +
+        (P.tooLong.length ? ' · ⚠ ' + P.tooLong.length + ' pièce(s) plus longue(s) que ' + m(cl.options.lengths[cl.options.lengths.length - 1]) + ' : à abouter' : '') + '</div>' +
+        '<details><summary>Plan de coupe des barres (' + P.bars.length + ')</summary><ol>' + P.bars.map(b => '<li>' + m(b.stock) + ' : ' + b.cuts.map(c => c.ref + ' ' + mm(c.len)).join(' · ') + ' · chute ' + mm(b.waste) + '</li>').join('') + '</ol></details>';
+    });
+    const pn = cl.panels;
+    h += '<b>Panneaux de plancher ' + Math.round(pn.thickness * 1000) + ' mm</b><div class="op-status">' + pn.area.toFixed(2).replace('.', ',') + ' m² → ' + pn.sheets + ' panneaux de ' +
+      m(pn.sheet.l) + ' × ' + m(pn.sheet.w) + ' (chute comptée ' + Math.round(pn.waste * 100) + ' %) · OSB ou multiplex · format 🟠 à confirmer</div></details>';
+    return h;
+  }
+
+  const FloorUI = { html, plan, cutList, SUPPORT, DECK };
   if (typeof module !== 'undefined' && module.exports) module.exports = FloorUI;
   else global.FloorUI = FloorUI;
 })(typeof window !== 'undefined' ? window : globalThis);
