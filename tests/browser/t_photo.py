@@ -24,6 +24,9 @@ with sync_playwright() as p:
     pg.goto(APP); pg.wait_for_timeout(1500)
     pg.click('#tabDesign'); pg.wait_for_timeout(2500)
     ok('bouton visible', pg.is_visible('#dsPhoto'))
+    opts = pg.eval_on_selector_all('#ds3dAmb option', 'o=>o.map(x=>x.value)')
+    ok('ambiances proposées', opts == ['jour', 'matin', 'couchant', 'couvert', 'nuit'], str(opts))
+    pg.select_option('#ds3dAmb', 'couchant'); pg.wait_for_timeout(1500)  # la photo suit l'ambiance choisie
     pg.select_option('#dsToile', 'verre'); pg.wait_for_timeout(800)
     pg.locator('#ds3d').screenshot(path=f'{OUT}/avant.png')
     pg.click('#dsPhoto')

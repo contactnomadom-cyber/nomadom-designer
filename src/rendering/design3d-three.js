@@ -6,6 +6,7 @@
 //  - matériaux physiques (PBR) : bois, tissu, métal, céramique, verre ;
 //  - textures procédurales (lames de plancher, veinage, herbe) ;
 //  - éclairage d'ambiance (RoomEnvironment) + ciel physique (Sky) ;
+//  - ambiances au choix (jour, matin, coucher de soleil, couvert, nuit), sans fichier à charger ;
 //  - ombres douces (PCF), tons ACES ;
 //  - modèles .glb lus par le GLTFLoader officiel (matériaux et textures).
 // Si WebGL2 / Three.js manque, designui.js garde le moteur maison.
@@ -65,6 +66,17 @@
     });
   }
 
+  // ---------------- ambiances (rendu réaliste) ----------------
+  // Tout est calculé : aucun fichier d'image à charger, le rendu reste hors ligne.
+  // pz = ciel du rendu photo (zénith, horizon, sol) ; el = hauteur du soleil (radians) ; env = part de l'éclairage d'ambiance ; lamp = lampe intérieure.
+  const AMBIANCES = {
+    jour:     { label: 'Plein jour',        pz: [[0.20, 0.40, 0.85], [0.80, 0.86, 0.95], [0.25, 0.22, 0.17]], el: 0.72, sky: true,  turbidity: 2.2, rayleigh: 2.6,              sun: 2.0,  sunColor: 0xfff1dc, hemi: 0.3,  env: 0.45, exposure: 0.88, lamp: 0 },
+    matin:    { label: 'Matin',             pz: [[0.32, 0.50, 0.85], [0.98, 0.84, 0.70], [0.24, 0.21, 0.16]], el: 0.22, sky: true,  turbidity: 3.5, rayleigh: 2.0,              sun: 2.0,  sunColor: 0xffe0b8, hemi: 0.25, env: 0.38, exposure: 0.88, lamp: 0 },
+    couchant: { label: 'Coucher de soleil', pz: [[0.22, 0.24, 0.52], [1.00, 0.56, 0.30], [0.18, 0.13, 0.10]], el: 0.05, sky: true,  turbidity: 10,  rayleigh: 3.5, mie: 0.012, sun: 2.2,  sunColor: 0xff8c42, hemi: 0.2,  hemiSky: 0xffc9a0, env: 0.25, exposure: 0.85, lamp: 3 },
+    couvert:  { label: 'Ciel couvert',      pz: [[0.62, 0.64, 0.67], [0.76, 0.78, 0.80], [0.22, 0.20, 0.17]], el: 1.1,  sky: false, bg: 0xc4c8cc,                           sun: 0.4,  sunColor: 0xe8eef5, hemi: 0.6,  env: 0.7,  exposure: 0.9,  lamp: 0 },
+    nuit:     { label: 'Nuit',              pz: [[0.006, 0.010, 0.030], [0.025, 0.035, 0.070], [0.010, 0.010, 0.010]], el: 0.6,  sky: false, bg: 0x0d1424,                           sun: 0.15, sunColor: 0x9fb4ff, hemi: 0.06, hemiSky: 0x7a8cc0, env: 0.05, exposure: 1.0,  lamp: 10 }
+  };
+
   // ---------------- moteur ----------------
   function create(canvas) {
     let renderer;
@@ -82,6 +94,9 @@
     scene.add(sun); scene.add(sun.target);
     const sky = new K.Sky(); sky.scale.setScalar(400); scene.add(sky);
     const su = sky.material.uniforms; su.turbidity.value = 2.2; su.rayleigh.value = 2.6; su.mieCoefficient.value = 0.004; su.mieDirectionalG.value = 0.82;
+    // lampe intérieure (ambiance nuit) : lumière chaude au centre du dôme, sans ombre portée (rapide)
+    const lamp = new T.PointLight(0xffc27a, 0, 12, 1.6); lamp.visible = false; scene.add(lamp);
+    let amb = null;
     const clip = new T.Plane(new T.Vector3(0, 0, -1), 1e6);
     let hiQ = true;
     const tex = { real: null, maq: null };
@@ -124,6 +139,18 @@
           else if (ax > 0.7) { uv[j * 2] = data[o + 2] * 1.2; uv[j * 2 + 1] = data[o + 1] * 1.2; }
           else { uv[j * 2] = data[o] * 1.2; uv[j * 2 + 1] = data[o + 1] * 1.2; }
         });
+        // sens des triangles accordé à leur normale : Three.js retourne la normale d'une face vue
+        // « de dos » ; une face mal orientée (ex. dessus du plancher) n'était éclairée que par-dessous
+        for (let t = 0; t + 2 < n; t += 3) {
+          const a = t * 3, b = a + 3, c = a + 6;
+          const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
+          const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
+          const dot = (uy * vz - uz * vy) * (nor[a] + nor[b] + nor[c]) + (uz * vx - ux * vz) * (nor[a + 1] + nor[b + 1] + nor[c + 1]) + (ux * vy - uy * vx) * (nor[a + 2] + nor[b + 2] + nor[c + 2]);
+          if (dot < 0) {
+            for (const A of [pos, nor, col]) for (let k = 0; k < 3; k++) { const x = A[b + k]; A[b + k] = A[c + k]; A[c + k] = x; }
+            const b2 = (t + 1) * 2, c2 = (t + 2) * 2; for (let k = 0; k < 2; k++) { const x = uv[b2 + k]; uv[b2 + k] = uv[c2 + k]; uv[c2 + k] = x; }
+          }
+        }
         const g = new T.BufferGeometry();
         g.setAttribute('position', new T.BufferAttribute(pos, 3)); g.setAttribute('normal', new T.BufferAttribute(nor, 3));
         g.setAttribute('color', new T.BufferAttribute(col, 3)); g.setAttribute('uv', new T.BufferAttribute(uv, 2));
@@ -175,11 +202,19 @@
         }).catch(() => {});
       });
       bounds = { r: model.radius, h: model.height };
-      // ambiance selon le style
-      sky.visible = !maq;
-      scene.background = maq ? new T.Color(0xeeeeec) : null;
-      hemi.intensity = maq ? 0.9 : 0.55; sun.intensity = maq ? 2.0 : 2.8;
-      renderer.toneMappingExposure = maq ? 1.05 : 0.95;
+      // ambiance : la maquette garde son fond neutre ; le rendu réaliste suit l'ambiance choisie
+      amb = maq ? null : (AMBIANCES[opts.ambiance] || AMBIANCES.jour);
+      const a = amb;
+      sky.visible = !maq && a.sky;
+      scene.background = maq ? new T.Color(0xeeeeec) : (a.sky ? null : new T.Color(a.bg));
+      hemi.intensity = maq ? 0.9 : a.hemi; sun.intensity = maq ? 2.0 : a.sun;
+      sun.color.setHex(maq ? 0xfff1dc : a.sunColor);
+      renderer.toneMappingExposure = maq ? 1.05 : a.exposure;
+      scene.environmentIntensity = maq ? 1 : a.env;
+      if (!maq && a.sky) { su.turbidity.value = a.turbidity; su.rayleigh.value = a.rayleigh; su.mieCoefficient.value = a.mie || 0.004; }
+      hemi.color.setHex(!maq && a.hemiSky ? a.hemiSky : 0xdfe9f5);
+      lamp.visible = !maq && a.lamp > 0; lamp.intensity = maq ? 0 : a.lamp;
+      lamp.position.set(0, model.height * 0.55, 0); lamp.distance = model.radius * 2.2;
       sun.shadow.camera.left = sun.shadow.camera.bottom = -model.radius * 1.8; sun.shadow.camera.right = sun.shadow.camera.top = model.radius * 1.8;
       sun.shadow.camera.near = 1; sun.shadow.camera.far = 60; sun.shadow.camera.updateProjectionMatrix();
     }
@@ -191,10 +226,10 @@
     let pt = null, ptRaf = 0, photo = null;
     const envTexs = {};
     function photoEnv(maq) {
-      const key = maq ? 'maq' : 'real';
+      const A = amb || AMBIANCES.jour, key = maq ? 'maq' : A.label;
       if (envTexs[key]) return envTexs[key];
       const t = new K.ProceduralEquirectTexture(512, 256);
-      const zen = new T.Color(0.20, 0.40, 0.85), hor = new T.Color(0.80, 0.86, 0.95), gnd = new T.Color(0.25, 0.22, 0.17);
+      const zen = new T.Color(...A.pz[0]), hor = new T.Color(...A.pz[1]), gnd = new T.Color(...A.pz[2]);
       const white = new T.Color(0.93, 0.93, 0.92), grey = new T.Color(0.55, 0.55, 0.54);
       t.generationCallback = (polar, uv, coord, c) => {
         const y = -Math.cos(polar.phi); // 1 = zénith, -1 = nadir (convention du path tracer)
@@ -226,6 +261,7 @@
     function photoStop() {
       if (ptRaf) cancelAnimationFrame(ptRaf); ptRaf = 0;
       if (photo) { scene.background = photo.bg; scene.environment = photo.env; sky.visible = photo.sky; hemi.visible = true;
+        if (photo.lampS) { [lamp.intensity, lamp.distance, lamp.decay] = photo.lampS; scene.environmentIntensity = photo.envI; }
         photo.swaps.forEach(([m, g]) => { m.geometry.dispose(); m.geometry = g; }); photo = null; }
     }
     // cb : { samples, onProgress(n, total), onDone(), onError(err) }
@@ -243,6 +279,11 @@
         photo = { bg: scene.background, env: scene.environment, sky: sky.visible, swaps: [] };
         content.traverse(o => { if (o.isMesh && !o.userData.keepMat) { const g = fixWinding(o.geometry); if (g) { photo.swaps.push([o, o.geometry]); o.geometry = g; } } });
         sky.visible = false; hemi.visible = false; // non gérés par le lancer de rayons
+        // le ciel du rendu photo porte déjà l'éclairage d'ambiance ; la lampe de nuit passe
+        // en lumière physique (décroissance en 1/d², sans portée limite) pour le lancer de rayons
+        photo.envI = scene.environmentIntensity; scene.environmentIntensity = 1;
+        photo.lampS = [lamp.intensity, lamp.distance, lamp.decay];
+        if (lamp.visible) { lamp.intensity = 0.7 * lamp.intensity * bounds.r * bounds.r; lamp.distance = 0; lamp.decay = 2; }
         const env = photoEnv(maq);
         scene.environment = env; scene.background = maq ? new T.Color(0xeeeeec) : env;
         pt.setScene(scene, camera);
@@ -275,8 +316,8 @@
       // coupe : on garde ce qui est derrière un plan vertical passant à 15 cm devant l'axe
       const hx = Math.sin(cam.yaw), hz = Math.cos(cam.yaw);
       if (cut) { clip.normal.set(-hx, 0, -hz); clip.constant = 0.15; } else { clip.normal.set(0, 0, -1); clip.constant = 1e6; }
-      // soleil de trois quarts par la gauche de la caméra, à 41°
-      const az = cam.yaw + 1.05, el = 0.72, d = new T.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+      // soleil (ou lune) de trois quarts par la gauche de la caméra ; hauteur selon l'ambiance (jour : 41°)
+      const az = cam.yaw + 1.05, el = amb ? amb.el : 0.72, d = new T.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
       sun.position.copy(d.clone().multiplyScalar(25)).add(new T.Vector3(0, bounds.h * 0.4, 0)); sun.target.position.set(0, bounds.h * 0.4, 0);
       su.sunPosition.value.copy(d);
       renderer.render(scene, camera);
@@ -284,5 +325,5 @@
     return { isThree: true, update, render, photoStart, photoStop, snapshot, photoBusy: () => !!ptRaf, canPhoto: !!K.WebGLPathTracer, setQuality(v) { hiQ = v; sun.castShadow = v; renderer.shadowMap.type = v ? T.PCFSoftShadowMap : T.BasicShadowMap; renderer.shadowMap.needsUpdate = true; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); canvas.width = 0; }, renderer };
   }
 
-  global.Design3DThree = { create };
+  global.Design3DThree = { create, AMBIANCES };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -169,19 +169,24 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 
 ---
 
-## 8. Rendus plus esthétiques : rendu photo et ambiances — 🛠 rendu photo fait (branche feature/rendu-photo, 04/11/2026)
+## 8. Rendus plus beaux : rendu photo, ambiances, aménagement approfondi, ouvertures optimisées — 🛠 rendu photo fait (0.9.18), ambiances faites (0.9.19)
 
-**Besoin** : des images plus belles pour les devis, le site nomadom.be et la présentation client ; Nathan trouve que la Quadrisphère « manque de classe », dans sa forme comme dans son rendu.
+**Besoin** : des images plus belles pour les devis, le site nomadom.be et la présentation client (Nathan trouve que la Quadrisphère « manque de classe », dans sa forme comme dans son rendu) ; des rendus 3D plus esthétiques avec des **choix d'ambiance**, un aménagement intérieur plus poussé (ossature CLS + mobilier, liste de débits et angles « façon SketchUp »), des ouvertures pensées avec le soleil. Réutiliser des briques existantes plutôt que tout développer.
 
 **Décidé**
-- Rendu photo par lancer de rayons (three-gpu-pathtracer, hors ligne) dans l'onglet Design : bouton « 📷 Rendu photo », progression en %, export PNG ; bouger la vue revient à la 3D.
-- Réutiliser des briques existantes (GitHub, npm) plutôt que tout développer.
+- Rendu photo par lancer de rayons (three-gpu-pathtracer, hors ligne) dans l'onglet Design : bouton « 📷 Rendu photo », progression en %, export PNG ; bouger la vue revient à la 3D (0.9.18).
+- 05/11/2026 : les deux travaux d'ambiances (vue 3D et rendu photo) sont réunis en **une seule liste** (plein jour, matin, coucher de soleil, ciel couvert, nuit avec lampe intérieure), valable pour la vue 3D et pour la photo (0.9.19). Rendu photo de la Quadrisphère **remis à plus tard**.
+- Étape 1 (branche `feature/ambiances-rendu`) : menu « Ambiance » du rendu réaliste — plein jour, matin, coucher de soleil, ciel couvert, nuit (lampe intérieure). Tout calculé avec le ciel Three.js déjà intégré : **aucun fichier d'image**, reste hors ligne (les ciels HDRI Poly Haven auraient ajouté ≈ 1,5 Mo chacun).
+- Matériaux de l'aménagement : CLS sapin blanc raboté (38 × 63 à 38 × 235), OSB, multiplex, Agepan ; fournisseur de référence Bourguignon Bois (longueurs CLS 2,10 à 5,40 m suivant stock).
+- Briques repérées (licences à vérifier) : SunCalc (soleil → ouvertures), three-bvh-csg (découpes 3D), pmndrs postprocessing, three-gpu-pathtracer (images finales), OpenCutList et DomeCalc (débits), Blueprint3D (inspiration).
 
 **Questions ouvertes ❓**
-1. Temps de calcul acceptable sur la tablette de présentation ? Faut-il un réglage Rapide / Normal / Soigné ?
-2. Ambiances à proposer (matin, coucher de soleil, nuit éclairée de l'intérieur) ?
-3. Étendre le rendu photo à la Quadrisphère et à Nomad Vision ; revoir la forme de la Quadrisphère.
-4. La coupe « voir dedans » n'est pas encore rendue en photo : à traiter ?
+1. Mémoriser l'ambiance choisie avec l'aménagement ?
+2. Ouvertures : quel critère prime — lumière, vue, chaleur d'été, ventilation ?
+3. Formats exacts des panneaux chez Bourguignon Bois (OSB, multiplex, Agepan).
+4. Temps de calcul du rendu photo acceptable sur la tablette de présentation ? Faut-il un réglage Rapide / Normal / Soigné ?
+5. Étendre le rendu photo à la Quadrisphère et à Nomad Vision ; revoir la forme de la Quadrisphère (**remis à plus tard, 05/11/2026**).
+6. La coupe « voir dedans » n'est pas encore rendue en photo : à traiter ?
 
 ---
 

@@ -7,6 +7,13 @@
 
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
+## 0.9.19 — 05/11/2026 (ambiances du rendu)
+- Onglet Design, style Réaliste : menu **Ambiance** — **Plein jour**, **Matin** (soleil bas et doré), **Coucher de soleil** (lumière orangée, lampe intérieure allumée), **Ciel couvert** (lumière douce, sans ombre dure), **Nuit** (lampe chaude au centre, le dôme brille comme une lanterne). Tout est calculé : marche sans internet. Menu masqué en style Maquette.
+- **Le rendu photo suit l'ambiance choisie** ; le PNG porte son nom (ex. `rendu-dome-nuit.png`).
+- Les triangles mal orientés sont corrigés à la source : le dessus du plancher et la pelouse reçoivent bien le soleil (ombres des montants au sol).
+- Réunit deux travaux menés en parallèle (branches `feature/ambiances-rendu` et `feature/ambiances-photo`).
+- Contrôles : nouvelle suite `t_ambiance` ; `t_photo` vérifie le menu des 5 ambiances et fait le rendu au coucher de soleil. 34 suites ; dômes de référence inchangés.
+
 ## 0.9.18 — 04/11/2026 (rendu photo du Design)
 - Onglet Design : bouton **« 📷 Rendu photo »**. L'image réaliste (ombres douces, reflets, lumière du ciel) se calcule progressivement, avec la progression en % ; bouton **« ⬇ PNG »** pour l'enregistrer (devis, site, présentation client). Bouger la vue revient à la 3D habituelle. Fonctionne hors ligne. La coupe « voir dedans » n'est pas encore rendue en photo (toile entière, avec un avertissement).
 - Moteur 3D : three.js reste en 0.169 ; ajout de three-gpu-pathtracer 0.0.23 dans `vendor/three/` (+ ≈ 180 Ko), recette de régénération dans `vendor/three/README.md`.
