@@ -98,6 +98,38 @@ refused(st({ kumiko: { panels: [{ face: 'N1-N2"><b>' }] } }), 'Kumiko : triangle
 refused(st({ kumiko: { panels: [{ face: 'N1-N2-N3', density: 9 }] } }), 'Kumiko : densité 9', 'densité');
 refused(st({ kumiko: { panels: [{ face: 'N1-N2-N3', pattern: '<b>' }] } }), 'Kumiko : motif balisé', 'motif');
 refused(st({ kumiko: 'oui' }), 'Kumiko : texte', 'kumiko');
+// lieu du projet et nord (course du soleil)
+const ss = V(st({ site: { city: 'namur', north: 35 } }));
+check(ss.ok && ss.state.site.city === 'namur' && ss.state.site.north === 35, 'lieu et nord relus');
+check(V(st()).ok && V(st()).state.site.city === 'beauraing' && V(st()).state.site.north === 0, 'sans lieu : Beauraing, nord en haut');
+const old = st(); delete old.site;
+check(V(old).ok && V(old).state.site.north === 0, 'ancien aménagement sans « site » : accepté, nord en haut');
+refused(st({ site: { city: '<b>' } }), 'lieu balisé', 'lieu');
+refused(st({ site: { north: 'nord' } }), 'nord en texte', 'nord');
+refused(st({ site: 'Namur' }), 'site en texte', 'site');
+// ossature de la mezzanine
+const mf = V(st({ mezz: { on: true, frame: { joistSection: 'cls-38x184', spacing: 0.4, beamSection: 'kvh-80x200', postSection: 'kvh-100x100', joint: 'onglet' } } }));
+check(mf.ok && mf.state.mezz.frame.spacing === 0.4 && mf.state.mezz.frame.joint === 'onglet' && mf.state.mezz.frame.postSection === 'kvh-100x100', 'ossature de mezzanine relue');
+refused(st({ mezz: { frame: { spacing: 0.45 } } }), 'entraxe 45 cm', 'entraxe');
+refused(st({ mezz: { frame: { joistSection: '<b>' } } }), 'section balisée', 'section');
+refused(st({ mezz: { frame: { joint: 'colle' } } }), 'assemblage inconnu', 'assemblage');
+const sv = V(st({ site: { view: { az: 157.5, width: 120 } } }));
+check(sv.ok && sv.state.site.view.az === 157.5 && sv.state.site.view.width === 120, 'vue principale relue (SSE, 120°)');
+check(V(st()).state.site.view === null && V(st({ site: { view: null } })).ok, 'sans vue : aucune');
+refused(st({ site: { view: { az: 400, width: 90 } } }), 'vue à 400°', 'vue');
+refused(st({ site: { view: { az: 90, width: 5 } } }), 'vue de 5°', 'vue');
+// aération
+const vv = V(st({ vent: { target: 8, open: { 'b12.13.14': true, 'do1abc': false } } }));
+check(vv.ok && vv.state.vent.target === 8 && vv.state.vent.open['b12.13.14'] === true && vv.state.vent.open.do1abc === false, 'aération relue');
+check(V(st()).state.vent.target === 5 && Object.keys(V(st()).state.vent.open).length === 0, 'sans aération : objectif 5/h, ouvrables par défaut');
+refused(st({ vent: { target: 500 } }), 'objectif 500/h', 'objectif');
+refused(st({ vent: { open: { '<b>': true } } }), 'ouverture balisée', 'aération');
+refused(st({ vent: { open: { b1: 'oui' } } }), 'ouvrable en texte', 'aération');
+const vp = V(st({ vent: { part: { 'b1.2.3.4.5': 40 } } }));
+check(vp.ok && vp.state.vent.part['b1.2.3.4.5'] === 40, 'part ouvrante relue (40 %)');
+check(V(st()).state.vent.part && Object.keys(V(st()).state.vent.part).length === 0, 'sans part ouvrante : 100 % par défaut');
+refused(st({ vent: { part: { b1: 0 } } }), 'part ouvrante 0 %', 'part ouvrante');
+refused(st({ vent: { part: { b1: '50' } } }), 'part ouvrante en texte', 'part ouvrante');
 
 if (fails.length) { console.log('ÉCHEC ' + fails.length + '/' + n); fails.slice(0, 25).forEach(x => console.log('  ' + x)); process.exit(1); }
 console.log('OK ' + n + '/' + n);

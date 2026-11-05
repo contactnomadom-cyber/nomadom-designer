@@ -17,6 +17,12 @@
   let rotY = 0.7, rotX = 0.55, zoom3 = 1, view = { zoom: 1, panX: 0, panY: 0 };
   let toileMode = 'coupe', showZones = true, style3 = 'real', amb3 = 'jour', dirty3 = true, eng = null, saveWarn = false;
   let cam = { yaw: 0.7, pitch: 0.55, dist: 9, target: [0, 1.1, 0] };
+  // course du soleil (idée n° 8, étape 2) : réglages d'affichage, non sauvegardés ; le lieu et le nord sont dans st.site
+  const SUN = window.Sun;
+  let sunUi = { mode: 'amb', date: new Date().getFullYear() + '-06-21', hour: 14, map: 'none' }, sunCache = null;
+  // aération par effet cheminée (idée n° 8, étape 3) : objectif et ouvrables dans st.vent ; flèches = affichage seul
+  const VENT = window.Vent;
+  let ventArrows = false;
   const glbCache = new Map();   // id -> modèle .glb lu (Design3D.parseGLB)
   const mm = v => Math.round(v * 1000), cm = v => Math.round(v * 100);
   const fr = (v, d) => v.toFixed(d === undefined ? 2 : d).replace('.', ',');
@@ -81,6 +87,23 @@
         <label>Ajouter un élément<span style="display:flex;gap:4px"><select id="dsAddType">${libOpts}</select><button class="primary" id="dsAdd">+ Ajouter</button></span></label>
         <label>Ouvertures<span class="muted" style="font-size:11px;max-width:200px">Tracées dans l'onglet Base (porte, fenêtre, coupole) : elles apparaissent ici dans la toile et la structure.</span></label>
       </div>
+      <div class="toolbar" id="dsSunBar">
+        <span class="group-title">Site et soleil</span>
+        <label>Lieu du projet<select id="dsSiteCity">${SUN ? SUN.CITIES.map(c => '<option value="' + c.id + '">' + esc(c.name) + '</option>').join('') : ''}</select></label>
+        <label title="Angle du nord sur le plan, dans le sens des aiguilles d'une montre (0 = nord en haut)">Nord sur le plan (°)<input type="number" id="dsSiteNorth" step="5" min="-360" max="360"></label>
+        <label>Soleil dans la 3D<select id="dsSunMode"><option value="amb">Selon l'ambiance</option><option value="real">Réel (date et heure)</option></select></label>
+        <label id="dsSunWhen">Date et heure (heure belge)<span style="display:flex;gap:6px;align-items:center"><input type="date" id="dsSunDate"><input type="range" id="dsSunHour" min="4" max="22" step="0.25" style="width:120px"><b id="dsSunHourTxt" style="font-family:var(--mono);font-size:11px"></b></span></label>
+        <label title="Direction du paysage à cadrer (vallée, forêt, lac…)">Vue principale<span style="display:flex;gap:6px;align-items:center"><select id="dsViewDir"><option value="">Aucune</option>${['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'].map((c, i) => '<option value="' + i * 22.5 + '">' + c + '</option>').join('')}</select><input type="number" id="dsViewWidth" min="20" max="180" step="10" style="width:56px" title="Largeur du paysage, en degrés"> °</span></label>
+        <label>Carte des faces<select id="dsSunMap"><option value="none">Aucune</option><option value="bilan">Bilan fenêtres (hiver − été)</option><option value="vue">Vue principale</option><option value="hiver">Soleil d'hiver (21 déc.)</option><option value="ete">Soleil d'été (21 juin)</option></select></label>
+        <label>Lecture<span class="muted" id="dsSunInfo" style="font-size:11px;max-width:320px"></span></label>
+      </div>
+      <div class="toolbar" id="dsVentBar">
+        <span class="group-title">Aération</span>
+        <label title="Combien de fois l'air du dôme doit être changé en une heure (5 = confort d'été courant)">Objectif (renouvellements / h)<input type="number" id="dsVentTarget" step="0.5" min="0.5" max="60"></label>
+        <label>Ouvertures ouvrables<span id="dsVentList" style="display:flex;flex-wrap:wrap;gap:4px 10px;max-width:360px;font-size:11px"></span></label>
+        <label class="chk"><input type="checkbox" id="dsVentArrows"> Flèches d'air en 3D</label>
+        <label>Résultat<span id="dsVentInfo" style="font-size:11px;max-width:420px;line-height:1.45"></span></label>
+      </div>
       <div class="toolbar">
         <span class="group-title">Mezzanine</span>
         <label class="chk"><input type="checkbox" id="dsMezzOn"> Mezzanine</label>
@@ -91,6 +114,17 @@
         <label id="dsLWidth">Largeur (m)<input type="number" id="dsMezzW" step="0.05" min="0.5"></label>
         <label id="dsLAngle">Ouverture (°)<input type="number" id="dsMezzA" step="5" min="20" max="350"></label>
         <label>Orientation (°)<input type="number" id="dsMezzO" step="5"></label>
+      </div>
+      <div class="toolbar" id="dsMezzFrameBar">
+        <span class="group-title">Ossature mezzanine</span>
+        <label>Solives<select id="dsMfJoist"></select></label>
+        <label>Entraxe<select id="dsMfSpacing"><option value="0.3">30 cm</option><option value="0.4">40 cm</option><option value="0.5">50 cm</option><option value="0.6">60 cm</option></select></label>
+        <label>Poutres de rive<select id="dsMfBeam"></select></label>
+        <label>Poteaux<select id="dsMfPost"></select></label>
+        <label title="Côté paroi, la mezzanine peut avoir sa propre poutre sur poteaux (le dôme ne porte rien) ou reposer sur une lambourde vissée aux montants">Appui côté paroi<select id="dsMfWall"><option value="poteaux">Poutre + poteaux (indépendante)</option><option value="paroi">Lambourde sur les montants</option></select></label>
+        <label>Cadres<select id="dsMfJoint"><option value="about">En about</option><option value="onglet">En onglet</option></select></label>
+        <button id="dsMfThick" style="display:none" title="Régler l'épaisseur de la mezzanine sur plancher + ossature">Appliquer l'épaisseur conseillée</button>
+        <div id="dsMezzFrame" style="flex-basis:100%;max-width:640px"></div>
       </div>
       <div class="toolbar" id="dsKumikoBar">
         <span class="group-title">Kumiko</span>
@@ -144,6 +178,37 @@
     });
     const mz = (id, key, num) => $(id).addEventListener('change', e => { st.mezz[key] = num ? parseFloat(e.target.value) || 0 : e.target.value; syncInputs(); changed(); });
     $('dsMezzOn').addEventListener('change', e => { st.mezz.on = e.target.checked; syncInputs(); changed(); });
+    // ossature de la mezzanine : sections, entraxe, assemblage (st.mezz.frame)
+    if (window.MezzFrame && window.Floor) {
+      const FS = window.Floor.SECTIONS, opt = keys => keys.map(k => '<option value="' + k + '">' + esc(FS[k].name) + '</option>').join('');
+      const wood = Object.keys(FS).filter(k => !FS[k].post && k.indexOf('prov-') !== 0);
+      $('dsMfJoist').innerHTML = opt(wood); $('dsMfBeam').innerHTML = opt(wood); $('dsMfPost').innerHTML = opt(Object.keys(FS).filter(k => FS[k].post));
+      const mf = (id, key, num) => $(id).addEventListener('change', e => { st.mezz.frame = Object.assign({}, window.MezzFrame.DEFAULTS, st.mezz.frame, { [key]: num ? parseFloat(e.target.value) : e.target.value }); changed(); });
+      mf('dsMfJoist', 'joistSection'); mf('dsMfSpacing', 'spacing', true); mf('dsMfBeam', 'beamSection'); mf('dsMfPost', 'postSection'); mf('dsMfJoint', 'joint'); mf('dsMfWall', 'wallSupport');
+      $('dsMfThick').addEventListener('click', () => { const r = mezzFrame(); if (r && r.thickNeed) { st.mezz.thick = Math.ceil(r.thickNeed * 100) / 100; syncInputs(); changed(); } });
+    } else $('dsMezzFrameBar').style.display = 'none';
+    if (SUN) {
+      $('dsSiteCity').addEventListener('change', e => { st.site.city = e.target.value; sunCache = null; save(); drawAll(); });
+      $('dsSiteNorth').addEventListener('change', e => { const v = parseFloat(String(e.target.value).replace(',', '.')); st.site.north = isFinite(v) ? Math.max(-360, Math.min(360, v)) : 0; sunCache = null; save(); drawAll(); });
+      $('dsSunMode').addEventListener('change', e => { sunUi.mode = e.target.value; syncSun(); });
+      $('dsSunDate').addEventListener('change', e => { if (e.target.value) sunUi.date = e.target.value; syncSun(); });
+      $('dsSunHour').addEventListener('input', e => { sunUi.hour = parseFloat(e.target.value); syncSun(); });
+      $('dsSunMap').addEventListener('change', e => { sunUi.map = e.target.value; syncSun(); });
+      const setView = () => { const d = $('dsViewDir').value, w = parseFloat(String($('dsViewWidth').value).replace(',', '.'));
+        st.site.view = d === '' ? null : { az: parseFloat(d), width: isFinite(w) ? Math.max(20, Math.min(180, w)) : 90 }; save(); drawAll(); };
+      $('dsViewDir').addEventListener('change', setView); $('dsViewWidth').addEventListener('change', setView);
+    } else $('dsSunBar').style.display = 'none';
+    if (VENT) {
+      $('dsVentTarget').addEventListener('change', e => { const v = parseFloat(String(e.target.value).replace(',', '.')); st.vent.target = isFinite(v) ? Math.max(0.5, Math.min(60, v)) : 5; save(); syncVent(); });
+      $('dsVentList').addEventListener('change', e => {
+        const k = e.target.dataset.vent, kp = e.target.dataset.ventPart;
+        if (k) st.vent.open[k] = e.target.checked;
+        else if (kp) { if (!st.vent.part) st.vent.part = {}; const v = parseFloat(String(e.target.value).replace(',', '.')); st.vent.part[kp] = isFinite(v) ? Math.max(5, Math.min(100, Math.round(v))) : 100; }
+        else return;
+        save(); syncVent();
+      });
+      $('dsVentArrows').addEventListener('change', e => { ventArrows = e.target.checked; syncVent(); });
+    } else $('dsVentBar').style.display = 'none';
     mz('dsMezzH', 'h', true); mz('dsMezzT', 'thick', true); mz('dsMezzShape', 'shape'); mz('dsMezzD', 'depth', true); mz('dsMezzW', 'width', true); mz('dsMezzA', 'angle', true); mz('dsMezzO', 'orient', true);
     $('dsPrint').addEventListener('click', printPlans);
     $('dsExport').addEventListener('click', () => {
@@ -189,6 +254,9 @@
   function syncInputs() {
     const m = st.mezz;
     $('dsStyle').value = st.style; $('dsMezzOn').checked = m.on;
+    if (VENT) { $('dsVentTarget').value = st.vent.target; $('dsVentArrows').checked = ventArrows; }
+    if (SUN) { $('dsSiteCity').value = SUN.cityOf(st.site.city).id; $('dsSiteNorth').value = st.site.north; $('dsSunMode').value = sunUi.mode; $('dsSunDate').value = sunUi.date; $('dsSunHour').value = sunUi.hour; $('dsSunMap').value = sunUi.map;
+      const vw = st.site.view; $('dsViewDir').value = vw ? String(Math.round(vw.az / 22.5) * 22.5) : ''; $('dsViewWidth').value = vw ? vw.width : 90; $('dsViewWidth').disabled = !vw; }
     $('dsMezzH').value = m.h; $('dsMezzT').value = m.thick; $('dsMezzShape').value = m.shape; $('dsMezzD').value = m.depth; $('dsMezzW').value = m.width; $('dsMezzA').value = m.angle; $('dsMezzO').value = m.orient;
     ['dsMezzH', 'dsMezzT', 'dsMezzShape', 'dsMezzD', 'dsMezzW', 'dsMezzA', 'dsMezzO'].forEach(id => $(id).disabled = !m.on);
     $('dsLDepth').style.display = m.shape === 'secteur' ? 'none' : '';
@@ -357,7 +425,7 @@
   let planT = null;
   function planTransform(cv) {
     const ext = window.CoverApp && window.CoverApp.doorScenes ? Math.max(0, ...window.CoverApp.doorScenes().flatMap(x => x.pieces.map(p => Math.hypot(p.b.x, p.b.z)))) : 0;
-    const W = cv.width, H = cv.height, R = Math.max(model.radius, ext) + 0.6;
+    const W = cv.width, H = cv.height, R = Math.max(model.radius, ext) + (st.site && st.site.view ? 0.95 : 0.6);   // place pour le secteur de vue
     const s = Math.min(W, H) / (2 * R) * view.zoom;
     const cx = W / 2 + view.panX, cy = H / 2 + view.panY;
     return { s, f: p => ({ x: cx + p.x * s, y: cy + p.z * s }), inv: q => ({ x: (q.x - cx) / s, z: (q.y - cy) / s }) };
@@ -376,11 +444,23 @@
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.moveTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.stroke();
     }
     drawPlan(canvasPen(ctx, dpr), planT.f, dpr, level);
+    // vue principale : secteur hors du dôme, dans la direction du paysage
+    const vw = st.site && st.site.view;
+    if (SUN && vw) {
+      const r0 = model.radius + 0.1, r1 = model.radius + 0.45, pts = [];
+      for (let k = 0; k <= 16; k++) { const v = SUN.compass(vw.az - vw.width / 2 + vw.width * k / 16, st.site.north); pts.push(planT.f({ x: v.x * r1, z: v.z * r1 })); }
+      for (let k = 16; k >= 0; k--) { const v = SUN.compass(vw.az - vw.width / 2 + vw.width * k / 16, st.site.north); pts.push(planT.f({ x: v.x * r0, z: v.z * r0 })); }
+      ctx.beginPath(); pts.forEach((q, k) => k ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath();
+      ctx.fillStyle = 'rgba(38,140,158,0.18)'; ctx.fill(); ctx.strokeStyle = 'rgba(38,140,158,0.8)'; ctx.lineWidth = 1.2 * dpr; ctx.stroke();
+      const m = SUN.compass(vw.az, st.site.north), lp = planT.f({ x: m.x * (r1 + 0.22), z: m.z * (r1 + 0.22) });
+      ctx.fillStyle = 'rgb(28,110,124)'; ctx.font = 'bold ' + 10 * dpr + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('Vue ' + SUN.cardinal(vw.az), lp.x, lp.y);
+    }
     // nord + échelle
     const pen = canvasPen(ctx, dpr);
     const nx = cv.width - 30 * dpr, ny = 34 * dpr;
-    pen.poly([{ x: nx, y: ny - 16 * dpr }, { x: nx + 7 * dpr, y: ny + 6 * dpr }, { x: nx, y: ny + 1 * dpr }, { x: nx - 7 * dpr, y: ny + 6 * dpr }], { fill: '#000', stroke: 'none' });
-    pen.text('N', { x: nx, y: ny - 24 * dpr }, { size: 9, bold: true });
+    const na = (st.site ? st.site.north : 0) * Math.PI / 180, rot = (x, y) => ({ x: nx + x * Math.cos(na) - y * Math.sin(na), y: ny + x * Math.sin(na) + y * Math.cos(na) });
+    pen.poly([rot(0, -16 * dpr), rot(7 * dpr, 6 * dpr), rot(0, 1 * dpr), rot(-7 * dpr, 6 * dpr)], { fill: '#000', stroke: 'none' });
+    pen.text('N', rot(0, -24 * dpr), { size: 9, bold: true });
     const sx = 16 * dpr, sy = cv.height - 44 * dpr, L1 = planT.s;
     for (let i = 0; i < 2; i++) pen.poly([{ x: sx + i * L1, y: sy }, { x: sx + (i + 1) * L1, y: sy }, { x: sx + (i + 1) * L1, y: sy + 5 * dpr }, { x: sx + i * L1, y: sy + 5 * dpr }], { fill: i ? '#fff' : '#000', stroke: '#000', w: 0.8 });
     pen.text('0', { x: sx, y: sy + 13 * dpr }, { size: 7.5 }); pen.text('1', { x: sx + L1, y: sy + 13 * dpr }, { size: 7.5 }); pen.text('2 m', { x: sx + 2 * L1, y: sy + 13 * dpr }, { size: 7.5 });
@@ -679,6 +759,147 @@
       onError: err => { console.warn(err); photoUi(false, 'Rendu photo impossible sur cet appareil (WebGL2 insuffisant).'); } });
     if (!ok) return;
   }
+  // ---------------------------------------------------------
+  // Site et soleil : course du soleil, soleil réel, carte d'ensoleillement des faces (🟡 calculé)
+  // ---------------------------------------------------------
+  function sunExposure() {
+    const key = [st.site.city, st.site.north, model.radius, model.height, model.skinTris.length].join('|');
+    if (!sunCache || sunCache.key !== key) sunCache = { key, faces: SUN.faceExposure(model.skinTris, model.height, st.site, +sunUi.date.slice(0, 4) || 2026) };
+    return sunCache.faces;
+  }
+  function sunNow() {
+    const [y, mo, d] = sunUi.date.split('-').map(Number), c = SUN.cityOf(st.site.city);
+    const p = SUN.position(SUN.belgianToUtc(y, mo, d, sunUi.hour), c.lat, c.lon);
+    return Object.assign(p, { dir: SUN.direction(p.azimuth, p.elevation, st.site.north) });
+  }
+  function sunScene() {
+    if (!SUN || !model) return null;
+    const y = +sunUi.date.slice(0, 4) || 2026, real = sunUi.mode === 'real';
+    const out = { arcs: real || sunUi.map !== 'none' ? [{ kind: 'hiver', pts: SUN.dayPath(st.site, y, 12, 21, 15) }, { kind: 'ete', pts: SUN.dayPath(st.site, y, 6, 21, 15) }] : [], radius: model.radius * 1.7, center: [0, 0, 0] };
+    if (real) { const s = sunNow(); out.now = { dir: s.dir, elevation: s.elevation }; }
+    if (sunUi.map !== 'none') {
+      const ex = sunExposure(), maxW = Math.max(1e-9, ...ex.map(f => f.hiver)), maxS = Math.max(1e-9, ...ex.map(f => f.ete));
+      const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t), grey = [0.86, 0.86, 0.84];
+      out.faces = model.skinTris.map((t, i) => {
+        const f = ex[i]; let col;
+        if (sunUi.map === 'vue') col = mix(grey, [0.15, 0.55, 0.62], SUN.viewScore(f.normal, st.site.north, st.site.view));
+        else if (sunUi.map === 'hiver') col = mix([0.95, 0.96, 0.98], [0.12, 0.35, 0.8], f.hiver / maxW);
+        else if (sunUi.map === 'ete') col = mix([0.98, 0.96, 0.92], [0.85, 0.18, 0.12], f.ete / maxS);
+        else col = f.balance >= 0 ? mix(grey, [0.2, 0.66, 0.3], Math.min(1, f.balance / 0.6)) : mix(grey, [0.86, 0.22, 0.15], Math.min(1, -f.balance / 0.6));
+        return { pts: t, normal: f.normal, color: col };
+      });
+    }
+    return out;
+  }
+  // texte de lecture : position du soleil, meilleur côté pour les fenêtres
+  function sunInfo() {
+    if (!SUN || !model || !$('dsSunInfo')) return;
+    const parts = [], deg = r => Math.round(r * 180 / Math.PI);
+    if (sunUi.mode === 'real') {
+      const s = sunNow();
+      parts.push(s.elevation > 0 ? 'Soleil à ' + deg(s.elevation) + '° de haut, ' + SUN.cardinal(deg(s.azimuth)) + ' (' + deg(s.azimuth) + '°)' : 'Soleil couché à cette heure');
+    }
+    if (sunUi.map !== 'none') {
+      const ex = sunExposure(), side = {};
+      ex.forEach((f, i) => { if (f.verdict !== 'conseille') return; const t = model.skinTris[i], k = SUN.cardinal(SUN.azimuthOf({ x: t[0].x + t[1].x + t[2].x, z: t[0].z + t[1].z + t[2].z }, st.site.north)); side[k] = (side[k] || 0) + 1; });
+      const best = Object.keys(side).sort((a, b) => side[b] - side[a]).slice(0, 3);
+      if (sunUi.map === 'vue' || (sunUi.map === 'bilan' && st.site.view)) {
+        if (!st.site.view) parts.push('Choisissez la direction de la vue principale');
+        else {
+          const both = ex.filter(f => f.verdict === 'conseille' && SUN.viewScore(f.normal, st.site.north, st.site.view) > 0).length,
+            seen = ex.filter(f => SUN.viewScore(f.normal, st.site.north, st.site.view) > 0).length, hot = ex.filter(f => f.verdict === 'proteger' && SUN.viewScore(f.normal, st.site.north, st.site.view) > 0).length;
+          parts.push('Vue ' + SUN.cardinal(st.site.view.az) + ' : ' + seen + ' faces la regardent, dont ' + both + ' aussi conseillées pour le soleil' + (hot ? ' et ' + hot + ' à protéger de la surchauffe (store ou avancée)' : ''));
+        }
+      }
+      if (sunUi.map !== 'vue') parts.push((sunUi.map === 'bilan' ? '🟢 fenêtres conseillées · 🔴 à protéger (surchauffe) · ' : sunUi.map === 'hiver' ? 'Bleu foncé = soleil d\'hiver bienvenu · ' : 'Rouge = soleil d\'été (risque de surchauffe) · ') +
+        (best.length ? 'meilleurs côtés : ' + best.join(', ') : 'aucune face nettement favorable'));
+    }
+    parts.push('🟡 calculé : ciel clair, sans ombre du terrain ni des arbres');
+    $('dsSunInfo').textContent = parts.join(' · ');
+  }
+  function syncSun() {
+    if (!SUN) return;
+    $('dsSunWhen').style.display = sunUi.mode === 'real' ? '' : 'none';
+    const h = Math.floor(sunUi.hour), mi = Math.round((sunUi.hour - h) * 60);
+    $('dsSunHourTxt').textContent = h + ' h ' + String(mi).padStart(2, '0');
+    sunInfo();
+    if (eng && eng.isThree && eng.setSun && visible()) { eng.setSun(sunScene()); eng.render(cam, toileMode === 'coupe'); }
+  }
+  // ---------------------------------------------------------
+  // Aération : ouvertures tracées (Base) + ouvertures du Design, effet cheminée (🟡 calculé)
+  // ---------------------------------------------------------
+  function ventOpenings() {
+    const CA = window.CoverApp, out = [];
+    (CA && CA.openings ? CA.openings() : []).forEach(o => {
+      const kind = VENT.classify({ heightMin: o.yMin, closedByGround: o.closedByGround }, model.height);
+      out.push({ key: o.key, kind, label: VENT.LABEL[kind] + ' ' + o.n, area: o.area, yMin: o.yMin, yMax: o.yMax, center: o.center, normal: o.normal });
+    });
+    st.openings.forEach((op, i) => {
+      const g = openingGeom(op), sill = op.sill || 0;
+      out.push({ key: 'd' + op.id, kind: op.type, label: VENT.LABEL[op.type] + ' (Design ' + (i + 1) + ')', area: op.w * op.h, yMin: sill, yMax: sill + op.h,
+        center: { x: (g.p0.x + g.p1.x) / 2, y: sill + op.h / 2, z: (g.p0.z + g.p1.z) / 2 }, normal: { x: -g.nx, y: 0, z: -g.nz } });
+    });
+    // part ouvrante : seule la surface réellement dégagée laisse passer l'air (coupole à charnière, fenêtre à soufflet…)
+    out.forEach(o => { const v = st.vent.open[o.key], p = st.vent.part && st.vent.part[o.key];
+      o.open = typeof v === 'boolean' ? v : VENT.defaultOpen(o.kind); o.part = typeof p === 'number' ? p : 100; o.areaFull = o.area; o.area = o.areaFull * o.part / 100; });
+    return out;
+  }
+  function ventResult() {
+    const ops = ventOpenings(), vol = Z.stats(model, st).volume, open = ops.filter(o => o.open);
+    return { ops, vol, open, cases: VENT.CASES.map(c => Object.assign({ c }, VENT.airflow(open, vol, c.dT))), size: VENT.sizing(open, vol, st.vent.target) };
+  }
+  function ventScene(R) {
+    if (!ventArrows) return [];
+    const arrows = [];
+    R.open.forEach(o => {
+      const n = o.normal, c = o.center;
+      if (o.kind === 'coupole') arrows.push({ from: { x: c.x, y: c.y - 0.6, z: c.z }, to: { x: c.x, y: c.y + 0.9, z: c.z }, color: 0xe0702a });
+      else { const h = Math.hypot(n.x, n.z) || 1; arrows.push({ from: { x: c.x + n.x / h * 1.0, y: c.y, z: c.z + n.z / h * 1.0 }, to: { x: c.x - n.x / h * 0.6, y: c.y + 0.25, z: c.z - n.z / h * 0.6 }, color: 0x2f8fd6 }); }
+    });
+    if (R.cases[0].mode === 'cheminee') arrows.push({ from: { x: 0, y: model.height * 0.25, z: 0 }, to: { x: 0, y: model.height * 0.8, z: 0 }, color: 0xe0a02a });
+    return arrows;
+  }
+  function syncVent() {
+    if (!VENT || !model || !$('dsVentInfo')) return;
+    const R = ventResult(), f1 = v => fr(v, 1), f2 = v => fr(v, 2);
+    $('dsVentList').innerHTML = R.ops.length ? R.ops.map(o => '<span style="display:inline-flex;align-items:center;gap:4px"><label class="chk" style="font-weight:400"><input type="checkbox" data-vent="' + esc(o.key) + '"' + (o.open ? ' checked' : '') + '> ' + esc(o.label) + ' · ' + f2(o.areaFull) + ' m²</label>'
+      + (o.open ? '<input type="number" data-vent-part="' + esc(o.key) + '" value="' + o.part + '" min="5" max="100" step="5" style="width:52px" title="Part réellement ouvrante : 100 % = toute la surface dégagée ; une coupole à charnière ouverte à moitié ≈ 50 %"> % ouvrant' : '') + '</span>').join('')
+      : '<span class="muted">Aucune ouverture : tracez la porte et la coupole dans l\'onglet Base.</span>';
+    const L = [], e = R.cases[0];
+    if (e.mode === 'aucune') L.push('Aucune ouverture ouvrable : pas d\'aération naturelle.');
+    else {
+      L.push('Ouvert en bas ' + f2(e.low) + ' m² · ouvert en haut ' + f2(e.high) + ' m²' + (e.mode === 'cheminee' ? ' · tirage sur ' + f1(e.height) + ' m' : ' (sans coupole : aération faible)') + ' · volume ' + f1(R.vol) + ' m³');
+      L.push(R.cases.map(r => (r.ach >= st.vent.target ? '🟢 ' : '🟠 ') + fr(r.ach, r.ach < 10 ? 1 : 0) + ' renouvellements/h (' + r.c.label + ', écart ' + r.c.dT + ' °C)').join(' · '));
+      const b = VENT.balance(e); if (b) L.push((b.level === 'warn' ? '⚠ ' : b.level === 'ok' ? '✓ ' : 'ⓘ ') + b.text);
+      const z = R.size;
+      if (!z.ok) L.push('Dimensionner : ' + z.reason + '.');
+      else if (e.ach >= st.vent.target) L.push('Objectif ' + fr(st.vent.target, 1) + '/h atteint en été' + (z.needLow ? ' (entrées basses utiles : ' + f2(z.needLow) + ' m² au moins)' : '') + '.');
+      else if (z.highTooSmall) L.push('Objectif ' + fr(st.vent.target, 1) + '/h : coupole trop petite, il faut au moins ' + f2(z.minHigh) + ' m² réellement ouverts au sommet (et autant en bas).');
+      else L.push('Objectif ' + fr(st.vent.target, 1) + '/h : il faut ' + f2(z.needLow) + ' m² d\'entrées basses ouvrables (vous en avez ' + f2(e.low) + ').');
+      if (R.open.some(o => o.kind === 'coupole')) L.push('☂ Coupole ouverte : à fermer par pluie, ou prévoir un chapeau (étanchéité avant tout).');
+    }
+    L.push('🟡 calculé : effet cheminée seul, sans vent (cas défavorable), surface ouverte selon la part ouvrante indiquée');
+    $('dsVentInfo').innerHTML = L.map(esc).join('<br>');
+    if (eng && eng.isThree && eng.setVent && visible()) { eng.setVent(ventScene(R)); eng.render(cam, toileMode === 'coupe'); }
+  }
+  // ---------------------------------------------------------
+  // Ossature de la mezzanine (mezz-frame.js) : solives, poutres de rive, poteaux, solidité, débits
+  // ---------------------------------------------------------
+  function mezzFrame() {
+    if (!window.MezzFrame || !window.Floor || !model || !st.mezz.on) return null;
+    const mp = Z.mezzPolygon(model, st.mezz), wall = Z.section(model, st.mezz.h);
+    return mp && wall ? window.MezzFrame.layout(mp, wall, st.mezz, st.mezz.frame, window.Floor, Z.section(model, 0)) : null;
+  }
+  function syncMezzFrame() {
+    if (!window.MezzFrame || !$('dsMezzFrameBar')) return;
+    $('dsMezzFrameBar').style.display = st.mezz.on ? '' : 'none';
+    if (!st.mezz.on) return;
+    const o = Object.assign({}, window.MezzFrame.DEFAULTS, st.mezz.frame);
+    $('dsMfJoist').value = o.joistSection; $('dsMfSpacing').value = String(o.spacing); $('dsMfBeam').value = o.beamSection; $('dsMfPost').value = o.postSection; $('dsMfJoint').value = o.joint; $('dsMfWall').value = o.wallSupport;
+    const r = mezzFrame();
+    $('dsMfThick').style.display = r && r.ok !== undefined && r.thickNeed && (st.mezz.thick || 0) + 1e-9 < r.thickNeed ? '' : 'none';
+    $('dsMezzFrame').innerHTML = r ? window.MezzUI.html(r, window.Floor) : '<span class="muted">Mezzanine hors de la paroi à cette hauteur.</span>';
+  }
   function draw3D() {
     if (!eng) return draw3DCanvas();
     if (dirty3) {
@@ -686,8 +907,9 @@
       const kumiko = kmSegments();
       // portes d'aplomb et plancher sur pilotis réglés dans l'onglet Base (NOMAD-2026-005 / 006)
       const CA = window.CoverApp, doors = CA && CA.doorScenes ? CA.doorScenes() : [], floor = CA && CA.floorScene ? CA.floorScene() : null;
-      if (eng.isThree) eng.update(Z, model, st, { style: style3, ambiance: amb3, toile: toileMode, openings, kumiko, doors, floor }, () => eng.render(cam, toileMode === 'coupe'));
-      else eng.setScene(Design3D.buildScene(Z, model, st, { style: style3, toile: toileMode, models: glbCache, openings, kumiko, doors, floor }));
+      const mf = mezzFrame(), mezzFrameScene = mf && mf.joists ? Object.assign({ deckThickness: window.MezzFrame.DECK }, mf) : null;   // ossature de la mezzanine
+      if (eng.isThree) eng.update(Z, model, st, { style: style3, ambiance: amb3, toile: toileMode, openings, kumiko, doors, floor, mezzFrame: mezzFrameScene }, () => eng.render(cam, toileMode === 'coupe'));
+      else eng.setScene(Design3D.buildScene(Z, model, st, { style: style3, toile: toileMode, models: glbCache, openings, kumiko, doors, floor, mezzFrame: mezzFrameScene }));
       cam.target[1] = Math.min(cam.target[1], model.height); dirty3 = false;
     }
     eng.render(cam, toileMode === 'coupe');
@@ -753,7 +975,7 @@
       drawPlan(svgPen(out, 0.28), T, 0.28, lvl, {});
       // échelle + nord
       const sb = [`<g transform="translate(4 ${size - 8})"><rect x="0" y="0" width="${k}" height="1.6" fill="#000"/><rect x="${k}" y="0" width="${k}" height="1.6" fill="#fff" stroke="#000" stroke-width="0.2"/><text x="0" y="5" font-size="2.6" text-anchor="middle">0</text><text x="${k}" y="5" font-size="2.6" text-anchor="middle">1</text><text x="${2 * k}" y="5" font-size="2.6" text-anchor="middle">2 m</text></g>`,
-        `<g transform="translate(${size - 8} 10)"><path d="M0,-6 L2.5,2 L0,0.4 L-2.5,2 z" fill="#000"/><text x="0" y="-8.5" font-size="3" font-weight="700" text-anchor="middle">N</text></g>`];
+        `<g transform="translate(${size - 8} 10) rotate(${st.site ? st.site.north : 0})"><path d="M0,-6 L2.5,2 L0,0.4 L-2.5,2 z" fill="#000"/><text x="0" y="-8.5" font-size="3" font-weight="700" text-anchor="middle">N</text></g>`];
       const legend = st.items.filter(it => (it.level || 0) === lvl).map(it => `<tr><td>${esc(it.name)}</td><td>${cm(it.w)} × ${cm(it.d)} × ${cm(it.h)} cm</td><td>${Z.checkItem(model, st, it).join(', ') || '✓'}</td></tr>`).join('') +
         (lvl === 0 ? st.openings.map(op => { const g = openingGeom(op); return `<tr><td>${Z.OPENINGS.find(o => o.type === op.type).label}</td><td>${cm(op.w)} × ${cm(op.h)} cm, allège ${cm(op.sill || 0)} cm, côté ${g.edge + 1}</td><td>${openingCheck(op).join(' · ') || '✓'}</td></tr>`; }).join('') : '');
       return `<section class="page"><header><div><h1>${lvl ? 'Mezzanine' : 'Rez-de-chaussée'}</h1><div class="sub">Dôme ${esc(window.CoverApp.label())} · plan d'aménagement · échelle 1:${scale}</div></div>
@@ -842,11 +1064,11 @@
   function drawAll() {
     if (!visible() || !model) return;
     $('dsDome').innerHTML = 'Dôme <b>' + esc(window.CoverApp.label()) + '</b> <span class="muted">(se règle dans l\'onglet Base, ouvertures comprises)</span>';
-    drawPlanScreen(); draw3D(); renderProps(); renderList(); renderKumiko(); syncKumikoBar();
+    drawPlanScreen(); draw3D(); renderProps(); renderList(); renderKumiko(); syncKumikoBar(); syncSun(); syncVent(); syncMezzFrame();
   }
   window.CoverDesign = {
     show() { const first = !built; model = Z.domeModel(window.CoverApp.dome()); if (first) build(); dirty3 = true; if (first && eng) { cam.dist = model.radius * 3.6; cam.target = [0, model.height * 0.38, 0]; } syncInputs(); drawAll(); },
     domeChanged() { if (window.CoverApp) model = Z.domeModel(window.CoverApp.dome()); dirty3 = true; if (built) drawAll(); },
-    state: () => st, _model: () => model
+    state: () => st, _model: () => model, _sunScene: () => sunScene(), _vent: () => ventResult(), _mezzFrame: () => mezzFrame()
   };
 })();

@@ -97,6 +97,11 @@
     // lampe intérieure (ambiance nuit) : lumière chaude au centre du dôme, sans ombre portée (rapide)
     const lamp = new T.PointLight(0xffc27a, 0, 12, 1.6); lamp.visible = false; scene.add(lamp);
     let amb = null;
+    // course du soleil (sun.js) : arcs du 21 décembre et du 21 juin, soleil réel, carte des faces
+    let sunGroup = new T.Group(); scene.add(sunGroup);
+    let sunOv = null, sunBase = 2.6;
+    // aération (vent.js) : flèches d'air, entrées en bleu, sortie par la coupole en orange
+    let ventGroup = new T.Group(); scene.add(ventGroup);
     const clip = new T.Plane(new T.Vector3(0, 0, -1), 1e6);
     let hiQ = true;
     const tex = { real: null, maq: null };
@@ -217,6 +222,56 @@
       lamp.position.set(0, model.height * 0.55, 0); lamp.distance = model.radius * 2.2;
       sun.shadow.camera.left = sun.shadow.camera.bottom = -model.radius * 1.8; sun.shadow.camera.right = sun.shadow.camera.top = model.radius * 1.8;
       sun.shadow.camera.near = 1; sun.shadow.camera.far = 60; sun.shadow.camera.updateProjectionMatrix();
+      sunBase = sun.intensity;
+    }
+
+    // arrows = [{ from: {x,y,z}, to: {x,y,z}, color }]
+    function setVent(arrows) {
+      scene.remove(ventGroup); dispose(ventGroup); ventGroup = new T.Group(); scene.add(ventGroup);
+      (arrows || []).forEach(a => {
+        const A = new T.Vector3(a.from.x, a.from.y, a.from.z), B = new T.Vector3(a.to.x, a.to.y, a.to.z), d = B.clone().sub(A), L = d.length();
+        if (L < 1e-3) return;
+        const mat = new T.MeshBasicMaterial({ color: a.color, transparent: true, opacity: 0.9, depthTest: false, toneMapped: false }), head = Math.min(0.25, L * 0.35);
+        const shaft = new T.Mesh(new T.CylinderGeometry(0.025, 0.025, L - head, 10), mat), cone = new T.Mesh(new T.ConeGeometry(0.075, head, 14), mat);
+        shaft.position.y = (L - head) / 2; cone.position.y = L - head / 2;
+        const g = new T.Group(); g.add(shaft); g.add(cone); g.position.copy(A);
+        g.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), d.normalize());
+        g.renderOrder = 5; shaft.renderOrder = cone.renderOrder = 5; ventGroup.add(g);
+      });
+    }
+
+    // s = { arcs: [{ kind, pts: [{x,y,z}] }], radius, now: { dir, elevation }, faces: [{ pts, normal, color }] } ou null
+    function setSun(s) {
+      scene.remove(sunGroup); dispose(sunGroup); sunGroup = new T.Group(); scene.add(sunGroup);
+      sunOv = s && s.now ? s.now : null;
+      if (!s) return;
+      const R = s.radius;
+      (s.arcs || []).forEach(a => {
+        if (a.pts.length < 2) return;
+        const g = new T.BufferGeometry().setFromPoints(a.pts.map(p => new T.Vector3(p.x * R, p.y * R, p.z * R)));
+        const line = new T.Line(g, new T.LineBasicMaterial({ color: a.kind === 'hiver' ? 0x2f6fd6 : 0xe0702a, transparent: true, opacity: 0.9, depthWrite: false }));
+        line.renderOrder = 3; sunGroup.add(line);
+        // petites billes aux heures pleines
+        a.pts.filter(p => Math.abs(p.hour - Math.round(p.hour)) < 1e-6).forEach(p => {
+          const m = new T.Mesh(new T.SphereGeometry(R * 0.012, 8, 6), new T.MeshBasicMaterial({ color: a.kind === 'hiver' ? 0x2f6fd6 : 0xe0702a }));
+          m.position.set(p.x * R, p.y * R, p.z * R); sunGroup.add(m);
+        });
+      });
+      if (s.now && s.now.elevation > 0) {
+        const d = s.now.dir, m = new T.Mesh(new T.SphereGeometry(R * 0.04, 20, 14), new T.MeshBasicMaterial({ color: 0xffd23a }));
+        m.position.set(d.x * R, d.y * R, d.z * R); sunGroup.add(m);
+      }
+      if (s.faces && s.faces.length) {
+        const n = s.faces.length, pos = new Float32Array(n * 9), col = new Float32Array(n * 9);
+        s.faces.forEach((f, i) => f.pts.forEach((p, k) => {
+          pos.set([p.x + f.normal.x * 0.012, p.y + f.normal.y * 0.012, p.z + f.normal.z * 0.012], i * 9 + k * 3);
+          col.set(f.color.map(c => Math.pow(c, 2.2)), i * 9 + k * 3);
+        }));
+        const g = new T.BufferGeometry(); g.setAttribute('position', new T.BufferAttribute(pos, 3)); g.setAttribute('color', new T.BufferAttribute(col, 3));
+        const m = new T.Mesh(g, new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.78, side: T.DoubleSide, depthWrite: false, toneMapped: false }));
+        // pas de coupe : la carte montre toute la coque, côté soleil compris
+        m.renderOrder = 3; sunGroup.add(m);
+      }
     }
 
     // ---------------- rendu photo (lancer de rayons, three-gpu-pathtracer) ----------------
@@ -317,12 +372,18 @@
       const hx = Math.sin(cam.yaw), hz = Math.cos(cam.yaw);
       if (cut) { clip.normal.set(-hx, 0, -hz); clip.constant = 0.15; } else { clip.normal.set(0, 0, -1); clip.constant = 1e6; }
       // soleil (ou lune) de trois quarts par la gauche de la caméra ; hauteur selon l'ambiance (jour : 41°)
-      const az = cam.yaw + 1.05, el = amb ? amb.el : 0.72, d = new T.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+      const az = cam.yaw + 1.05, el = amb ? amb.el : 0.72;
+      let d = new T.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+      sun.intensity = sunBase;
+      if (sunOv) {   // soleil réel : direction calculée ; il faiblit près de l'horizon et s'éteint une fois couché
+        d = new T.Vector3(sunOv.dir.x, sunOv.dir.y, sunOv.dir.z);
+        sun.intensity = sunBase * Math.max(0, Math.min(1, Math.sin(sunOv.elevation) / Math.sin(0.17)));
+      }
       sun.position.copy(d.clone().multiplyScalar(25)).add(new T.Vector3(0, bounds.h * 0.4, 0)); sun.target.position.set(0, bounds.h * 0.4, 0);
       su.sunPosition.value.copy(d);
       renderer.render(scene, camera);
     }
-    return { isThree: true, update, render, photoStart, photoStop, snapshot, photoBusy: () => !!ptRaf, canPhoto: !!K.WebGLPathTracer, setQuality(v) { hiQ = v; sun.castShadow = v; renderer.shadowMap.type = v ? T.PCFSoftShadowMap : T.BasicShadowMap; renderer.shadowMap.needsUpdate = true; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); canvas.width = 0; }, renderer };
+    return { isThree: true, update, render, setSun, setVent, photoStart, photoStop, snapshot, photoBusy: () => !!ptRaf, canPhoto: !!K.WebGLPathTracer, setQuality(v) { hiQ = v; sun.castShadow = v; renderer.shadowMap.type = v ? T.PCFSoftShadowMap : T.BasicShadowMap; renderer.shadowMap.needsUpdate = true; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); canvas.width = 0; }, renderer };
   }
 
   global.Design3DThree = { create, AMBIANCES };
