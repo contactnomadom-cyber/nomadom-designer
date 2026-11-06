@@ -478,6 +478,8 @@
       }));
     }
 
+    if (tuilageOn) drawTuilage3D(cx, cy, scale);
+
     ds.dome.lines.forEach(l => {
       if (!l.selvage) return;
       const a = projected.get(l.pointIds[0]);
@@ -494,6 +496,58 @@
     OC.drawCover3D(ctx, p => { const rp = project(p); return { x: cx + rp.x * scale, y: cy - rp.y * scale, z: rp.z }; }, Math.min(...ds.nominal.points.map(p => p.y)), devicePixelRatio, 'front');
     canvas._projected = projected;
     canvas._faceDepth = faceDepth;
+  }
+
+  // ---------------------------------------------------------
+  // Mode tuilage (06/11/2026) : flèche « l'eau descend » sur chaque face vue de face ;
+  // en découpe par morceaux, liseré bleu DESSUS / orange DESSOUS le long de chaque couture.
+  // Calculs dans src/textile/tuilage.js.
+  // ---------------------------------------------------------
+  let tuilageOn = false;
+  try { tuilageOn = localStorage.getItem('nomadom.tuilage') === '1'; } catch (e) {}
+  function drawTuilage3D(cx, cy, scale){
+    const Tl = CoverTuilage, d = ds.dome, dpr = devicePixelRatio;
+    const S = p => { const rp = project(p); return { x: cx + rp.x * scale, y: cy - rp.y * scale, z: rp.z }; };
+    const withPieces = !!etagesCache && (mode2D === 'etages' || mode2D === 'rouleau' || mode2D === 'flat');
+    const nameOf = new Map(), sides = withPieces ? Tl.seamSides(allPieces().map(pc => sheetOf(pc.name))) : null;
+    if (withPieces) allPieces().forEach(pc => pc.chain.forEach(i => nameOf.set(i, pc.name)));
+    d.faces.forEach((f, i) => {
+      const fl = Tl.faceFlow3D(d, i), c = S(fl.c), cn = S({ x: fl.c.x + fl.n.x * 0.1, y: fl.c.y + fl.n.y * 0.1, z: fl.c.z + fl.n.z * 0.1 });
+      if (cn.z <= c.z) return; // face vue de dos
+      if (withPieces) (d.faceAdjacency[i] || []).forEach(a => {
+        if (nameOf.get(a.neighbor) === nameOf.get(i)) return;
+        const sd = Tl.SIDES[sides.get(nameOf.get(i) + '|' + Tl.edgeKey(a.edgePointIds[0], a.edgePointIds[1]))];
+        if (!sd || sd.key === 'H') return;
+        const A = d.pointById.get(a.edgePointIds[0]), B = d.pointById.get(a.edgePointIds[1]);
+        const C = d.pointById.get(f.pointIds.find(id => id !== a.edgePointIds[0] && id !== a.edgePointIds[1]));
+        const t = 0.16, lerp = (u, v) => ({ x: u.x + (v.x - u.x) * t, y: u.y + (v.y - u.y) * t, z: u.z + (v.z - u.z) * t });
+        const q = [S(A), S(B), S(lerp(B, C)), S(lerp(A, C))];
+        ctx.beginPath(); q.forEach((v, k) => k ? ctx.lineTo(v.x, v.y) : ctx.moveTo(v.x, v.y)); ctx.closePath();
+        ctx.fillStyle = sd.color; ctx.fill();
+      });
+      if (!fl.d) return;
+      const half = fl.size * 0.2, a0 = S({ x: fl.c.x - fl.d.x * half, y: fl.c.y - fl.d.y * half, z: fl.c.z - fl.d.z * half });
+      const a1 = S({ x: fl.c.x + fl.d.x * half, y: fl.c.y + fl.d.y * half, z: fl.c.z + fl.d.z * half });
+      const L = Math.hypot(a1.x - a0.x, a1.y - a0.y);
+      if (L < 6 * dpr) return;
+      Tl.arrow(ctx, a0.x, a0.y, (a1.x - a0.x) / L, (a1.y - a0.y) / L, L, Tl.WATER, 2 * dpr);
+    });
+    // légende
+    const lines = withPieces ? ['💧 l\'eau descend', '▬ DESSUS : ce bord recouvre le voisin', '▬ DESSOUS : ce bord passe sous le voisin']
+      : ['💧 l\'eau descend', 'DESSUS / DESSOUS : choisir « Étages » ou la vue aplatie'];
+    const cols = withPieces ? [Tl.WATER, Tl.SIDES.A.color, Tl.SIDES.B.color] : [Tl.WATER, '#5d656c'];
+    ctx.save(); ctx.font = 'bold ' + (11 * dpr) + 'px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const lh = 16 * dpr, w = Math.max(...lines.map(t => ctx.measureText(t).width)) + 16 * dpr, h = lines.length * lh + 8 * dpr;
+    const x0 = 10 * dpr, y0 = canvas.height - h - 10 * dpr;
+    ctx.fillStyle = 'rgba(255,255,255,0.88)'; ctx.fillRect(x0, y0, w, h);
+    lines.forEach((t, k) => { ctx.fillStyle = cols[k]; ctx.fillText(t, x0 + 8 * dpr, y0 + 4 * dpr + lh * (k + 0.5)); });
+    ctx.restore();
+  }
+  function setTuilage(on){
+    tuilageOn = !!on;
+    try { localStorage.setItem('nomadom.tuilage', tuilageOn ? '1' : '0'); } catch (e) {}
+    const b = document.getElementById('btnTuilage'); if (b) b.classList.toggle('on', tuilageOn);
+    render(); render2D();
   }
 
   function shadeColor(rgb, shade){
@@ -782,6 +836,7 @@
     gabGroups = Toile.groupGabarits(allPieces().map(pc => sheetCache.get(pc.name)), true);
     if (selectedPiece && !allPieces().some(pc => pc.name === selectedPiece)) selectedPiece = null;
     document.getElementById('btnBackOverview').style.display = selectedPiece ? '' : 'none';
+    requestAnimationFrame(render); // le dôme 3D montre aussitôt les morceaux (couleurs, coutures, tuilage)
     return true;
   }
   function allPieces(){ return etagesCache.flatMap(b => b.pieces); }
@@ -1098,12 +1153,28 @@
       }
     });
 
+    // tuilage : une flèche « l'eau descend » par triangle (pente réelle sur le dôme)
+    if (tuilageOn) CoverTuilage.sheetFlow(sh).forEach(fl => {
+      if (!fl.d) return;
+      const c = S(fl.c), q = S({ x: fl.c.x + fl.d.x * 0.1, y: fl.c.y + fl.d.y * 0.1 });
+      const ux = q.x - c.x, uy = q.y - c.y, ul = Math.hypot(ux, uy) || 1, len = Math.min(46*dpr, 0.25 * sc);
+      CoverTuilage.arrow(ctx2d, c.x - ux/ul*len/2, c.y - uy/ul*len/2 + 12*dpr, ux/ul, uy/ul, len, CoverTuilage.WATER, 2.5*dpr);
+    });
+
     // ligne de couture (contour net), couleur par type de bord + cote
     sh.edges.forEach((e, i) => {
       const A = S(sh.points[i]), B = S(sh.points[(i+1) % sh.points.length]);
       ctx2d.beginPath(); ctx2d.moveTo(A.x, A.y); ctx2d.lineTo(B.x, B.y);
-      ctx2d.strokeStyle = EDGE_STYLE[e.kind]; ctx2d.lineWidth = 2*dpr; ctx2d.stroke();
+      const tsd = tuilageOn ? CoverTuilage.side(e) : null;
+      ctx2d.strokeStyle = tsd ? tsd.color : EDGE_STYLE[e.kind]; ctx2d.lineWidth = (tsd ? 4 : 2)*dpr; ctx2d.stroke();
       const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1;
+      if (tsd && L >= 40*dpr) { // mot DESSUS / DESSOUS / OURLET à l'intérieur du morceau, le long du bord
+        const ix = dy / L, iy = -dx / L, mi = { x: (A.x+B.x)/2 + ix*12*dpr, y: (A.y+B.y)/2 + iy*12*dpr };
+        let ag = Math.atan2(dy, dx); if (ag > Math.PI/2) ag -= Math.PI; if (ag < -Math.PI/2) ag += Math.PI;
+        ctx2d.save(); ctx2d.translate(mi.x, mi.y); ctx2d.rotate(ag);
+        ctx2d.font = 'bold ' + (11*dpr) + 'px system-ui, sans-serif'; ctx2d.fillStyle = tsd.color; ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+        ctx2d.fillText(tsd.word, 0, 0); ctx2d.restore();
+      }
       if (L < 70*dpr) return;
       const nx = -dy / L, ny = dx / L; // vers l'extérieur (repère écran)
       const off = e.allowance * sc + 11*dpr;
@@ -1111,7 +1182,7 @@
       let ang = Math.atan2(dy, dx); if (ang > Math.PI/2) ang -= Math.PI; if (ang < -Math.PI/2) ang += Math.PI;
       ctx2d.save(); ctx2d.translate(m.x, m.y); ctx2d.rotate(ang);
       ctx2d.font = 'bold ' + (9*dpr)+'px monospace'; ctx2d.fillStyle = EDGE_STYLE[e.kind]; ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
-      ctx2d.fillText(e.cls + ' ' + mm(e.length) + (e.other ? ' ↔' + e.other : '') + (e.side === 'H' ? ' (ourlet)' : ' (' + e.side + ')'), 0, 0);
+      ctx2d.fillText(e.cls + ' ' + mm(e.length) + (e.other ? ' ↔' + e.other : '') + (tsd ? ' · ' + tsd.word : (e.side === 'H' ? ' (ourlet)' : ' (' + e.side + ')')), 0, 0);
       ctx2d.restore();
     });
 
@@ -1319,7 +1390,7 @@
   // affichage dans src/rendering/view2d.js ; ici, ce dont il a besoin.
   // ---------------------------------------------------------
   const views = View2D.create({
-    canvas: canvas2d, ctx: ctx2d, ds, mm, EDGE_STYLE, AXES_BLOCK_HTML,
+    canvas: canvas2d, ctx: ctx2d, ds, mm, EDGE_STYLE, AXES_BLOCK_HTML, tuilage: () => tuilageOn,
     plan: () => etagesCache, sheets: () => sheetCache, tool: () => etagesTool, view: () => view2d,
     optim: () => optimState, gabGroups: () => gabGroups,
     ensureEtages, ensureNest, drawBusy, fabricationGate, sheetOf, allPieces, pieceByName, pieceColor, gabLabel,
@@ -1614,6 +1685,8 @@
   });
   document.getElementById('btnBaseOpen').addEventListener('click', function(){ setOpenTrace(!openTrace); });
   initBaseTrace();
+  document.getElementById('btnTuilage').addEventListener('click', () => setTuilage(!tuilageOn));
+  document.getElementById('btnTuilage').classList.toggle('on', tuilageOn);
   document.getElementById('btnFlat').addEventListener('click', function(){
     readFabricParams();
     selection.clear(); updateSelectionReadout();

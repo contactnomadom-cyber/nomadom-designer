@@ -13,6 +13,36 @@
     const { ensureEtages, ensureNest, drawBusy, fabricationGate, sheetOf, allPieces, pieceByName, pieceColor, gabLabel,
       tracingBlocked, printTracing, showView } = env;
     let rollHit = [];
+    const tuilageOn = () => !!(env.tuilage && env.tuilage());
+    // Tuilage : bords colorés DESSUS (bleu) / DESSOUS (orange) avec le mot, et une flèche « l'eau descend »
+    // par triangle. M = repère du morceau → écran.
+    function tuileMarks(sh, M, dpr, txt, upright) {
+      const Tl = global.CoverTuilage, n = sh.points.length, P = sh.points.map(M);
+      let a2 = 0; P.forEach((v, i) => { const w = P[(i + 1) % n]; a2 += v.x * w.y - w.x * v.y; });
+      const sg = a2 > 0 ? 1 : -1; // intérieur du morceau à l'écran
+      // bords consécutifs de même côté et même voisin : un seul mot, sur le plus long bord du groupe
+      const grp = [];
+      sh.edges.forEach((e, i) => {
+        const sd = Tl.side(e), A = P[i], B = P[(i + 1) % n], Le = Math.hypot(B.x - A.x, B.y - A.y);
+        ctx2d.beginPath(); ctx2d.moveTo(A.x, A.y); ctx2d.lineTo(B.x, B.y); ctx2d.strokeStyle = sd.color; ctx2d.lineWidth = 3.5 * dpr; ctx2d.stroke();
+        const k = e.side + '|' + (e.other || e.kind), g = grp[grp.length - 1];
+        if (g && g.k === k) { g.len += Le; if (Le > g.best.Le) g.best = { i, Le }; } else grp.push({ k, sd, len: Le, best: { i, Le } });
+      });
+      if (grp.length > 1 && grp[0].k === grp[grp.length - 1].k) { const g0 = grp.shift(), gl = grp[grp.length - 1]; gl.len += g0.len; if (g0.best.Le > gl.best.Le) gl.best = g0.best; }
+      grp.forEach(g => {
+        if (g.len < 45 * dpr) return;
+        const A = P[g.best.i], B = P[(g.best.i + 1) % n], dx = B.x - A.x, dy = B.y - A.y, Le = g.best.Le || 1;
+        const ix = sg * -dy / Le, iy = sg * dx / Le;
+        txt(g.sd.word, (A.x + B.x) / 2 + ix * 21 * dpr, (A.y + B.y) / 2 + iy * 21 * dpr, upright(Math.atan2(dy, dx)), 'bold ' + (10 * dpr) + 'px system-ui, sans-serif', g.sd.color);
+      });
+      Tl.sheetFlow(sh).forEach(fl => {
+        if (!fl.d) return;
+        const c = M(fl.c), q = M({ x: fl.c.x + fl.d.x * 0.1, y: fl.c.y + fl.d.y * 0.1 });
+        const ux = q.x - c.x, uy = q.y - c.y, ul = Math.hypot(ux, uy) || 1, len = Math.min(34 * dpr, ul * 2.2);
+        if (len < 8 * dpr) return;
+        Tl.arrow(ctx2d, c.x - ux / ul * len / 2, c.y - uy / ul * len / 2, ux / ul, uy / ul, len, Tl.WATER, 2 * dpr);
+      });
+    }
 
     function render2DRoll(){
       const rect = canvas2d.getBoundingClientRect();
@@ -169,6 +199,7 @@
             const extra = Le > 170 * dpr ? (e.other ? ' ↔' + e.other : (e.kind === 'ourlet' ? ' ourlet' : e.kind === 'fermeture' ? ' ferm.' : '')) : '';
             txt(e.cls + ' ' + mm(e.length) + extra, m.x, m.y, upright(Math.atan2(dy, dx)), 'bold ' + (9 * dpr) + 'px monospace', EDGE_STYLE[e.kind]);
           });
+          if (tuilageOn()) tuileMarks(sh, S, dpr, txt, upright);
           // points : étiquette, nœud, angle
           const big = Math.min(maxX - minX, maxY - minY) > 160 * dpr;
           sh.points.forEach((p, i) => {
@@ -299,6 +330,7 @@
           txt(e.cls + ' ' + mm(e.length) + extra, m.x, m.y, upright(Math.atan2(dy, dx)), 'bold ' + (9 * dpr) + 'px monospace', EDGE_STYLE[e.kind]);
         });
       });
+      if (tuilageOn()) L.pieces.forEach(p => tuileMarks(p.sh, q => toS(p.T(q)), dpr, txt, upright));
       // c bis) morceaux traversés par une fente : en ROUGE, posés triangle par
       //        triangle, avec la ligne où il faudrait les couper
       L.broken.forEach(bp => {

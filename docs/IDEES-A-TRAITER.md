@@ -205,6 +205,14 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 
 - Kumiko « disparu » (06/11/2026) : barre poussée hors de l'écran par Site et soleil et Aération ; ces deux barres sont désormais repliables, fermées par défaut, avec un résumé sur une ligne (branche `feature/quadri-rendu`).
 
+
+## 9. Mode tuilage : sens de l'eau et côté DESSUS / DESSOUS des gabarits — 🛠 fait sur `feature/tuilage` (06/11/2026)
+Demande de Nathan : « un mode tuilage qui donne le sens d'écoulement des eaux et quel côté du gabarit se met en haut ou en bas, de manière claire ».
+- Décidé : bouton « 💧 Tuilage » dans Cover+ ; visible sur le dôme 3D, les patrons 2D (morceau, vue aplatie, pelure) et les fiches de traçage imprimées.
+- Marquage : couleurs + mots. Bleu **DESSUS** = ce bord recouvre le voisin (côté A, recouvrant) ; orange **DESSOUS** = ce bord passe sous le voisin (côté B, recouvert) ; gris OURLET. Une flèche « l'eau descend » par triangle, calculée sur la pente réelle de la face.
+- Contrôle d'étanchéité ajouté (test `tuilage`) : sur chaque couture d'étage, le DESSUS est le bord bas du morceau du haut (comme une tuile) ; chaque couture a un DESSUS face à un DESSOUS ; vérifié sur les deux dômes de référence, toutes les découpes.
+- Questions ouvertes : faut-il aussi le sens du vent dominant pour les coupes montantes (aujourd'hui : le début d'un morceau recouvre la fin du précédent) ? Le même mode servira aux futures couvertures solides (bardeaux).
+
 ## Fait
 - ✅ 0.9.16 — Porte d'aplomb (NOMAD-2026-005, étape 1) : calcul, structure 3D, choix constructifs, raccords sans pièce volante, bibliothèque de 14 assemblages (aperçu 🟠).
 - ✅ 0.9.15 — Kumiko dans le Design, aperçu (NOMAD-2026-002 moteur, NOMAD-2026-003 interface) : pose triangle par triangle dans la 3D, tableau et plan du panneau, statut 🟠.

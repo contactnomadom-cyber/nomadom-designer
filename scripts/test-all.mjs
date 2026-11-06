@@ -27,6 +27,7 @@ const suites = [
   { key: 'engine', name: 'Moteur (2 références, 867 combinaisons)', cmd: ['node', [N('engine.test.js'), MODS]] },
   { key: 'arcs', name: 'Arcs contre Antiprism', cmd: ['node', [N('arcs.test.js'), MODS]] },
   { key: 'textile', name: 'Toile ' + (quick ? '2V–3V' : '1V–3V'), cmd: ['node', [N('textile.test.js'), MODS, '--v=' + (quick ? '2,3' : '1,2,3')]] },
+  { key: 'tuilage', name: 'Tuilage : sens de l\'eau, DESSUS / DESSOUS', cmd: ['node', [N('tuilage.test.js'), MODS]] },
   { key: 'peel', name: 'Pelure d\'orange (fentes suivant les gabarits)', cmd: ['node', [N('peel.test.js'), MODS]] },
   { key: 'state', name: 'Objet dôme (clé et toile)', cmd: ['node', [N('dome-state.test.js'), MODS]] },
   { key: 'unfold', name: 'Développement 2D (triangles de base, dépliage)', cmd: ['node', [N('unfold.test.js'), MODS]] },
@@ -46,7 +47,7 @@ const suites = [
   { key: 'mezz_frame', name: 'Ossature de la mezzanine', cmd: ['node', [N('mezz-frame.test.js'), MODS]] }
 ];
 const browser = quick ? ['t_beta.py', 't_status.py', 't_names.py']
-  : ['t_beta.py', 't_status.py', 't_names.py', 't_cleanup.py', 't_laize.py', 't_bottom.py', 't_kruschke_align.py', 't_stale_optim.py', 't_smoke_quadri.py', 't_axes_block.py', 't_openings.py', 't_diameter.py', 't_design_import.py', 't_kumiko.py', 't_door.py', 't_floor.py', 't_ui_levels.py', 't_ambiance.py', 't_photo.py', 't_soleil.py', 't_aeration.py', 't_debits.py', 't_mezz_frame.py', 't_quadri_rendu.py'];
+  : ['t_beta.py', 't_status.py', 't_names.py', 't_cleanup.py', 't_laize.py', 't_bottom.py', 't_kruschke_align.py', 't_stale_optim.py', 't_smoke_quadri.py', 't_axes_block.py', 't_openings.py', 't_diameter.py', 't_design_import.py', 't_kumiko.py', 't_door.py', 't_floor.py', 't_ui_levels.py', 't_ambiance.py', 't_photo.py', 't_soleil.py', 't_aeration.py', 't_debits.py', 't_mezz_frame.py', 't_quadri_rendu.py', 't_tuilage.py'];
 if (!noBrowser) browser.forEach(b => suites.push({ key: b.replace(/\.py$/, ''), name: 'Navigateur · ' + b, browser: true,
   cmd: ['python3', b === 't_beta.py' ? [W(b), html, path.join(CHECK, 'beta')] : [W(b), html]] }));
 

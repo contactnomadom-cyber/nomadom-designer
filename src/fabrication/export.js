@@ -13,7 +13,15 @@
   function rollPoint(pl, p, selvage) {
     return { x: pl.x + (pl.rot ? pl.L - p.x : p.x), y: (selvage || 0) + pl.y + (pl.rot ? pl.W - p.y : p.y) };
   }
-  const SIDE_TXT = { A: 'A (recouvrant)', B: 'B (recouvert)', H: 'ourlet' };
+  const SIDE_TXT = { A: 'DESSUS — A (recouvrant)', B: 'DESSOUS — B (recouvert)', H: 'ourlet' };
+  // tuilage (sens de l'eau, DESSUS / DESSOUS) : src/textile/tuilage.js
+  let TlCache = null;
+  function Tl() {
+    if (TlCache) return TlCache;
+    if (global.CoverTuilage) return (TlCache = global.CoverTuilage);
+    try { TlCache = require(__dirname + '/tuilage.js'); } catch (e) { TlCache = require('../textile/tuilage.js'); }
+    return TlCache;
+  }
 
   // étiquette P d'un point 2D (les sommets des triangles sont tous sur le contour)
   function labelOf(sheet, p) {
@@ -95,13 +103,26 @@
       const c = { x: (q[0].x + q[1].x + q[2].x) / 3, y: (q[0].y + q[1].y + q[2].y) / 3 };
       s += `<text x="${f(c.x)}" y="${f(c.y)}" class="tri">#${t.idx}</text>`;
     });
+    // tuilage : flèche « l'eau descend » sur chaque triangle (pente réelle sur le dôme)
+    Tl().sheetFlow(sheet).forEach(fl => {
+      if (!fl.d) return;
+      const c = S(fl.c), len = Math.min(40, 0.22 * Math.min(sheet.cutLength, sheet.cutWidth) * sc + 14);
+      s += Tl().arrowSvg(c.x, c.y + 14, fl.d.x, -fl.d.y, len);
+    });
     sheet.folds.forEach(fl => { const A = S(fl.A), B = S(fl.B);
       s += `<line x1="${f(A.x)}" y1="${f(A.y)}" x2="${f(B.x)}" y2="${f(B.y)}" stroke="#777" stroke-width="0.8" stroke-dasharray="4 3"/>`; });
     const n = sheet.points.length;
     sheet.edges.forEach((e, i) => {
       const A = S(sheet.points[i]), B = S(sheet.points[(i + 1) % n]);
+      const sd = Tl().side(e);
+      s += `<line x1="${f(A.x)}" y1="${f(A.y)}" x2="${f(B.x)}" y2="${f(B.y)}" stroke="${sd.color}" stroke-width="3.2" stroke-opacity="0.75"/>`;
       s += `<line x1="${f(A.x)}" y1="${f(A.y)}" x2="${f(B.x)}" y2="${f(B.y)}" stroke="#000" stroke-width="1" stroke-dasharray="6 2 1 2"/>`;
       const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1;
+      if (L >= 40) { // mot DESSUS / DESSOUS / OURLET à l'intérieur, le long du bord
+        let ag = Math.atan2(dy, dx) * 180 / Math.PI; if (ag > 90) ag -= 180; if (ag < -90) ag += 180;
+        const mi = { x: (A.x + B.x) / 2 + dy / L * 13, y: (A.y + B.y) / 2 - dx / L * 13 };
+        s += `<text x="${f(mi.x)}" y="${f(mi.y)}" transform="rotate(${ag.toFixed(1)} ${f(mi.x)} ${f(mi.y)})" class="side" fill="${sd.color}">${sd.word}</text>`;
+      }
       if (L < 46) return;
       const nx = -dy / L, ny = dx / L, off = e.allowance * sc + 9;
       let ang = Math.atan2(dy, dx) * 180 / Math.PI; if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
@@ -124,6 +145,7 @@
     s += `<g class="roll"><line x1="${W - 150}" y1="${H - 10}" x2="${W - 20}" y2="${H - 10}" stroke="#2b5a8a" stroke-width="1.2" marker-end="url(#arr)"/>` +
          `<text x="${W - 85}" y="${H - 15}" class="note">sens du rouleau</text></g>`;
     s += `<text x="12" y="16" class="note" text-anchor="start">↑ côté sommet du dôme · ENDROIT (vu de l'extérieur)</text>`;
+    s += `<text x="12" y="28" class="note" text-anchor="start"><tspan fill="${Tl().WATER}">➜ sens de l'eau</tspan> · <tspan fill="${Tl().SIDES.A.color}" font-weight="bold">DESSUS</tspan> = ce bord recouvre le voisin · <tspan fill="${Tl().SIDES.B.color}" font-weight="bold">DESSOUS</tspan> = il passe sous le voisin</text>`;
     s += `<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2b5a8a"/></marker></defs>`;
     return s + '</svg>';
   }
@@ -206,7 +228,7 @@
     });
     groups.forEach(g => {
       const e = g.e;
-      h += `<tr><td>${g.from}→${g.to}${g.n > 1 ? ' <span class="muted">(' + g.n + ' bords)</span>' : ''}</td><td>${mm(g.len)}</td><td><b>${mm(e.allowance)}</b> ${SIDE_TXT[e.side]}</td><td>${e.other ? '<b>' + esc(e.other) + '</b>' : (e.kind === 'ourlet' ? 'bas du dôme' : 'lui-même (anneau)')}</td></tr>`;
+      h += `<tr><td>${g.from}→${g.to}${g.n > 1 ? ' <span class="muted">(' + g.n + ' bords)</span>' : ''}</td><td>${mm(g.len)}</td><td><b>${mm(e.allowance)}</b> <span style="color:${Tl().side(e).color};font-weight:bold">${SIDE_TXT[e.side]}</span></td><td>${e.other ? '<b>' + esc(e.other) + '</b>' : (e.kind === 'ourlet' ? 'bas du dôme' : 'lui-même (anneau)')}</td></tr>`;
     });
     h += `</table><div class="tip">Le plus simple : tracer chaque marge en parallèle à la ligne de couture (deux marques à la règle, reliées au cordeau), puis prolonger jusqu'aux croisements. Les points C ci-dessous servent à vérifier les coins.</div>`;
     h += `<h3>Trait de coupe (points C) — deux méthodes</h3>`;
@@ -302,7 +324,7 @@
     footer{ margin-top: 6px; font-size: 7.5pt; color:#777; border-top: 0.5px solid #bbb; padding-top: 2px; }
     svg text{ font-family: "IBM Plex Mono",Consolas,monospace; text-anchor: middle; dominant-baseline: middle; }
     svg .pt{ font-size: 10px; font-weight: 700; } svg .node{ font-size: 7.5px; fill:#555; }
-    svg .edge{ font-size: 8px; } svg .tri{ font-size: 7px; fill:#9aa; } svg .note{ font-size: 8.5px; fill:#2b5a8a; }
+    svg .edge{ font-size: 8px; } svg .side{ font-size: 8.5px; font-weight: bold; text-anchor: middle; dominant-baseline: middle; } svg .tri{ font-size: 7px; fill:#9aa; } svg .note{ font-size: 8.5px; fill:#2b5a8a; }
     @media screen{ body{ background:#e8e8e8; } .page{ background:#fff; width: 190mm; margin: 8mm auto; padding: 8mm; box-shadow: 0 1px 4px rgba(0,0,0,.2); } }
   `;
 

@@ -449,7 +449,7 @@ function makeEtages(dome){
     let area2 = 0; loop.forEach(e => { area2 += e.from.x * e.to.y - e.to.x * e.from.y; });
     if (area2 < 0) { loop.reverse(); loop.forEach(e => { [e.from, e.to] = [e.to, e.from]; [e.fromId, e.toId] = [e.toId, e.fromId]; }); }
 
-    const points = loop.map((e, i) => ({ label: 'P' + (i + 1), node: labels.get(e.fromId), nodeId: e.fromId, ring: ring.get(e.fromId), x: e.from.x, y: e.from.y }));
+    const points = loop.map((e, i) => ({ label: 'P' + (i + 1), node: labels.get(e.fromId), nodeId: e.fromId, ring: ring.get(e.fromId), h: dome.pointById.get(e.fromId).y, x: e.from.x, y: e.from.y }));
     points.forEach((p, i) => {
       const prev = points[(i - 1 + points.length) % points.length], next = points[(i + 1) % points.length];
       const ux = next.x - p.x, uy = next.y - p.y, vx = prev.x - p.x, vy = prev.y - p.y;
@@ -519,7 +519,8 @@ function makeEtages(dome){
       }
       const ar = Math.abs((P[1].x-P[0].x)*(P[2].y-P[0].y) - (P[1].y-P[0].y)*(P[2].x-P[0].x)) / 2;
       area += ar;
-      return { idx: p.idx, nodes: p.pointIds.map(id => labels.get(id)), pts: P, sides, angles, area: ar };
+      // h : hauteur réelle (m) de chaque sommet sur le dôme → sens d'écoulement de l'eau (tuilage)
+      return { idx: p.idx, nodes: p.pointIds.map(id => labels.get(id)), pointIds: p.pointIds.slice(), h: p.pointIds.map(id => dome.pointById.get(id).y), pts: P, sides, angles, area: ar };
     });
 
     // f) contrôle « sans vague » : longueurs conservées + aucun nœud entièrement
