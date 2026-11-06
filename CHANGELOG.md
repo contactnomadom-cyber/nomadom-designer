@@ -7,6 +7,11 @@
 
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
+## 0.9.23 — 06/11/2026 (Quadrisphère : ambiances et rendu photo ; Kumiko de nouveau visible)
+- **Quadrisphère** : menu **Ambiance** (plein jour, matin, coucher de soleil, ciel couvert, nuit avec lampe), partagé avec l'onglet Design ; « plein jour » garde la lumière d'origine. Bouton **📷 Rendu photo** (lancer de rayons, progression, ⬇ PNG ; bouger la vue revient à la 3D).
+- **Design** : les barres **Site et soleil** et **Aération** sont repliables, fermées par défaut, avec un résumé sur une ligne ; la barre **Kumiko**, poussée hors de l'écran depuis la 0.9.21, est de nouveau visible sans défiler.
+- Contrôles : nouvelle suite `t_quadri_rendu` ; `t_soleil` et `t_aeration` ouvrent la barre repliée.
+
 ## 0.9.22 — 05/11/2026 (raccord toile du sas / toile du dôme)
 - Fiche porte, sas : nouveau choix **« Toile au dôme »** — **rabat glissé dessous** (défaut, comme avant), **rabat cousu** (non démontable, couture double), **bande auto-agrippante** (crochets sur le rabat, velours sous la toile du dôme), **jonc dans un rail** vissé sur les montants (fourreau de 30 mm au lieu du rabat de 100 mm). Dans tous les cas la toile du dôme reste par-dessus, comme les tuiles.
 - Cover+, toile du sas : le raccord choisi, s'il est démontable, le matériel à prévoir (sangles, mètres de couture, de bande, de jonc et de rail) et ses remarques d'étanchéité.
