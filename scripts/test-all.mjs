@@ -43,6 +43,7 @@ const suites = [
   { key: 'sun', name: 'Course du soleil et ensoleillement des faces', cmd: ['node', [N('sun.test.js'), MODS]] },
   { key: 'vent', name: 'Aération par effet cheminée', cmd: ['node', [N('vent.test.js'), MODS]] },
   { key: 'lumber', name: 'Liste de débits du bois et des panneaux', cmd: ['node', [N('lumber.test.js'), MODS]] },
+  { key: 'sheets', name: 'Plan de coupe des panneaux', cmd: ['node', [N('sheets.test.js'), MODS]] },
   { key: 'mezz_frame', name: 'Ossature de la mezzanine', cmd: ['node', [N('mezz-frame.test.js'), MODS]] }
 ];
 const browser = quick ? ['t_beta.py', 't_status.py', 't_names.py']

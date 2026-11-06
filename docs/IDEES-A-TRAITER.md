@@ -190,6 +190,8 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 - Aménagement, étape 2 (branche `feature/mezz-ossature`, 05/11/2026) : ossature de la mezzanine (onglet Design, barre « Ossature mezzanine ») — solives parallèles à l'orientation, réparties régulièrement (entraxe 30 à 60 cm), de la poutre de rive à la paroi (lambourde sur les montants, 🟠 à vérifier : la charge passe dans le dôme) ; bord libre parallèle = solive de rive ; arc remplacé par des cordes ; poteaux aux angles libres et poteaux intermédiaires ajoutés tant que la poutre ne passe pas ; contrôles flexion / cisaillement / flèche et poteaux en compression avec flambement (🟡 calculé) ; section conseillée ; épaisseur conseillée (bouton) ; liste de débits (biais en plan contre la paroi) et panneaux ; débits masqués si 🔴. Sections de poteau KVH 80 × 80 à 120 × 120 ajoutées.
 - Appui côté paroi (branche `feature/mezz-paroi`, 05/11/2026) : choix « Poutre + poteaux (indépendante du dôme) » — par défaut, la paroi ne porte rien, poteaux rentrés de 12 cm et contrôlés au sol, contreventement rappelé — ou « Lambourde sur les montants » (🟠 charge dans le dôme, non vérifiée : section et bois des montants inconnus de l'appli).
 - Ossature de la mezzanine dans la 3D (branche `feature/mezz-3d`, 05/11/2026) : panneau de plancher seul, solives, poutres et poteaux dessinés sous la mezzanine ; la 3D suit les choix (sections, appui côté paroi).
+- Ordre décidé par Nathan (06/11/2026) : d'abord l'atelier (plan de coupe des panneaux, export DXF), puis la vente (réalité augmentée, devis PDF), puis l'alignement du catalogue bois sur Bourguignon.
+- Plan de coupe des panneaux (branche `feature/calepinage`, 06/11/2026) : formats Bourguignon (OSB 3 22 / 18 / 15 mm rainuré-languetté, OSB 18 bords droits 2500 × 1250, multiplex) ; pose en rangées en travers des solives, joints en bout sur solive et décalés, chutes réemployées, plan de pose dessiné, prix « à partir de » ; écart maxi entre solives 600 mm (450 mm en 15 mm, Premier Guarantee) ; bords droits → entretoises. Plancher en étoile : 🔴 (1054 mm entre solives au bord extérieur), plan masqué.
 
 **Questions ouvertes ❓**
 1. Mémoriser l'ambiance choisie avec l'aménagement ?
@@ -200,6 +202,7 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 6. Temps de calcul du rendu photo acceptable sur la tablette de présentation ? Faut-il un réglage Rapide / Normal / Soigné ?
 7. Étendre le rendu photo à la Quadrisphère et à Nomad Vision ; revoir la forme de la Quadrisphère (**remis à plus tard, 05/11/2026**).
 8. La coupe « voir dedans » n'est pas encore rendue en photo : à traiter ?
+9. Plancher en étoile : ajouter une solive intermédiaire (ou des entretoises) dans chaque secteur pour ramener l'écart à 600 mm ? (calcul du plancher de la 0.9.17, à décider par Nathan)
 
 ---
 

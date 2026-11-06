@@ -42,10 +42,11 @@
         '<div class="op-status">À commander : ' + Object.keys(P.buy).sort((a, b) => b - a).map(k => P.buy[k] + ' × ' + k.replace('.', ',') + ' m').join(' + ') + ' = ' + m(P.bought) + ' · chute ' + Math.round(P.wasteRatio * 100) + ' %' +
         (P.tooLong.length ? ' · ⚠ ' + P.tooLong.length + ' pièce(s) trop longue(s) : à abouter' : '') + '</div>';
     }).join('');
-    const sheets = Math.ceil(r.deckArea * (1 + Lb.DEFAULTS.sheetWaste) / (Lb.DEFAULTS.sheet.l * Lb.DEFAULTS.sheet.w) - 1e-9);
+    const SH = global.Sheets, sp = SH ? SH.rows(r.poly, r.joists.filter(j => !j.rim), r.options.sheet) : null;
+    const sheets = sp ? (sp.ok ? sp.sheets : '🔴') : Math.ceil(r.deckArea * (1 + Lb.DEFAULTS.sheetWaste) / (Lb.DEFAULTS.sheet.l * Lb.DEFAULTS.sheet.w) - 1e-9);
     return h + '<details class="door-lib" id="dsMezzCuts"><summary>Liste de débits — mezzanine (' + n + ' pièces, ' + sheets + ' panneaux)</summary>' +
       '<div class="muted">🟠 aperçu · solives : bout contre la poutre raccourci de la demi-largeur de poutre (sabot), bout côté paroi : ' + (r.options.wallSupport === 'paroi' ? 'jeu de 10 mm sur la lambourde' : 'sabot sur la poutre côté paroi') + ' · cadres de rive ' + (r.options.joint === 'about' ? 'en about' : 'en onglet') + ' · barres 2,10 à 5,40 m (à confirmer)</div>' +
-      body + '<b>Plancher 22 mm</b><div class="op-status">' + r.deckArea.toFixed(2).replace('.', ',') + ' m² → ' + sheets + ' panneaux de 2,44 m × 1,22 m (chute comptée 12 %) · format 🟠 à confirmer</div></details>';
+      body + '<b>Panneaux de plancher</b>' + (sp ? SH.html(sp, r.poly) : '<div class="op-status">' + r.deckArea.toFixed(2).replace('.', ',') + ' m² → ' + sheets + ' panneaux de 2,44 m × 1,22 m (chute comptée 12 %) · format 🟠 à confirmer</div>') + '</details>';
   }
 
   const MezzUI = { html };

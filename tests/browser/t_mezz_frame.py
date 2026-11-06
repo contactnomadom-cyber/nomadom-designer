@@ -31,7 +31,11 @@ with sync_playwright() as p:
     check(pg.input_value('#dsMezzT') == '0.23' and 'Épaisseur réglée' not in pg.inner_text('#dsMezzFrame') and not pg.is_visible('#dsMfThick'), 'bouton : épaisseur réglée à 0,23 m, alerte levée')
     pg.click('#dsMezzCuts > summary'); pg.wait_for_timeout(300)
     t = pg.inner_text('#dsMezzCuts')
-    check('Solives CLS 38 × 184' in t and 'Poutres KVH 80 × 200' in t and 'poutre côté paroi' in t and 'À commander' in t and 'panneaux de 2,44 m × 1,22 m' in t, 'liste de débits : solives, poutre de rive, panneaux')
+    check('Solives CLS 38 × 184' in t and 'Poutres KVH 80 × 200' in t and 'poutre côté paroi' in t and 'À commander' in t and 'panneaux OSB 3 22 mm rainuré-languetté' in t and 'rangées en travers des solives' in t and pg.locator('#dsMezzCuts svg.sheet-plan').count() == 1, 'liste de débits : solives, poutres, plan de coupe des panneaux OSB 22 (rangées, plan dessiné)')
+    pg.select_option('#dsMfSheet', 'osb15-rl'); pg.wait_for_timeout(1200); pg.click('#dsMezzCuts > summary'); pg.wait_for_timeout(300)
+    check('489 mm > 450 mm' in pg.inner_text('#dsMezzCuts'), 'OSB 15 mm : écart de 489 mm entre solives > 450 mm → 🔴')
+    check(pg.evaluate('CoverDesign.state().mezz.frame.sheet') == 'osb15-rl', 'format de panneau gardé dans l\'aménagement')
+    pg.select_option('#dsMfSheet', 'osb22-rl'); pg.wait_for_timeout(1000)
     if OUT:
         os.makedirs(OUT, exist_ok=True); pg.locator('#dsMezzFrameBar').screenshot(path=os.path.join(OUT, 'mezz-ossature.png'))
     # 3D : ossature dessinée sous la mezzanine, elle suit l'appui choisi

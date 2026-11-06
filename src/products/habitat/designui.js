@@ -122,6 +122,7 @@
         <label>Poutres de rive<select id="dsMfBeam"></select></label>
         <label>Poteaux<select id="dsMfPost"></select></label>
         <label title="Côté paroi, la mezzanine peut avoir sa propre poutre sur poteaux (le dôme ne porte rien) ou reposer sur une lambourde vissée aux montants">Appui côté paroi<select id="dsMfWall"><option value="poteaux">Poutre + poteaux (indépendante)</option><option value="paroi">Lambourde sur les montants</option></select></label>
+        <label>Panneaux<select id="dsMfSheet"></select></label>
         <label>Cadres<select id="dsMfJoint"><option value="about">En about</option><option value="onglet">En onglet</option></select></label>
         <button id="dsMfThick" style="display:none" title="Régler l'épaisseur de la mezzanine sur plancher + ossature">Appliquer l'épaisseur conseillée</button>
         <div id="dsMezzFrame" style="flex-basis:100%;max-width:640px"></div>
@@ -184,7 +185,8 @@
       const wood = Object.keys(FS).filter(k => !FS[k].post && k.indexOf('prov-') !== 0);
       $('dsMfJoist').innerHTML = opt(wood); $('dsMfBeam').innerHTML = opt(wood); $('dsMfPost').innerHTML = opt(Object.keys(FS).filter(k => FS[k].post));
       const mf = (id, key, num) => $(id).addEventListener('change', e => { st.mezz.frame = Object.assign({}, window.MezzFrame.DEFAULTS, st.mezz.frame, { [key]: num ? parseFloat(e.target.value) : e.target.value }); changed(); });
-      mf('dsMfJoist', 'joistSection'); mf('dsMfSpacing', 'spacing', true); mf('dsMfBeam', 'beamSection'); mf('dsMfPost', 'postSection'); mf('dsMfJoint', 'joint'); mf('dsMfWall', 'wallSupport');
+      mf('dsMfJoist', 'joistSection'); mf('dsMfSpacing', 'spacing', true); mf('dsMfBeam', 'beamSection'); mf('dsMfPost', 'postSection'); mf('dsMfJoint', 'joint'); mf('dsMfWall', 'wallSupport'); mf('dsMfSheet', 'sheet');
+      if (window.Sheets) $('dsMfSheet').innerHTML = Object.keys(window.Sheets.SHEETS).map(k => '<option value="' + k + '">' + esc(window.Sheets.SHEETS[k].name) + '</option>').join('');
       $('dsMfThick').addEventListener('click', () => { const r = mezzFrame(); if (r && r.thickNeed) { st.mezz.thick = Math.ceil(r.thickNeed * 100) / 100; syncInputs(); changed(); } });
     } else $('dsMezzFrameBar').style.display = 'none';
     if (SUN) {
@@ -895,7 +897,7 @@
     $('dsMezzFrameBar').style.display = st.mezz.on ? '' : 'none';
     if (!st.mezz.on) return;
     const o = Object.assign({}, window.MezzFrame.DEFAULTS, st.mezz.frame);
-    $('dsMfJoist').value = o.joistSection; $('dsMfSpacing').value = String(o.spacing); $('dsMfBeam').value = o.beamSection; $('dsMfPost').value = o.postSection; $('dsMfJoint').value = o.joint; $('dsMfWall').value = o.wallSupport;
+    $('dsMfJoist').value = o.joistSection; $('dsMfSpacing').value = String(o.spacing); $('dsMfBeam').value = o.beamSection; $('dsMfPost').value = o.postSection; $('dsMfJoint').value = o.joint; $('dsMfWall').value = o.wallSupport; if (window.Sheets) $('dsMfSheet').value = window.Sheets.SHEETS[o.sheet] ? o.sheet : window.Sheets.DEFAULT;
     const r = mezzFrame();
     $('dsMfThick').style.display = r && r.ok !== undefined && r.thickNeed && (st.mezz.thick || 0) + 1e-9 < r.thickNeed ? '' : 'none';
     $('dsMezzFrame').innerHTML = r ? window.MezzUI.html(r, window.Floor) : '<span class="muted">Mezzanine hors de la paroi à cette hauteur.</span>';

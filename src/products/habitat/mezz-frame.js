@@ -15,7 +15,7 @@
 // ---------------------------------------------------------
 (function (global) {
   'use strict';
-  const DEFAULTS = { joistSection: 'cls-38x184', spacing: 0.5, beamSection: 'kvh-80x200', postSection: 'kvh-100x100', joint: 'about', wallSupport: 'poteaux' };
+  const DEFAULTS = { joistSection: 'cls-38x184', spacing: 0.5, beamSection: 'kvh-80x200', postSection: 'kvh-100x100', joint: 'about', wallSupport: 'poteaux', sheet: 'osb22-rl' };
   // appui côté paroi : sur ses propres poteaux (mezzanine indépendante, recommandé) ou sur une lambourde vissée aux montants
   const WALL_SUPPORTS = { poteaux: 'Poutre + poteaux (indépendante du dôme)', paroi: 'Lambourde sur les montants du dôme' };
   const SPACINGS = [0.3, 0.4, 0.5, 0.6];
@@ -137,7 +137,7 @@
     const pPieces = posts.map(() => ({ axis: hPost, len: hPost, miter: [0, 0], what: 'poteau' }));
     const deckArea = area(poly);
 
-    return { ok, errors, warnings, options: o, sections: { joist: js, beam: bs, post: ps }, spacing: e, joists, beams, posts, postHeight: hPost,
+    return { ok, errors, warnings, options: o, poly, sections: { joist: js, beam: bs, post: ps }, spacing: e, joists, beams, posts, postHeight: hPost,
       check: { joist: jChk, beams: beamChk, post: postChk }, pieces: { joists: jPieces, beams: bPieces, posts: pPieces }, deckArea, thickNeed };
   }
   function insidePoly(p, poly) { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j];

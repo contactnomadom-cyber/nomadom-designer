@@ -21,6 +21,7 @@
     "sun-src":            "src/geometry/sun.js",
     "vent-src":           "src/geometry/vent.js",
     "lumber-src":         "src/fabrication/lumber.js",
+    "sheets-src":         "src/fabrication/sheets.js",
     "mezz-frame-src":     "src/products/habitat/mezz-frame.js",
     "mezz-ui-src":        "src/ui/mezz-ui.js",
     "design3d-src":       "src/rendering/design3d.js",

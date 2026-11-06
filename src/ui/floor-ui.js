@@ -87,7 +87,7 @@
     // solidité des solives et des poutres (🟡 calculé) ; une section trop faible n'a pas de liste de débits (ADR-0002)
     const stg = F.strength ? F.strength(r) : null;
     if (stg) h += strengthHtml(F, stg);
-    h += stg && !stg.ok ? '<details class="door-lib" id="floorCuts"><summary>🔴 Liste de débits masquée : section trop faible</summary><div class="op-status">Choisissez une section plus forte (voir « Solidité ») ou ajoutez une poutre de reprise : la liste revient dès que tout passe.</div></details>' : cutList(r);
+    h += stg && !stg.ok ? '<details class="door-lib" id="floorCuts"><summary>🔴 Liste de débits masquée : section trop faible</summary><div class="op-status">Choisissez une section plus forte (voir « Solidité ») ou ajoutez une poutre de reprise : la liste revient dès que tout passe.</div></details>' : cutList(r, f);
     return h;
   }
 
@@ -106,12 +106,16 @@
   }
 
   // liste de débits (lumber.js) : pièces repérées, onglets, barres à commander, panneaux
-  function cutList(r) {
+  function cutList(r, f) {
     const Lb = global.Lumber, cl = Lb ? Lb.floorCutList(r) : null;
     if (!cl) return '';
+    // plan de coupe des panneaux (sheets.js) sur le format choisi
+    const SH = global.Sheets, key = f && f.sheet && SH && SH.SHEETS[f.sheet] ? f.sheet : SH ? SH.DEFAULT : null;
+    const sp = SH ? (r.options.deck === 'etoile' ? SH.pieces(r.panels, key) : SH.rows(r.panels[0].pts, r.joists, key)) : null;
+    const nSheets = sp ? (sp.ok ? sp.sheets + ' panneaux' : '🔴 panneaux') : cl.panels.sheets + ' panneaux';
     const deg = v => v ? (Math.round(v * 10) / 10).toString().replace('.', ',') + '°' : 'équerre';
     const sec = s => s.groups.reduce((t, g) => t + g.n, 0);
-    let h = '<details class="door-lib" id="floorCuts"><summary>Liste de débits — bois et panneaux (' + (sec(cl.sections[0]) + sec(cl.sections[1])) + ' pièces, ' + cl.panels.sheets + ' panneaux)</summary>' +
+    let h = '<details class="door-lib" id="floorCuts"><summary>Liste de débits — bois et panneaux (' + (sec(cl.sections[0]) + sec(cl.sections[1])) + ' pièces, ' + nSheets + ')</summary>' +
       '<div class="muted">🟠 aperçu · cadres ' + (cl.sections[0].joint === 'about' ? 'en about : coupes d\'équerre, pièces raccourcies pour que les coins intérieurs se touchent, jour à l\'extérieur jusqu\'à ' + mm(cl.sections[0].maxGap) + ' (plaque ou équerre métallique)' : 'en onglet : longueur à la pointe longue') + ' · trait de scie ' + mm(cl.options.kerf) +
       ' · barres de ' + m(cl.options.lengths[0]) + ' à ' + m(cl.options.lengths[cl.options.lengths.length - 1]) + ' par 30 cm chez ' + esc(cl.options.supplier) + ' (suivant stock, à confirmer)</div>';
     cl.sections.forEach(s => {
@@ -125,7 +129,9 @@
         '<details><summary>Plan de coupe des barres (' + P.bars.length + ')</summary><ol>' + P.bars.map(b => '<li>' + m(b.stock) + ' : ' + b.cuts.map(c => c.ref + ' ' + mm(c.len)).join(' · ') + ' · chute ' + mm(b.waste) + '</li>').join('') + '</ol></details>';
     });
     const pn = cl.panels;
-    h += '<b>Panneaux de plancher ' + Math.round(pn.thickness * 1000) + ' mm</b><div class="op-status">' + pn.area.toFixed(2).replace('.', ',') + ' m² → ' + pn.sheets + ' panneaux de ' +
+    if (sp) h += '<b>Panneaux de plancher</b> <label>Format ' + sel('sheet', key, Object.fromEntries(Object.keys(SH.SHEETS).map(k => [k, SH.SHEETS[k].name + ' (' + Math.round(SH.SHEETS[k].l * 1000) + ' × ' + Math.round(SH.SHEETS[k].w * 1000) + ')']))) + '</label>' +
+      SH.html(sp, r.options.deck === 'etoile' ? null : r.panels[0].pts) + '</details>';
+    else h += '<b>Panneaux de plancher ' + Math.round(pn.thickness * 1000) + ' mm</b><div class="op-status">' + pn.area.toFixed(2).replace('.', ',') + ' m² → ' + pn.sheets + ' panneaux de ' +
       m(pn.sheet.l) + ' × ' + m(pn.sheet.w) + ' (chute comptée ' + Math.round(pn.waste * 100) + ' %) · OSB ou multiplex · format 🟠 à confirmer</div></details>';
     return h;
   }
