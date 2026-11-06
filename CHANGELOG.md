@@ -7,6 +7,13 @@
 
 Format : ce qui change pour l'utilisateur, puis les contrôles. Détail des tests de la série 0.9 : `docs/validation/historique-tests-beta-0.9.md`.
 
+## 0.9.24 — 06/11/2026 (Cover+ : mode tuilage)
+- **Bouton 💧 Tuilage** (Cover+, gardé d'une visite à l'autre) : sur le **dôme 3D**, une flèche « l'eau descend » par face et, en découpe par morceaux, un liseré **bleu DESSUS** (ce bord recouvre le voisin) / **orange DESSOUS** (ce bord passe sous le voisin) le long de chaque couture ; légende en bas à gauche.
+- **Patrons 2D** (morceau seul, vue aplatie par rangées, pelure d'orange) : bords colorés avec le mot DESSUS / DESSOUS / OURLET et une flèche d'eau par triangle, calculée sur la pente réelle de la face. Pelure : une fente qui traverse un morceau (« à casser ») reçoit DESSUS du côté qui commence après la coupe, DESSOUS de l'autre.
+- **Fiches de traçage imprimées** : toujours les mots et couleurs DESSUS / DESSOUS sur les bords, une flèche d'eau par triangle, légende, et « DESSUS — A (recouvrant) » / « DESSOUS — B (recouvert) » dans le tableau des marges.
+- Le dôme 3D affiche les couleurs des morceaux dès la fin du calcul de la découpe (avant : seulement après avoir bougé la vue).
+- Contrôles : nouvelle suite `tuilage` (59 contrôles : sur les deux références, toutes découpes et les 6 types d'ouverture de la pelure, DESSUS en bas du morceau du haut à chaque couture d'étage, un DESSUS face à un DESSOUS à chaque couture, eau jamais vers le haut) et test navigateur `t_tuilage`.
+
 ## 0.9.23 — 06/11/2026 (Quadrisphère : ambiances et rendu photo ; Kumiko de nouveau visible)
 - **Quadrisphère** : menu **Ambiance** (plein jour, matin, coucher de soleil, ciel couvert, nuit avec lampe), partagé avec l'onglet Design ; « plein jour » garde la lumière d'origine. Bouton **📷 Rendu photo** (lancer de rayons, progression, ⬇ PNG ; bouger la vue revient à la 3D).
 - **Design** : les barres **Site et soleil** et **Aération** sont repliables, fermées par défaut, avec un résumé sur une ligne ; la barre **Kumiko**, poussée hors de l'écran depuis la 0.9.21, est de nouveau visible sans défiler.
