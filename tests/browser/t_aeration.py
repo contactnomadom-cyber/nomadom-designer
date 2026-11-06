@@ -34,7 +34,9 @@ with sync_playwright() as p:
     pg.click('#tabDesign'); pg.wait_for_timeout(2500)
     info = lambda: pg.inner_text('#dsVentInfo')
     shot3 = lambda: pg.eval_on_selector('#ds3d', 'c => c.toDataURL()')
-    check(pg.is_visible('#dsVentBar') and pg.input_value('#dsVentTarget') == '5', 'barre « Aération » visible, objectif 5/h par défaut')
+    check(pg.is_visible('#dsVentBar') and 'folded' in pg.get_attribute('#dsVentBar', 'class') and 'aucune ouverture' in pg.inner_text('#dsVentSum'), 'barre « Aération » repliée par défaut, résumé sur une ligne')
+    pg.click('#dsVentBar .group-title'); pg.wait_for_timeout(300)
+    check(pg.is_visible('#dsVentTarget') and pg.input_value('#dsVentTarget') == '5', 'barre « Aération » ouverte, objectif 5/h par défaut')
     check('Aucune ouverture' in pg.inner_text('#dsVentList') and 'pas d\'aération' in info(), 'dôme fermé : aucune aération, invitation à tracer porte et coupole')
     img0 = shot3()
     # porte seule

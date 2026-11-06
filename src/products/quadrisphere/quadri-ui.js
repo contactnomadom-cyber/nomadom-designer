@@ -12,7 +12,7 @@
   if (!G || !$q('viewQuadri')) return;
 
   const st = { side: 5, nu: 3, arch: 1.6, k: 1.5, lintel: false, mode: 'hub', mat: 'wood', b: 140, h: 70, hub: 120,
-    style: 'real', colors: false, cover: false, person: true };
+    style: 'real', amb: 'jour', colors: false, cover: false, person: true };
   const memo = { wood: { b: 140, h: 70, hub: 120 }, steel: { b: 60, h: 3, hub: 60 } };
   let dome = null;
   const fmt = (x, d = 0) => x.toLocaleString('fr-BE', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -123,6 +123,13 @@
     const tex = makeTex();
     let content = new T.Group(); scene.add(content);
     let H = 3.5;
+    // ambiances partagées avec l'onglet Design (design3d-three.js) ; « Plein jour » garde la lumière d'origine de la Quadrisphère
+    const AMB = global.Design3DThree && global.Design3DThree.AMBIANCES, JOUR = { el: 0.78, sky: true, turbidity: 2.2, rayleigh: 2.6, sun: 2.8, sunColor: 0xfff1dc, hemi: 0.55, env: 1, exposure: 0.95, lamp: 0 };
+    let amb = null;
+    // lampe sous le dôme (ambiance nuit)
+    const lamp = new T.PointLight(0xffc27a, 0, 12, 1.6); lamp.visible = false; scene.add(lamp);
+    // rendu photo (lancer de rayons, three-gpu-pathtracer)
+    let pt = null, ptRaf = 0, photo = null; const envTexs = {};
 
     function dispose(o) { o.traverse(x => { if (x.geometry) x.geometry.dispose(); if (x.material) [].concat(x.material).forEach(m => m.dispose()); }); }
     function box(P, Q, nm, w, h, mat) {
@@ -199,22 +206,59 @@
         const r = st.side * 0.36; fig.position.set(r * 0.7071, 0, -r * 0.7071); content.add(fig);
       }
       H = d.H;
-      sky.visible = !maq; scene.background = maq ? new T.Color(0xeeeeec) : null;
-      hemi.intensity = maq ? 0.9 : 0.55; sun.intensity = maq ? 2.0 : 2.8; renderer.toneMappingExposure = maq ? 1.05 : 0.95;
+      amb = maq ? null : (st.amb === 'jour' || !AMB || !AMB[st.amb] ? JOUR : AMB[st.amb]);
+      const a = amb;
+      sky.visible = !maq && a.sky; scene.background = maq ? new T.Color(0xeeeeec) : (a.sky ? null : new T.Color(a.bg));
+      hemi.intensity = maq ? 0.9 : a.hemi; sun.intensity = maq ? 2.0 : a.sun; renderer.toneMappingExposure = maq ? 1.05 : a.exposure;
+      sun.color.setHex(maq ? 0xfff1dc : a.sunColor); scene.environmentIntensity = maq ? 1 : a.env;
+      hemi.color.setHex(!maq && a.hemiSky ? a.hemiSky : 0xdfe9f5);
+      if (!maq && a.sky) { su.turbidity.value = a.turbidity; su.rayleigh.value = a.rayleigh; su.mieCoefficient.value = a.mie || 0.004; }
+      lamp.visible = !maq && a.lamp > 0; lamp.intensity = maq ? 0 : a.lamp * 2; lamp.position.set(0, d.H * 0.55, 0); lamp.distance = st.side * 1.6;
       const R = st.side * 1.4; Object.assign(sun.shadow.camera, { left: -R, bottom: -R, right: R, top: R, near: 1, far: 80 }); sun.shadow.camera.updateProjectionMatrix();
     }
-    function render() {
+    function photoStop() {
+      if (ptRaf) cancelAnimationFrame(ptRaf); ptRaf = 0;
+      if (photo) { scene.background = photo.bg; scene.environment = photo.env; sky.visible = photo.sky; hemi.visible = true; scene.environmentIntensity = photo.envI;
+        [lamp.intensity, lamp.distance, lamp.decay] = photo.lampS; photo = null; }
+    }
+    // cb : { samples, onProgress(n, total), onDone(), onError(err) } — même principe que l'onglet Design
+    function photoStart(cb) {
+      cb = cb || {}; photoStop(); draw();
+      try {
+        if (!pt) { pt = new K.WebGLPathTracer(renderer); pt.tiles.set(2, 2); pt.minSamples = 1; pt.renderDelay = 0; pt.fadeDuration = 400; pt.bounces = 6; pt.filterGlossyFactor = 0.5; }
+        const maq = st.style === 'maquette', A = amb || (AMB && AMB.jour);
+        photo = { bg: scene.background, env: scene.environment, sky: sky.visible, envI: scene.environmentIntensity, lampS: [lamp.intensity, lamp.distance, lamp.decay] };
+        sky.visible = false; hemi.visible = false; scene.environmentIntensity = 1;
+        if (lamp.visible) { lamp.intensity = 0.7 * lamp.intensity * st.side * st.side / 4; lamp.distance = 0; lamp.decay = 2; }
+        const key = maq ? 'maq' : st.amb, env = envTexs[key] || (envTexs[key] = global.Design3DThree.photoSky(K, (AMB && AMB[st.amb]) || A, maq));
+        scene.environment = env; scene.background = maq ? new T.Color(0xeeeeec) : env;
+        pt.setScene(scene, camera);
+      } catch (err) { photoStop(); if (cb.onError) cb.onError(err); return false; }
+      const total = cb.samples || 256;
+      const tick = () => {
+        if (!photo) return;
+        try { pt.renderSample(); } catch (err) { photoStop(); if (cb.onError) cb.onError(err); return; }
+        const n = Math.floor(pt.samples);
+        if (cb.onProgress) cb.onProgress(Math.min(n, total), total);
+        if (n >= total) { ptRaf = 0; if (cb.onDone) cb.onDone(); return; }
+        ptRaf = requestAnimationFrame(tick);
+      };
+      ptRaf = requestAnimationFrame(tick);
+      return true;
+    }
+    function render() { photoStop(); draw(); }
+    function draw() {
       const r = canvas.getBoundingClientRect(), dpr = Math.min(2, global.devicePixelRatio || 1);
       const w = Math.max(1, Math.round(r.width)), hh = Math.max(1, Math.round(r.height));
       if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(hh * dpr)) { renderer.setPixelRatio(dpr); renderer.setSize(w, hh, false); }
       camera.aspect = w / hh; camera.updateProjectionMatrix();
       camera.position.set(cam.target[0] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw), cam.target[1] + cam.dist * Math.sin(cam.pitch), cam.target[2] + cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw));
       camera.lookAt(cam.target[0], cam.target[1], cam.target[2]);
-      const az = cam.yaw + 1.05, el = 0.78, dv = new T.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+      const az = cam.yaw + 1.05, el = amb ? amb.el : 0.78, dv = new T.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
       sun.position.copy(dv.clone().multiplyScalar(30)); sun.target.position.set(0, H * 0.3, 0); su.sunPosition.value.copy(dv);
       renderer.render(scene, camera);
     }
-    return { update, render };
+    return { update, render, photoStart, photoStop, snapshot: () => canvas.toDataURL('image/png'), canPhoto: !!(K.WebGLPathTracer && global.Design3DThree && global.Design3DThree.photoSky) };
   }
 
   function setView(kind) {
@@ -226,7 +270,8 @@
     dirty = true;
   }
   function frame() {
-    if ($q('viewQuadri').style.display !== 'none' && eng && dirty) { eng.render(); dirty = false; }
+    if ($q('viewQuadri').style.display !== 'none' && eng && dirty) { eng.render(); dirty = false; if (photoOn || $q('qdPhotoSave').style.display !== 'none') photoUi(false); }
+    const lbl = $q('qdAmbLbl'); if (lbl) lbl.style.display = st.style === 'maquette' ? 'none' : '';
     requestAnimationFrame(frame);
   }
   function bindCanvas(cv) {
@@ -245,7 +290,7 @@
     st.side = Math.min(10, Math.max(4, num('qdSide', 5))); st.nu = +$q('qdNu').value; st.arch = Math.max(0, Math.min(st.side * 0.5, num('qdArch', 1.6)));
     st.k = Math.min(2.5, Math.max(0.8, num('qdK', 1.5))); st.lintel = $q('qdLintel').checked;
     st.mode = $q('qdMode').value; st.b = Math.max(1, num('qdB', 140)); st.h = Math.max(0.5, num('qdH', 70)); st.hub = Math.max(0, num('qdHub', 120));
-    st.style = $q('qdStyle').value; st.colors = $q('qdColors').checked; st.cover = $q('qdCover').checked; st.person = $q('qdPerson').checked;
+    st.style = $q('qdStyle').value; st.amb = $q('qdAmb').value; st.colors = $q('qdColors').checked; st.cover = $q('qdCover').checked; st.person = $q('qdPerson').checked;
   }
   function refresh(resetCam) {
     readInputs(); compute(); renderTables();
@@ -260,7 +305,24 @@
     $q('qdH').step = st.mat === 'wood' ? 5 : 0.5;
     refresh(false);
   }
-  ['qdNu', 'qdMode', 'qdStyle', 'qdLintel', 'qdColors', 'qdCover', 'qdPerson'].forEach(id => $q(id).addEventListener('change', () => refresh(false)));
+  ['qdNu', 'qdMode', 'qdStyle', 'qdAmb', 'qdLintel', 'qdColors', 'qdCover', 'qdPerson'].forEach(id => $q(id).addEventListener('change', () => refresh(false)));
+  // ---------------- rendu photo ----------------
+  let photoOn = false, hint0 = null;
+  function photoUi(on, msg) {
+    const h = $q('qdHint'); if (hint0 === null) hint0 = h.textContent;
+    photoOn = !!on; $q('qdPhoto').textContent = on ? '■ Arrêter' : '📷 Rendu photo';
+    if (!on) $q('qdPhotoSave').style.display = 'none';
+    h.textContent = msg || hint0;
+  }
+  $q('qdPhoto').addEventListener('click', () => {
+    if (photoOn) { photoUi(false); dirty = true; return; }   // arrête et revient à la vue 3D
+    photoUi(true, 'Préparation du rendu photo…');
+    eng.photoStart({ samples: global.COVER_PHOTO_SAMPLES || 256,
+      onProgress: (n, t) => { $q('qdHint').textContent = 'Rendu photo : ' + Math.round(100 * n / t) + ' % · bouger la vue annule'; },
+      onDone: () => { photoOn = false; $q('qdPhoto').textContent = '📷 Rendu photo'; $q('qdPhotoSave').style.display = ''; $q('qdHint').textContent = 'Rendu photo terminé · ⬇ PNG pour l\'enregistrer · bouger la vue revient à la 3D'; },
+      onError: err => { console.warn(err); photoUi(false, 'Rendu photo impossible sur cet appareil (WebGL2 insuffisant).'); } });
+  });
+  $q('qdPhotoSave').addEventListener('click', () => { const a = document.createElement('a'); a.href = eng.snapshot(); a.download = 'rendu-quadrisphere-' + (st.style === 'maquette' ? 'maquette' : st.amb) + '.png'; document.body.appendChild(a); a.click(); a.remove(); });
   ['qdSide'].forEach(id => $q(id).addEventListener('change', () => refresh(true)));
   ['qdArch', 'qdK', 'qdB', 'qdH', 'qdHub'].forEach(id => $q(id).addEventListener('change', () => refresh(false)));
   $q('qdMat').addEventListener('change', onMat);
@@ -275,6 +337,7 @@
     if (!started) {
       started = true;
       if (T) { eng = createEngine($q('qd3d')); if (eng) bindCanvas($q('qd3d')); }
+      if (eng && eng.canPhoto) $q('qdPhoto').style.display = '';
       if (!eng) $q('qdInfo3d').textContent = 'vue 3D indisponible (WebGL manquant)';
       refresh(true); requestAnimationFrame(frame);
     }

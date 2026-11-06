@@ -282,18 +282,7 @@
     const envTexs = {};
     function photoEnv(maq) {
       const A = amb || AMBIANCES.jour, key = maq ? 'maq' : A.label;
-      if (envTexs[key]) return envTexs[key];
-      const t = new K.ProceduralEquirectTexture(512, 256);
-      const zen = new T.Color(...A.pz[0]), hor = new T.Color(...A.pz[1]), gnd = new T.Color(...A.pz[2]);
-      const white = new T.Color(0.93, 0.93, 0.92), grey = new T.Color(0.55, 0.55, 0.54);
-      t.generationCallback = (polar, uv, coord, c) => {
-        const y = -Math.cos(polar.phi); // 1 = zénith, -1 = nadir (convention du path tracer)
-        if (maq) c.lerpColors(grey, white, Math.min(1, (y + 1) * 0.8));
-        else if (y >= 0) c.lerpColors(hor, zen, Math.pow(y, 0.6));
-        else c.lerpColors(hor, gnd, Math.min(1, -y * 5));
-      };
-      t.update();
-      return (envTexs[key] = t);
+      return envTexs[key] || (envTexs[key] = photoSky(K, A, maq));
     }
     // Les tampons de design3d ont des normales justes mais un sens de rotation des
     // triangles parfois inversé. Le rendu 3D (double face) s'en accommode, pas le lancer
@@ -386,5 +375,20 @@
     return { isThree: true, update, render, setSun, setVent, photoStart, photoStop, snapshot, photoBusy: () => !!ptRaf, canPhoto: !!K.WebGLPathTracer, setQuality(v) { hiQ = v; sun.castShadow = v; renderer.shadowMap.type = v ? T.PCFSoftShadowMap : T.BasicShadowMap; renderer.shadowMap.needsUpdate = true; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); canvas.width = 0; }, renderer };
   }
 
-  global.Design3DThree = { create, AMBIANCES };
+  // ciel du rendu photo (lancer de rayons) : dégradé zénith / horizon / sol de l'ambiance ; gris clair en maquette
+  // (partagé avec la Quadrisphère)
+  function photoSky(K, A, maq) {
+    const T = K.THREE, t = new K.ProceduralEquirectTexture(512, 256);
+    const zen = new T.Color(...A.pz[0]), hor = new T.Color(...A.pz[1]), gnd = new T.Color(...A.pz[2]);
+    const white = new T.Color(0.93, 0.93, 0.92), grey = new T.Color(0.55, 0.55, 0.54);
+    t.generationCallback = (polar, uv, coord, c) => {
+      const y = -Math.cos(polar.phi); // 1 = zénith, -1 = nadir (convention du path tracer)
+      if (maq) c.lerpColors(grey, white, Math.min(1, (y + 1) * 0.8));
+      else if (y >= 0) c.lerpColors(hor, zen, Math.pow(y, 0.6));
+      else c.lerpColors(hor, gnd, Math.min(1, -y * 5));
+    };
+    t.update();
+    return t;
+  }
+  global.Design3DThree = { create, AMBIANCES, photoSky };
 })(typeof window !== 'undefined' ? window : globalThis);

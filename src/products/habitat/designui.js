@@ -87,8 +87,8 @@
         <label>Ajouter un élément<span style="display:flex;gap:4px"><select id="dsAddType">${libOpts}</select><button class="primary" id="dsAdd">+ Ajouter</button></span></label>
         <label>Ouvertures<span class="muted" style="font-size:11px;max-width:200px">Tracées dans l'onglet Base (porte, fenêtre, coupole) : elles apparaissent ici dans la toile et la structure.</span></label>
       </div>
-      <div class="toolbar" id="dsSunBar">
-        <span class="group-title">Site et soleil</span>
+      <div class="toolbar foldable folded" id="dsSunBar">
+        <span class="group-title" title="Ouvrir ou fermer">Site et soleil</span><span class="fold-sum" id="dsSunSum"></span>
         <label>Lieu du projet<select id="dsSiteCity">${SUN ? SUN.CITIES.map(c => '<option value="' + c.id + '">' + esc(c.name) + '</option>').join('') : ''}</select></label>
         <label title="Angle du nord sur le plan, dans le sens des aiguilles d'une montre (0 = nord en haut)">Nord sur le plan (°)<input type="number" id="dsSiteNorth" step="5" min="-360" max="360"></label>
         <label>Soleil dans la 3D<select id="dsSunMode"><option value="amb">Selon l'ambiance</option><option value="real">Réel (date et heure)</option></select></label>
@@ -97,8 +97,8 @@
         <label>Carte des faces<select id="dsSunMap"><option value="none">Aucune</option><option value="bilan">Bilan fenêtres (hiver − été)</option><option value="vue">Vue principale</option><option value="hiver">Soleil d'hiver (21 déc.)</option><option value="ete">Soleil d'été (21 juin)</option></select></label>
         <label>Lecture<span class="muted" id="dsSunInfo" style="font-size:11px;max-width:320px"></span></label>
       </div>
-      <div class="toolbar" id="dsVentBar">
-        <span class="group-title">Aération</span>
+      <div class="toolbar foldable folded" id="dsVentBar">
+        <span class="group-title" title="Ouvrir ou fermer">Aération</span><span class="fold-sum" id="dsVentSum"></span>
         <label title="Combien de fois l'air du dôme doit être changé en une heure (5 = confort d'été courant)">Objectif (renouvellements / h)<input type="number" id="dsVentTarget" step="0.5" min="0.5" max="60"></label>
         <label>Ouvertures ouvrables<span id="dsVentList" style="display:flex;flex-wrap:wrap;gap:4px 10px;max-width:360px;font-size:11px"></span></label>
         <label class="chk"><input type="checkbox" id="dsVentArrows"> Flèches d'air en 3D</label>
@@ -198,6 +198,15 @@
         st.site.view = d === '' ? null : { az: parseFloat(d), width: isFinite(w) ? Math.max(20, Math.min(180, w)) : 90 }; save(); drawAll(); };
       $('dsViewDir').addEventListener('change', setView); $('dsViewWidth').addEventListener('change', setView);
     } else $('dsSunBar').style.display = 'none';
+    // barres repliables (fermées par défaut pour garder Mezzanine et Kumiko en vue) ; l'état reste dans ce navigateur
+    ['dsSunBar', 'dsVentBar'].forEach(id => {
+      const bar = $(id); if (!bar) return;
+      try { if (localStorage.getItem('nomadom.fold.' + id) === 'open') bar.classList.remove('folded'); } catch (e) {}
+      bar.querySelector('.group-title').addEventListener('click', () => {
+        bar.classList.toggle('folded');
+        try { localStorage.setItem('nomadom.fold.' + id, bar.classList.contains('folded') ? 'closed' : 'open'); } catch (e) {}
+      });
+    });
     if (VENT) {
       $('dsVentTarget').addEventListener('change', e => { const v = parseFloat(String(e.target.value).replace(',', '.')); st.vent.target = isFinite(v) ? Math.max(0.5, Math.min(60, v)) : 5; save(); syncVent(); });
       $('dsVentList').addEventListener('change', e => {
@@ -816,6 +825,7 @@
     }
     parts.push('🟡 calculé : ciel clair, sans ombre du terrain ni des arbres');
     $('dsSunInfo').textContent = parts.join(' · ');
+    if ($('dsSunSum')) $('dsSunSum').textContent = SUN.cityOf(st.site.city).name + ' · nord ' + st.site.north + '°' + (st.site.view ? ' · vue ' + SUN.cardinal(st.site.view.az) : '') + (sunUi.map !== 'none' ? ' · carte affichée' : '');
   }
   function syncSun() {
     if (!SUN) return;
@@ -880,6 +890,7 @@
     }
     L.push('🟡 calculé : effet cheminée seul, sans vent (cas défavorable), surface ouverte selon la part ouvrante indiquée');
     $('dsVentInfo').innerHTML = L.map(esc).join('<br>');
+    if ($('dsVentSum')) $('dsVentSum').textContent = e.mode === 'aucune' ? 'aucune ouverture ouvrable' : fr(e.ach, e.ach < 10 ? 1 : 0) + ' renouvellements/h en été (objectif ' + fr(st.vent.target, 1) + ')';
     if (eng && eng.isThree && eng.setVent && visible()) { eng.setVent(ventScene(R)); eng.render(cam, toileMode === 'coupe'); }
   }
   // ---------------------------------------------------------

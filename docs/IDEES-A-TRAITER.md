@@ -198,10 +198,12 @@ Demande de Nathan : « une version orientée UI, une belle interface », sur tou
 4. Formats exacts des panneaux et longueurs de CLS chez Bourguignon Bois (OSB, multiplex, Agepan) ; classe réelle du CLS chez Bourguignon (C16 ou C24) ?
 5. Aménagement, étape 3 : cloisons en CLS, puis le mobilier en multiplex. Appui sur les montants : section et bois des montants à renseigner pour vérifier la charge reprise par le dôme.
 6. Temps de calcul du rendu photo acceptable sur la tablette de présentation ? Faut-il un réglage Rapide / Normal / Soigné ?
-7. Étendre le rendu photo à la Quadrisphère et à Nomad Vision ; revoir la forme de la Quadrisphère (**remis à plus tard, 05/11/2026**).
+7. Rendu photo et ambiances étendus à la Quadrisphère (branche `feature/quadri-rendu`, demande de Nathan du 06/11/2026) ; reste : Nomad Vision et la forme de la Quadrisphère.
 8. La coupe « voir dedans » n'est pas encore rendue en photo : à traiter ?
 
 ---
+
+- Kumiko « disparu » (06/11/2026) : barre poussée hors de l'écran par Site et soleil et Aération ; ces deux barres sont désormais repliables, fermées par défaut, avec un résumé sur une ligne (branche `feature/quadri-rendu`).
 
 ## Fait
 - ✅ 0.9.16 — Porte d'aplomb (NOMAD-2026-005, étape 1) : calcul, structure 3D, choix constructifs, raccords sans pièce volante, bibliothèque de 14 assemblages (aperçu 🟠).

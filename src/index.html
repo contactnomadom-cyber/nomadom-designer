@@ -142,6 +142,13 @@
 
   .toolbar + .toolbar{ margin-top: -6px; }
   .group-title{ font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 600; min-width: 70px; }
+  /* barre repliable : un clic sur le titre l'ouvre ou la ferme */
+  .toolbar.foldable > .group-title{ cursor: pointer; user-select: none; }
+  .toolbar.foldable > .group-title::before{ content: '▾ '; }
+  .toolbar.foldable.folded > .group-title::before{ content: '▸ '; }
+  .toolbar.foldable.folded > :not(.group-title):not(.fold-sum){ display: none !important; }
+  .toolbar .fold-sum{ font-size: 11px; color: var(--muted, #777); }
+  .toolbar.foldable:not(.folded) > .fold-sum{ display: none; }
   .toolbar select{ font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); background: #fff; }
   .toolbar input:disabled{ background: #eef0f1; color: var(--ink-dim); }
   .seam-note{ font-size: 11px; color: var(--ink-dim); max-width: 320px; }
@@ -461,7 +468,7 @@
   <div class="info-head"><h2>Quadrisphère — pavillon événementiel</h2><span class="stat">Dôme sur 4 pieds et 4 arches · base octaèdre · conception Nomad'Om</span></div>
   <div class="split" data-split="quadri" id="qdSplit">
   <div class="split-view" id="qdSplitView">
-  <section class="pane"><h2><span>QUADRISPHÈRE 3D</span><span id="qdInfo3d"></span></h2><div class="body"><canvas id="qd3d" style="height:560px"></canvas><div class="hint">glisser = tourner · molette = zoom · double-clic = recadrer</div></div></section>
+  <section class="pane"><h2><span>QUADRISPHÈRE 3D</span><span><button id="qdPhoto" style="display:none;font-size:11px" title="Image réaliste calculée par lancer de rayons, dans l'ambiance choisie (quelques secondes à une minute)">📷 Rendu photo</button> <button id="qdPhotoSave" style="display:none;font-size:11px">⬇ PNG</button> <span id="qdInfo3d"></span></span></h2><div class="body"><canvas id="qd3d" style="height:560px"></canvas><div class="hint" id="qdHint">glisser = tourner · molette = zoom · double-clic = recadrer</div></div></section>
   </div>
   <div class="split-handle" id="qdSplitHandle"></div>
   <div class="split-opts" id="qdSplitOpts">
@@ -509,6 +516,9 @@
     <span class="group-title">Rendu</span>
     <label>Style
       <select id="qdStyle" style="width:120px;padding:4px 6px"><option value="real">Réaliste</option><option value="maquette">Maquette</option></select>
+    </label>
+    <label id="qdAmbLbl" title="Lumière et ciel du rendu réaliste, comme dans l'onglet Design. Tout est calculé : marche sans internet.">Ambiance
+      <select id="qdAmb" style="width:150px;padding:4px 6px"><option value="jour">Plein jour</option><option value="matin">Matin</option><option value="couchant">Coucher de soleil</option><option value="couvert">Ciel couvert</option><option value="nuit">Nuit</option></select>
     </label>
     <label class="chk" style="flex-direction:row;align-items:center;gap:5px"><input type="checkbox" id="qdColors"> Couleur par type de barre</label>
     <label class="chk" style="flex-direction:row;align-items:center;gap:5px"><input type="checkbox" id="qdCover"> Toile</label>
