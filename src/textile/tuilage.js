@@ -64,6 +64,40 @@
     return m;
   }
 
+  // Pelure d'orange : morceau traversé par une fente (« à casser », peel.js). La coupe ajoutée
+  // suit la règle des coupes montantes : dans le sens du tour de l'étage, la partie qui COMMENCE
+  // après la coupe passe DESSUS, celle qui finit avant passe DESSOUS. Les autres bords gardent
+  // le côté de la fiche. Renvoie, en coordonnées de la pelure : bords colorés et flèches d'eau.
+  function brokenMarks(bp) {
+    const sideOf = new Map();
+    bp.sh.edges.forEach(e => { if (e.nodeIds) sideOf.set(ek(e.nodeIds[0], e.nodeIds[1]), e.side); });
+    const hOf = new Map();
+    bp.sh.triangles.forEach(t => (t.pointIds || []).forEach((id, k) => hOf.set(id, t.h[k])));
+    const cutAfter = new Map(); // part index -> clé de la coupe en tête / en queue
+    bp.cutLines.forEach((cl, c) => { const k = ek(cl.ids[0], cl.ids[1]); cutAfter.set('end' + c, k); cutAfter.set('start' + (c + 1), k); });
+    const edges = [], flows = [];
+    bp.parts.forEach((part, pi) => {
+      const cnt = new Map();
+      part.forEach(t => [[0, 1], [1, 2], [2, 0]].forEach(([u, v]) => { const k = ek(t.pointIds[u], t.pointIds[v]); cnt.set(k, (cnt.get(k) || 0) + 1); }));
+      part.forEach(t => {
+        [[0, 1], [1, 2], [2, 0]].forEach(([u, v]) => {
+          const k = ek(t.pointIds[u], t.pointIds[v]);
+          if (cnt.get(k) > 1) return;
+          let side = sideOf.get(k), cut = false;
+          if (cutAfter.get('start' + pi) === k) { side = 'A'; cut = true; }
+          else if (cutAfter.get('end' + pi) === k) { side = 'B'; cut = true; }
+          if (!side) return; // pli intérieur d'un autre morceau : pas un bord
+          edges.push({ A: t.pts[u], B: t.pts[v], side, cut, ids: [t.pointIds[u], t.pointIds[v]] });
+        });
+        if (t.pointIds.every(id => hOf.has(id))) {
+          const f = triFlow({ pts: t.pts, h: t.pointIds.map(id => hOf.get(id)) });
+          if (f) flows.push(f);
+        }
+      });
+    });
+    return { edges, flows };
+  }
+
   // Contrôle d'étanchéité : sur une couture d'étage, le bord DESSUS doit être le bord BAS
   // du morceau (le morceau du haut recouvre celui du bas, comme une tuile) ; le bord DESSOUS
   // est le bord HAUT. Renvoie la liste des bords à l'envers.
@@ -102,7 +136,7 @@
 
   const LEGEND = 'Tuilage : 💧 flèche = l\'eau descend · bleu DESSUS = ce bord recouvre le voisin · orange DESSOUS = ce bord passe sous le voisin';
 
-  const Tuilage = { SIDES, WATER, LEGEND, side, edgeText, triFlow, sheetFlow, faceFlow3D, seamSides, checkSheet, arrow, arrowSvg, edgeKey: ek };
+  const Tuilage = { SIDES, WATER, LEGEND, side, edgeText, triFlow, sheetFlow, faceFlow3D, seamSides, checkSheet, brokenMarks, arrow, arrowSvg, edgeKey: ek };
   if (typeof module !== 'undefined' && module.exports) module.exports = Tuilage;
   else global.CoverTuilage = Tuilage;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -211,6 +211,8 @@ Demande de Nathan : « un mode tuilage qui donne le sens d'écoulement des eaux 
 - Décidé : bouton « 💧 Tuilage » dans Cover+ ; visible sur le dôme 3D, les patrons 2D (morceau, vue aplatie, pelure) et les fiches de traçage imprimées.
 - Marquage : couleurs + mots. Bleu **DESSUS** = ce bord recouvre le voisin (côté A, recouvrant) ; orange **DESSOUS** = ce bord passe sous le voisin (côté B, recouvert) ; gris OURLET. Une flèche « l'eau descend » par triangle, calculée sur la pente réelle de la face.
 - Contrôle d'étanchéité ajouté (test `tuilage`) : sur chaque couture d'étage, le DESSUS est le bord bas du morceau du haut (comme une tuile) ; chaque couture a un DESSUS face à un DESSOUS ; vérifié sur les deux dômes de référence, toutes les découpes.
+- Vérifié le 06/11 par découpe (Moins de coutures, Moins de gabarits, Axes, Triangle par triangle, Moins de toile, base en secteurs) et par type d'ouverture de la pelure (1, 5 sur les arêtes, 5 décalées, 10, spirale, zigzag) : flèches d'eau toujours du sommet vers le bord ; une fente qui traverse un morceau (« à casser ») reçoit DESSUS du côté qui commence après la coupe, DESSOUS de l'autre.
+- Constat à trancher : les coupes montantes ne recouvrent pas toutes dans le même sens de rotation (étages du haut : sens antihoraire vu du dessus ; étages du bas : sens horaire). Sans effet sur l'écoulement vertical, mais une fente alignée sur plusieurs étages change de sens de rabat en chemin.
 - Questions ouvertes : faut-il aussi le sens du vent dominant pour les coupes montantes (aujourd'hui : le début d'un morceau recouvre la fin du précédent) ? Le même mode servira aux futures couvertures solides (bardeaux).
 
 ## Fait

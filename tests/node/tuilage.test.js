@@ -7,6 +7,7 @@ const E = require(path.join(SRC, 'dome-engine.js'));
 const makeEtages = require(path.join(SRC, 'etages.js'));
 const Toile = require(path.join(SRC, 'toile.js'));
 const U = require(path.join(SRC, 'tuilage.js'));
+const Peel = require(path.join(SRC, 'peel.js'));
 const fails = []; let n = 0;
 const check = (ok, msg) => { n++; console.log((ok ? 'OK   ' : 'ÉCHEC ') + msg); if (!ok) fails.push(msg); };
 
@@ -53,6 +54,45 @@ for (const [name, p] of REFS) {
       if (!((e.side === 'A' && o === 'B') || (e.side === 'B' && o === 'A'))) bad.push(sh.name + '↔' + e.other);
     }));
     check(pairs > 0 && bad.length === 0, id + ' : ' + pairs + ' bords cousus, toujours un DESSUS face à un DESSOUS' + (bad.length ? ' — ' + bad[0] : ''));
+  }
+}
+
+// 4. vue aplatie en pelure d'orange : chaque type d'ouverture (fentes)
+//    - les flèches d'eau partent du sommet (au centre de la pelure) vers le bord ;
+//    - une fente qui traverse un morceau (« à casser ») donne une coupe avec un DESSUS d'un côté
+//      et un DESSOUS de l'autre (règle des coupes montantes) ;
+//    - les parties d'un morceau à casser gardent leurs flèches d'eau.
+for (const [name, p] of REFS) {
+  const dome = E.generateDome(p), tool = makeEtages(dome);
+  for (const strategy of ['gabarits', 'axes', 'triangles']) {
+    const res = Toile.planFabric(tool, 1.4, SEAM, 0.005, { strategy, base: 'ring' });
+    const types = Peel.availableTypes(dome, tool, res.plan).filter(t => t.ok).map(t => t.id);
+    let nTypes = 0, wrong = [], cuts = 0, cutBad = [], triB = 0, flowB = 0;
+    for (const type of types) {
+      const L = Peel.build(dome, tool, res.plan, n => res.sheets.get(n), type);
+      if (L.type !== type) continue;
+      nTypes++;
+      let top = null; L.arcs.forEach(a => a.pl.forEach(t => { const k = t.pointIds.indexOf(dome.upperPointId); if (k >= 0 && !top) top = t.pts[k]; }));
+      const out = (c, d) => d && ((c.x - top.x) * d.x + (c.y - top.y) * d.y) > 0;
+      L.pieces.forEach(pp => U.sheetFlow(pp.sh).forEach(f => {
+        const c = pp.T(f.c), q = pp.T({ x: f.c.x + f.d.x, y: f.c.y + f.d.y });
+        if (!out(c, { x: q.x - c.x, y: q.y - c.y })) wrong.push(type + ' ' + pp.sh.name);
+      }));
+      L.broken.forEach(bp => {
+        const m = U.brokenMarks(bp);
+        m.flows.forEach(f => { if (!out(f.c, f.d)) wrong.push(type + ' ' + bp.pc.name + ' (à casser)'); });
+        triB += bp.parts.reduce((s, pt) => s + pt.length, 0); flowB += m.flows.length;
+        bp.cutLines.forEach(cl => {
+          cuts++;
+          const k = U.edgeKey(cl.ids[0], cl.ids[1]);
+          const sd = m.edges.filter(e => e.cut && U.edgeKey(e.ids[0], e.ids[1]) === k).map(e => e.side).sort().join('');
+          if (sd !== 'AB') cutBad.push(type + ' ' + bp.pc.name + ' : ' + (sd || 'aucun côté'));
+        });
+      });
+    }
+    const id = name + ' · ' + strategy + ' · pelure (' + nTypes + ' types d\'ouverture)';
+    check(nTypes > 0 && wrong.length === 0, id + ' : toutes les flèches d\'eau vont du sommet vers le bord' + (wrong.length ? ' — ' + wrong[0] : ''));
+    check(cutBad.length === 0 && flowB === triB, id + ' : ' + cuts + ' coupe(s) de fente dans un morceau, chacune DESSUS d\'un côté / DESSOUS de l\'autre ; ' + triB + ' triangles à casser fléchés' + (cutBad.length ? ' — ' + cutBad[0] : ''));
   }
 }
 

@@ -65,6 +65,17 @@ with sync_playwright() as p:
     check('sens de l\'eau' in h and '#1f6fd1' in h and '#d9700a' in h and 'DESSUS — A (recouvrant)' in h, 'fiches : légende sens de l\'eau, couleurs bleu / orange, tableau des marges')
     ntri, narr = h.count('fill="#eef2f6"'), h.count('fill="#2a8fbf"/>')
     check(ntri > 0 and narr == ntri, 'fiches : une flèche d\'eau par triangle tracé (' + str(narr) + ' / ' + str(ntri) + ')')
+    # 5 bis. pelure d'orange (découpe « Moins de gabarits ») : chaque type d'ouverture, fentes et morceaux à casser
+    pg.select_option('#paramCutStrategy', 'gabarits'); pg.wait_for_timeout(400)
+    pg.click('#btnFlat'); wait_info(); pg.wait_for_timeout(800)
+    types = pg.eval_on_selector_all('#paramPeelType option:not([disabled])', 'os => os.map(o => o.value)')
+    check(len(types) >= 5, 'pelure : types d\'ouverture proposés : ' + ', '.join(types))
+    for ty in types:
+        pg.select_option('#paramPeelType', ty); pg.wait_for_timeout(900)
+        cp = cnt('viewer2d')
+        check(cp['A'] > 300 and cp['B'] > 300 and cp['W'] > 100, 'pelure « ' + ty + ' » : DESSUS ' + str(cp['A']) + ' px, DESSOUS ' + str(cp['B']) + ' px, eau ' + str(cp['W']) + ' px')
+        if OUT and ty == 'offset5': pg.locator('#viewer2d').screenshot(path=os.path.join(OUT, 'tuilage-pelure-offset5.png'))
+    pg.select_option('#paramCutStrategy', 'pieces'); pg.wait_for_timeout(400)
     # 6. le choix reste après rechargement
     pg.reload(); pg.wait_for_timeout(1500); pg.click('#tabCover'); pg.wait_for_timeout(500)
     check('on' in (pg.get_attribute('#btnTuilage', 'class') or ''), 'tuilage gardé après rechargement')

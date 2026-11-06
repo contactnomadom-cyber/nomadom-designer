@@ -366,6 +366,28 @@
         }));
         polys.forEach(q => flatHit.push({ name: bp.pc.name, poly: q }));
       });
+      // c ter) tuilage des morceaux à casser : la coupe de la fente reçoit DESSUS / DESSOUS
+      if (tuilageOn()) L.broken.forEach(bp => {
+        const Tl = global.CoverTuilage, mk = Tl.brokenMarks(bp);
+        mk.edges.forEach(e => {
+          const sd = Tl.SIDES[e.side], A = toS(e.A), B = toS(e.B), dx = B.x - A.x, dy = B.y - A.y, Le = Math.hypot(dx, dy) || 1;
+          ctx2d.beginPath(); ctx2d.moveTo(A.x, A.y); ctx2d.lineTo(B.x, B.y); ctx2d.strokeStyle = sd.color; ctx2d.lineWidth = (e.cut ? 3 : 2.5) * dpr;
+          if (e.cut) ctx2d.setLineDash([7 * dpr, 4 * dpr]); ctx2d.stroke(); ctx2d.setLineDash([]);
+          if (!e.cut || Le < 45 * dpr) return;
+          // côté intérieur de la partie : vers le 3e sommet du triangle qui porte ce bord
+          const part = bp.parts.find(pt => pt.some(t => e.ids.every(id => t.pointIds.includes(id))));
+          const t = part && part.find(t => e.ids.every(id => t.pointIds.includes(id)));
+          const C = t ? toS(t.pts[t.pointIds.findIndex(id => !e.ids.includes(id))]) : { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+          let ix = -dy / Le, iy = dx / Le; if ((C.x - A.x) * ix + (C.y - A.y) * iy < 0) { ix = -ix; iy = -iy; }
+          txt(sd.word, (A.x + B.x) / 2 + ix * 21 * dpr, (A.y + B.y) / 2 + iy * 21 * dpr, upright(Math.atan2(dy, dx)), 'bold ' + (10 * dpr) + 'px system-ui, sans-serif', sd.color);
+        });
+        mk.flows.forEach(fl => {
+          if (!fl.d) return;
+          const c = toS(fl.c), q = toS({ x: fl.c.x + fl.d.x * 0.1, y: fl.c.y + fl.d.y * 0.1 });
+          const ux = q.x - c.x, uy = q.y - c.y, ul = Math.hypot(ux, uy) || 1, len = Math.min(34 * dpr, ul * 2.2);
+          if (len >= 8 * dpr) Tl.arrow(ctx2d, c.x - ux / ul * len / 2, c.y - uy / ul * len / 2, ux / ul, uy / ul, len, Tl.WATER, 2 * dpr);
+        });
+      });
       // d) charnières entre étages (là où la toile reste attachée)
       L.hinges.forEach(h => { const A = toS(h.A), B = toS(h.B);
         ctx2d.beginPath(); ctx2d.moveTo(A.x, A.y); ctx2d.lineTo(B.x, B.y); ctx2d.strokeStyle = '#2c8a3c'; ctx2d.lineWidth = 4 * dpr; ctx2d.stroke(); });
